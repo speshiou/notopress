@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import { fetchPageBlocks, fetchPageMetadata } from "../../../lib/notion";
 import { isFullBlock } from "@notionhq/client";
 
-export async function generateMetadata(
-  params: Promise<{ params: { id: string } }>
-) {
-  const {
-    params: { id },
-  } = await params;
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+
   try {
     const data = await fetchPageMetadata({ pageId: id });
     const { Name } = data.properties;
@@ -25,12 +26,12 @@ export async function generateMetadata(
   }
 }
 
-export default async function Page(
-  params: Promise<{ params: { id: string } }>
-) {
-  const {
-    params: { id },
-  } = await params;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   const blocks = await fetchPageBlocks({ pageId: id });
   // render the blocks
   if (!blocks || blocks.length === 0) {
