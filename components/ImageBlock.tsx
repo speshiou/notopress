@@ -1,5 +1,6 @@
 import { ImageBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 import React from "react";
+import Image from "next/image";
 
 export default function ImageBlock({
   block,
@@ -14,7 +15,14 @@ export default function ImageBlock({
     block.image.caption?.map((c: any) => c.plain_text).join("") || "";
   return (
     <figure>
-      <img src={url} alt={caption} className="max-w-full" />
+      <Image
+        src={url}
+        alt={caption}
+        width={800}
+        height={600}
+        className="max-w-full"
+        style={{ height: "auto" }}
+      />
       {caption && <figcaption>{caption}</figcaption>}
     </figure>
   );
