@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { fetchPageBlocks, fetchPageMetadata } from "../../../lib/notion";
 import { isFullBlock } from "@notionhq/client";
-import ParagraphBlock from "../../../components/ParagraphBlock";
-import ImageBlock from "../../../components/ImageBlock";
+import ParagraphBlock from "@/components/paragraph-block";
+import ImageBlock from "@/components/image-block";
 
 export async function generateMetadata({
   params,
