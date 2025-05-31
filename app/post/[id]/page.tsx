@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { fetchPageBlocks, fetchPageMetadata } from "../../../lib/notion";
 import { isFullBlock } from "@notionhq/client";
+import ParagraphBlock from "@/components/paragraph-block";
+import ImageBlock from "@/components/image-block";
 
 export async function generateMetadata({
   params,
@@ -33,7 +35,6 @@ export default async function Page({
 }) {
   const { id } = await params;
   const blocks = await fetchPageBlocks({ pageId: id });
-  // render the blocks
   if (!blocks || blocks.length === 0) {
     notFound();
   }
@@ -41,19 +42,17 @@ export default async function Page({
     <div className="flex flex-col gap-4">
       {blocks.map((block) => {
         if (!isFullBlock(block)) {
-          return null; // Skip if the block is not a full block
+          return null;
         }
-        if (block.type === "paragraph") {
-          return (
-            <p key={block.id} className="text-lg">
-              {block.paragraph.rich_text
-                .map((text) => text.plain_text)
-                .join("")}
-            </p>
-          );
+        switch (block.type) {
+          case "paragraph":
+            return <ParagraphBlock key={block.id} block={block} />;
+          case "image":
+            return <ImageBlock key={block.id} block={block} />;
+          // Add more cases for other block types as needed
+          default:
+            return null; // Handle unsupported block types
         }
-        // Add more block types as needed
-        return null;
       })}
     </div>
   );
