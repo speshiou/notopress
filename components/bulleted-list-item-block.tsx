@@ -1,21 +1,12 @@
-import React from 'react';
-import { renderRichText, RichTextItemResponse } from '../lib/render-rich-text'; // Adjusted path
+import React from "react";
+import { renderRichText } from "../lib/render-rich-text"; // Adjusted path
+import { BulletedListItemBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
-interface BulletedListItemBlockSpecifics {
-  rich_text: RichTextItemResponse[];
-  color: string;
-  children?: any[]; // For nested lists, actual type would be Block[] or similar
-}
-
-interface BulletedListItemProps {
-  block: {
-    id: string;
-    type: 'bulleted_list_item';
-    bulleted_list_item?: BulletedListItemBlockSpecifics;
-  };
-}
-
-const BulletedListItemBlock: React.FC<BulletedListItemProps> = ({ block }) => {
+function BulletedListItemBlock({
+  block,
+}: {
+  block: BulletedListItemBlockObjectResponse;
+}) {
   if (!block || !block.bulleted_list_item) {
     return <li></li>; // Render an empty li if block content is missing
   }
@@ -24,6 +15,6 @@ const BulletedListItemBlock: React.FC<BulletedListItemProps> = ({ block }) => {
 
   // TODO: Handle children for nested lists if necessary
   return <li>{renderRichText(rich_text)}</li>;
-};
+}
 
 export default BulletedListItemBlock;
