@@ -32,8 +32,7 @@ type NotionPageProps = {
 
 // Convert to an async Server Component
 const NotionPage = async ({ pageId }: NotionPageProps) => {
-  let blocks: (PartialBlockObjectResponse | BlockObjectResponse)[] | null =
-    null;
+  let blocks: (PartialBlockObjectResponse | BlockObjectResponse)[] = [];
   let error: string | null = null;
 
   try {
@@ -51,64 +50,111 @@ const NotionPage = async ({ pageId }: NotionPageProps) => {
     return <div>Error: {error}</div>;
   }
 
-  if (!blocks || blocks.length === 0) {
-    return <div>No blocks found for this page.</div>;
-  }
-
   return (
     <div>
-      <h1>Page Content</h1>
-      {blocks.map((block) => {
-        if (!isFullBlock(block)) {
-          // Log or handle partial blocks as needed. For now, skipping them.
-          console.warn(
-            `Encountered a partial block (ID: ${block.id}). Skipping rendering.`
-          );
-          return (
-            <div key={block.id} style={{ display: "none" }}>
-              Partial block (ID: {block.id}) not rendered.
-            </div>
-          );
-        }
-
-        switch (block.type) {
-          case "heading_1":
-            return <Heading1Block key={block.id} block={block} />;
-          case "heading_2":
-            return <Heading2Block key={block.id} block={block} />;
-          case "heading_3":
-            return <Heading3Block key={block.id} block={block} />;
-          case "paragraph":
-            return <ParagraphBlock key={block.id} block={block} />;
-          case "image":
-            return <ImageBlock key={block.id} block={block} />;
-          case "bulleted_list_item":
-            // For list items, Notion expects them to be wrapped in <ul> or <ol>.
-            // This basic renderer handles them individually. A more complex renderer
-            // might group consecutive list items.
-            return <BulletedListItemBlock key={block.id} block={block} />;
-          case "numbered_list_item":
-            return <NumberedListItemBlock key={block.id} block={block} />;
-          case "quote":
-            return <QuoteBlock key={block.id} block={block} />;
-          case "code":
-            return <CodeBlock key={block.id} block={block} />;
-          default:
-            return (
-              <div
-                key={block.id}
-                style={{
-                  marginBottom: "10px",
-                  padding: "10px",
-                  border: "1px solid #ccc",
-                }}
-              >
-                <p>Unsupported block type: {block.type}</p>
-                <p>Block ID: {block.id}</p>
-              </div>
+      {(() => {
+        const elements: React.ReactNode[] = [];
+        let i = 0;
+        while (i < blocks.length) {
+          const block = blocks[i];
+          if (!isFullBlock(block)) {
+            // Log or handle partial blocks as needed. For now, skipping them.
+            console.warn(
+              `Encountered a partial block (ID: ${block.id}). Skipping rendering.`
             );
+            i++;
+            continue;
+          }
+
+          // Group consecutive bulleted_list_item
+          if (block.type === "bulleted_list_item") {
+            const listItems = [];
+            let j = i;
+            while (j < blocks.length) {
+              const listBlock = blocks[j];
+              if (
+                !isFullBlock(listBlock) ||
+                listBlock.type !== "bulleted_list_item"
+              ) {
+                break; // Ensure we only process full blocks of the correct type
+              }
+              listItems.push(
+                <BulletedListItemBlock key={listBlock.id} block={listBlock} />
+              );
+              j++;
+            }
+            elements.push(
+              <ul key={`bulleted-list-${block.id}`}>{listItems}</ul>
+            );
+            i = j;
+            continue;
+          }
+
+          // Group consecutive numbered_list_item
+          if (block.type === "numbered_list_item") {
+            const listItems = [];
+            let j = i;
+            while (j < blocks.length) {
+              const listBlock = blocks[j];
+              if (
+                !isFullBlock(listBlock) ||
+                listBlock.type !== "numbered_list_item"
+              ) {
+                break; // Ensure we only process full blocks of the correct type
+              }
+              listItems.push(
+                <NumberedListItemBlock key={listBlock.id} block={listBlock} />
+              );
+              j++;
+            }
+            elements.push(
+              <ol key={`numbered-list-${block.id}`}>{listItems}</ol>
+            );
+            i = j;
+            continue;
+          }
+
+          switch (block.type) {
+            case "heading_1":
+              elements.push(<Heading1Block key={block.id} block={block} />);
+              break;
+            case "heading_2":
+              elements.push(<Heading2Block key={block.id} block={block} />);
+              break;
+            case "heading_3":
+              elements.push(<Heading3Block key={block.id} block={block} />);
+              break;
+            case "paragraph":
+              elements.push(<ParagraphBlock key={block.id} block={block} />);
+              break;
+            case "image":
+              elements.push(<ImageBlock key={block.id} block={block} />);
+              break;
+            case "quote":
+              elements.push(<QuoteBlock key={block.id} block={block} />);
+              break;
+            case "code":
+              elements.push(<CodeBlock key={block.id} block={block} />);
+              break;
+            default:
+              elements.push(
+                <div
+                  key={block.id}
+                  style={{
+                    marginBottom: "10px",
+                    padding: "10px",
+                    border: "1px solid #ccc",
+                  }}
+                >
+                  <p>Unsupported block type: {block.type}</p>
+                  <p>Block ID: {block.id}</p>
+                </div>
+              );
+          }
+          i++;
         }
-      })}
+        return elements;
+      })()}
     </div>
   );
 };
