@@ -11,8 +11,7 @@ export default function ImageBlock({
     block.image.type === "external"
       ? block.image.external.url
       : block.image.file.url;
-  const caption =
-    block.image.caption?.map((c: any) => c.plain_text).join("") || "";
+  const caption = block.image.caption?.map((c) => c.plain_text).join("") || "";
   return (
     <figure>
       <Image

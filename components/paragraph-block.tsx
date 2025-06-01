@@ -8,7 +8,7 @@ export default function ParagraphBlock({
 }) {
   return (
     <p className="text-lg">
-      {block.paragraph.rich_text.map((text: any) => text.plain_text).join("")}
+      {block.paragraph.rich_text.map((text) => text.plain_text).join("")}
     </p>
   );
 }
