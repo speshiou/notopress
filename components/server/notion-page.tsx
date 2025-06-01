@@ -15,17 +15,6 @@ import QuoteBlock from "@/components/quote-block"; // Component for rendering qu
 import CodeBlock from "@/components/code-block"; // Component for rendering code blocks
 import { fetchPageBlocks } from "@/lib/notion";
 
-// Re-using the Block type from Notion SDK is preferable, but for now, this defines the minimum needed.
-// The actual blocks from fetchPageBlocks should conform to Notion's BlockObjectResponse.
-// https://developers.notion.com/reference/block
-// It's good practice to use the actual BlockObjectResponse type from @notionhq/client if possible,
-// or define a more specific type if the generic `any` is too broad.
-type Block = {
-  id: string;
-  type: string;
-  [key: string]: any; // Allow other properties
-};
-
 type NotionPageProps = {
   pageId: string;
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { renderRichText } from "../lib/render-rich-text";
+import { RichText } from "./rich-text";
 import { QuoteBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 function QuoteBlock({ block }: { block: QuoteBlockObjectResponse }) {
@@ -13,7 +13,7 @@ function QuoteBlock({ block }: { block: QuoteBlockObjectResponse }) {
 
   return (
     <blockquote className="border-l-4 border-base-300 pl-4 italic my-4 bg-base-200 rounded py-2 px-3">
-      {renderRichText(rich_text)}
+      <RichText richTextArray={rich_text} />
     </blockquote>
   );
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import { renderRichText } from "../lib/render-rich-text"; // Adjusted path
+import { RichText } from "./rich-text";
 import { BulletedListItemBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 function BulletedListItemBlock({
@@ -13,7 +13,11 @@ function BulletedListItemBlock({
 
   const { rich_text } = block.bulleted_list_item;
 
-  return <li className="list-disc ml-6 py-1">{renderRichText(rich_text)}</li>;
+  return (
+    <li className="list-disc ml-6 py-1">
+      <RichText richTextArray={rich_text} />
+    </li>
+  );
 }
 
 export default BulletedListItemBlock;

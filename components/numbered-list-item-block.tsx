@@ -1,5 +1,5 @@
 import React from "react";
-import { renderRichText } from "../lib/render-rich-text"; // Adjusted path
+import { RichText } from "./rich-text";
 import { NumberedListItemBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 function NumberedListItemBlock({
@@ -14,7 +14,9 @@ function NumberedListItemBlock({
   const { rich_text } = block.numbered_list_item;
 
   return (
-    <li className="list-decimal ml-6 py-1">{renderRichText(rich_text)}</li>
+    <li className="list-decimal ml-6 py-1">
+      <RichText richTextArray={rich_text} />
+    </li>
   );
 }
 

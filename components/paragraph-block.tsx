@@ -1,6 +1,6 @@
 import { ParagraphBlockObjectResponse } from "@notionhq/client";
 import React from "react";
-import { renderRichText } from '../lib/render-rich-text'; // Adjusted path
+import { RichText } from "./rich-text"; // Adjusted path
 
 export default function ParagraphBlock({
   block,
@@ -11,7 +11,7 @@ export default function ParagraphBlock({
   // RichTextItemResponse[] expected by renderRichText.
   return (
     <p className="text-lg">
-      {renderRichText(block.paragraph.rich_text)}
+      <RichText richTextArray={block.paragraph.rich_text} />
     </p>
   );
 }

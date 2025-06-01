@@ -1,5 +1,5 @@
 import React from "react";
-import { renderRichText } from "../lib/render-rich-text";
+import { RichText } from "./rich-text";
 import { CodeBlockObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 function CodeBlock({ block }: { block: CodeBlockObjectResponse }) {
@@ -26,11 +26,13 @@ function CodeBlock({ block }: { block: CodeBlockObjectResponse }) {
           language ? "rounded-t-none" : "rounded-md"
         } overflow-x-auto`}
       >
-        <code className={langClass}>{renderRichText(rich_text)}</code>
+        <code className={langClass}>
+          <RichText richTextArray={rich_text} />
+        </code>
       </pre>
       {caption && caption.length > 0 && (
         <div className="text-xs text-base-content/60 italic mt-1">
-          {renderRichText(caption)}
+          <RichText richTextArray={caption} />
         </div>
       )}
     </div>
