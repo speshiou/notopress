@@ -10,5 +10,7 @@ export function Heading2Block({
   if (!block || !block.heading_2) return <h2 />;
   const { rich_text } = block.heading_2;
   if (!rich_text || rich_text.length === 0) return <h2 />;
-  return <h2>{renderRichText(rich_text)}</h2>;
+  return (
+    <h2 className="text-3xl font-semibold mb-3">{renderRichText(rich_text)}</h2>
+  );
 }

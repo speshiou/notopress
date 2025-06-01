@@ -13,16 +13,20 @@ export default function ImageBlock({
       : block.image.file.url;
   const caption = block.image.caption?.map((c) => c.plain_text).join("") || "";
   return (
-    <figure>
+    <figure className="my-6">
       <Image
         src={url}
         alt={caption}
         width={800}
         height={600}
-        className="max-w-full"
+        className="max-w-full rounded-lg shadow-lg"
         style={{ height: "auto" }}
       />
-      {caption && <figcaption>{caption}</figcaption>}
+      {caption && (
+        <figcaption className="text-center text-sm text-base-content/60 mt-2">
+          {caption}
+        </figcaption>
+      )}
     </figure>
   );
 }
