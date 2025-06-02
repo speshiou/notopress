@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
-import { fetchPageBlocks, fetchPageMetadata } from "../../../lib/notion";
-import { isFullBlock } from "@notionhq/client";
-import ParagraphBlock from "@/components/paragraph-block";
-import ImageBlock from "@/components/image-block";
+import { fetchPageMetadata } from "@/lib/notion";
+import NotionPage from "@/components/server/notion-page"; // Updated import path
 
 export async function generateMetadata({
   params,
@@ -15,14 +13,19 @@ export async function generateMetadata({
     const data = await fetchPageMetadata({ pageId: id });
     const { Name } = data.properties;
 
+    // Ensure Name property and title array exist and have elements
+    const pageTitle = (Name.type === "title" && Name.title[0]?.plain_text) ? Name.title[0].plain_text : "Untitled";
+
     return {
-      title: Name.type === "title" ? Name.title[0]?.plain_text : "Untitled",
-      // description: content,
+      title: pageTitle,
+      // description: content, // Consider adding description from page properties if available
     };
   } catch (error) {
-    console.error("Error generating metadata:", error);
+    console.error(`Error generating metadata for page ${id}:`, error);
+    // Return a generic error title or handle as appropriate
+    // Depending on requirements, you might want to re-throw or call notFound()
     return {
-      title: "Error",
+      title: "Page Not Found",
       description: "Could not fetch the page content.",
     };
   }
@@ -34,26 +37,16 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const blocks = await fetchPageBlocks({ pageId: id });
-  if (!blocks || blocks.length === 0) {
-    notFound();
-  }
+
+  // The fetchPageBlocks and block rendering logic is now handled by NotionPage component.
+  // The NotionPage component also handles loading and error states.
+  // If the page itself (metadata) can't be fetched, generateMetadata would ideally handle notFound,
+  // or we might need a check here if fetchPageMetadata could indicate a 404.
+  // For now, we assume if metadata is fetched, the page exists, and NotionPage will handle block fetching.
+
   return (
     <div className="flex flex-col gap-4">
-      {blocks.map((block) => {
-        if (!isFullBlock(block)) {
-          return null;
-        }
-        switch (block.type) {
-          case "paragraph":
-            return <ParagraphBlock key={block.id} block={block} />;
-          case "image":
-            return <ImageBlock key={block.id} block={block} />;
-          // Add more cases for other block types as needed
-          default:
-            return null; // Handle unsupported block types
-        }
-      })}
+      <NotionPage pageId={id} />
     </div>
   );
 }
