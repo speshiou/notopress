@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { fetchPageMetadata } from "../../../lib/notion";
+import { fetchPageMetadata } from "@/lib/notion";
 import NotionPage from "@/components/server/notion-page"; // Updated import path
 
 export async function generateMetadata({
