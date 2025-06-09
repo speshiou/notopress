@@ -21,7 +21,7 @@ export default async function Home() {
         <ul className="list-disc pl-5">
           {objects.map((object) => {
             if (!isFullPage(object)) {
-              return null; // Skip full page objects
+              return null; // Skip non-full-page objects
             }
             const page = object;
             const title = parsePageTitle({ page });
