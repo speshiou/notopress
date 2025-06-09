@@ -49,4 +49,5 @@ export function parsePageTitle({ page }: { page: PageObjectResponse }) {
       return prop.title.map((t) => t.plain_text).join("");
     }
   }
+  return "";
 }
