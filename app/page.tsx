@@ -1,9 +1,10 @@
-import { fetchDatabase } from "../lib/notion";
+import { isFullPage } from "@notionhq/client";
+import { parsePageTitle, queryDatabase } from "../lib/notion";
 import Image from "next/image";
 
 export default async function Home() {
   const databaseId = process.env.CONTENT_DATABASE_ID!;
-  const posts = await fetchDatabase(databaseId);
+  const objects = await queryDatabase(databaseId);
 
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
@@ -18,16 +19,23 @@ export default async function Home() {
         />
         <h1 className="text-2xl font-bold">Latest Posts</h1>
         <ul className="list-disc pl-5">
-          {posts.map((post: any) => (
-            <li key={post.id} className="mb-2">
-              <a
-                href={`/post/${post.id}`}
-                className="text-blue-500 hover:underline"
-              >
-                {post.properties.Name.title[0]?.plain_text || "Untitled"}
-              </a>
-            </li>
-          ))}
+          {objects.map((object) => {
+            if (!isFullPage(object)) {
+              return null; // Skip full page objects
+            }
+            const page = object;
+            const title = parsePageTitle({ page });
+            return (
+              <li key={page.id} className="mb-2">
+                <a
+                  href={`/post/${page.id}`}
+                  className="text-blue-500 hover:underline"
+                >
+                  {title || "Untitled"}
+                </a>
+              </li>
+            );
+          })}
         </ul>
       </main>
       <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
