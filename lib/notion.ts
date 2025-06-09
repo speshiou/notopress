@@ -1,8 +1,8 @@
-import { Client, isFullPage } from "@notionhq/client";
+import { Client, isFullPage, PageObjectResponse } from "@notionhq/client";
 
 const notion = new Client({ auth: process.env.NOTION_INTEGRATION_SECRET });
 
-export async function fetchDatabase(databaseId: string) {
+export async function queryDatabase(databaseId: string) {
   try {
     const response = await notion.databases.query({ database_id: databaseId });
     return response.results;
@@ -13,7 +13,6 @@ export async function fetchDatabase(databaseId: string) {
 }
 
 export async function fetchPageMetadata({ pageId }: { pageId: string }) {
-  console.log("Fetching page content for ID:", pageId);
   try {
     const response = await notion.pages.retrieve({
       page_id: pageId,
@@ -36,4 +35,19 @@ export async function fetchPageBlocks({ pageId }: { pageId: string }) {
     page_size: 100,
   });
   return response.results;
+}
+
+// Parse title from a Notion page object
+export function parsePageTitle({ page }: { page: PageObjectResponse }) {
+  for (const key of Object.keys(page.properties)) {
+    const prop = page.properties[key];
+    if (
+      prop.type === "title" &&
+      Array.isArray(prop.title) &&
+      prop.title.length > 0
+    ) {
+      return prop.title.map((t) => t.plain_text).join("");
+    }
+  }
+  return "";
 }
