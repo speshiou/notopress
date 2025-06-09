@@ -2,7 +2,7 @@ import { fetchDatabase } from "../lib/notion";
 import Image from "next/image";
 
 export default async function Home() {
-  const databaseId = process.env.BLOG_INDEX_ID!;
+  const databaseId = process.env.CONTENT_DATABASE_ID!;
   const posts = await fetchDatabase(databaseId);
 
   return (
