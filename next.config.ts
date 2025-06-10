@@ -1,13 +1,32 @@
 import type { NextConfig } from "next";
+import { RemotePattern } from "next/dist/shared/lib/image-config";
+
+// Parse IMAGE_REMOTE_PATTERNS from env, fallback to default if not set or invalid
+let remotePatterns: (URL | RemotePattern)[];
+try {
+  if (process.env.IMAGE_REMOTE_PATTERNS) {
+    // Split by comma, trim, and parse each as URL
+    remotePatterns = process.env.IMAGE_REMOTE_PATTERNS.split(",").map((s) => {
+      return new URL(s.trim());
+    });
+    if (!remotePatterns.length) throw new Error();
+  } else {
+    throw new Error();
+  }
+} catch {
+  // Fallback to default remote patterns
+  // This is a common pattern for Notion images hosted on AWS S3
+  remotePatterns = [
+    {
+      protocol: "https",
+      hostname: "prod-files-secure.s3.**.amazonaws.com",
+    },
+  ];
+}
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "prod-files-secure.s3.**.amazonaws.com",
-      },
-    ],
+    remotePatterns,
     deviceSizes: [320, 640, 800, 1200],
     imageSizes: [320, 640, 800, 1200],
     minimumCacheTTL: 2678400, // 31 days
