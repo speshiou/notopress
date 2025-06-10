@@ -9,11 +9,17 @@ try {
     remotePatterns = process.env.IMAGE_REMOTE_PATTERNS.split(",").map((s) => {
       return new URL(s.trim());
     });
-    if (!remotePatterns.length) throw new Error();
+    if (!remotePatterns.length)
+      throw new Error("No valid patterns found in IMAGE_REMOTE_PATTERNS.");
   } else {
-    throw new Error();
+    throw new Error("IMAGE_REMOTE_PATTERNS is not set.");
   }
-} catch {
+} catch (err) {
+  console.warn(
+    "[next.config.ts] Failed to parse IMAGE_REMOTE_PATTERNS from .env: " +
+      (err instanceof Error ? err.message : String(err)) +
+      ". Falling back to default remotePatterns."
+  );
   // Fallback to default remote patterns
   // This is a common pattern for Notion images hosted on AWS S3
   remotePatterns = [
