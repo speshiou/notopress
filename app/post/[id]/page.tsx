@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { fetchPageMetadata } from "@/lib/notion";
+import { fetchPageMetadata, parsePageTitle } from "@/lib/notion";
 import NotionPage from "@/components/server/notion-page"; // Updated import path
 
 export async function generateMetadata({
@@ -10,11 +10,10 @@ export async function generateMetadata({
   const { id } = await params;
 
   try {
-    const data = await fetchPageMetadata({ pageId: id });
-    const { Name } = data.properties;
+    const pageMetadata = await fetchPageMetadata({ pageId: id });
 
     // Ensure Name property and title array exist and have elements
-    const pageTitle = (Name.type === "title" && Name.title[0]?.plain_text) ? Name.title[0].plain_text : "Untitled";
+    const pageTitle = parsePageTitle({ page: pageMetadata }) || "Untitled";
 
     return {
       title: pageTitle,
