@@ -5,4 +5,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- END:nextjs-agent-rules -->
 
 # Verification
-Always run `tsc --noEmit` after making changes to verify basic syntax errors.
+Always run `npm run type-check` after making changes to verify basic syntax errors.
