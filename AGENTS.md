@@ -6,3 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Verification
 Always run `npm run type-check` after making changes to verify basic syntax errors.
+
+# Skills
+Consult the `skills/` directory for specific guides and automation patterns:
+- [Pull Request Creation](skills/pull-request.md)
