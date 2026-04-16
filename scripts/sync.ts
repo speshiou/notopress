@@ -133,9 +133,11 @@ async function main() {
     
     console.log('\n✅ Sync successfully completed!');
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('\n⨯ Sync process failed.');
-    console.error(err.message);
+    if (err instanceof Error) {
+      console.error(err.message);
+    }
     process.exit(1);
   }
 }
