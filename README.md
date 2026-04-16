@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Notopress
 
-## Getting Started
+> [!CAUTION]
+> This project is currently under active development. Expect breaking changes and potential backward incompatibility as we evolve.
 
-First, run the development server:
+Notopress is a modern tool for building markdown-based, content-driven websites. Whether you're creating technical documentation, a personal blog, or high-performance marketing pages, Notopress provides a streamlined workflow to turn your markdown files into a polished web presence.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Features & Scenarios
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Notopress is designed to be flexible and fit into your existing writing workflow:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Obsidian Integration**: Manage your entire site directly from your Obsidian vault.
+- **Manual Control**: Simply write and organize your markdown files manually in your preferred editor.
+- **AI-Assisted Publishing**: Grant AI agents access to your content vaults to generate or refine articles with ease.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Requirements
 
-## Learn More
+To get started with Notopress, you will need:
 
-To learn more about Next.js, take a look at the following resources:
+- **Node.js Runtime**: A modern Node.js environment to host and run the application.
+- **S3-Compatible Storage**: Any S3-compatible service (like AWS S3, R2, or MinIO) to store and serve your content assets.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+We are constantly working to improve Notopress. Here is what's on our immediate horizon:
 
-## Deploy on Vercel
+- [ ] **Localization**: Support for multi-language sites and easy translation workflows.
+- [ ] **Multi-site Support**: Manage multiple distinct websites from a single Notopress instance.
+- [ ] **Responsive Images**: Automatic image optimization and responsive sizing for faster page loads.
+- [ ] **Customizable Themes**: Flexible theming system to make your site look exactly how you want.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
