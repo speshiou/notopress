@@ -2,7 +2,10 @@ import { select } from '@inquirer/prompts';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join, basename, extname } from 'path';
-import { registry } from '../registry';
+import { getRegistry } from '../src/lib/registry';
+
+const registry = getRegistry();
+
 
 interface PostMetadata {
   title: string;
