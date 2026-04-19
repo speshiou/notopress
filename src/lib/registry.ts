@@ -1,10 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { RegistrySchema, type Registry } from '../domain/registry';
-import * as dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
 
 /**
  * Loads and validates the registry configuration.
