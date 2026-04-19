@@ -4,8 +4,6 @@ import { execSync } from 'child_process';
 import { join, basename, extname } from 'path';
 import { getRegistry } from '../src/lib/registry';
 
-const registry = getRegistry();
-
 
 interface PostMetadata {
   title: string;
@@ -34,7 +32,7 @@ function generateIndex(vaultPath: string, dryRun: boolean = false) {
   for (const locale of locales) {
     const postsDir = join(postsBaseDir, locale);
     const files = readdirSync(postsDir).filter(f => f.endsWith('.md'));
-    
+
     if (files.length === 0) continue;
 
     console.log(`\n🔍 Scanning [${locale}] posts in ${postsDir}...`);
@@ -60,7 +58,7 @@ function generateIndex(vaultPath: string, dryRun: boolean = false) {
         .split('\n')
         .map(line => line.trim())
         .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
-        [0]?.slice(0, 160) + '...' || '';
+      [0]?.slice(0, 160) + '...' || '';
 
       posts.push({ title, slug, date, excerpt });
     }
@@ -79,6 +77,7 @@ function generateIndex(vaultPath: string, dryRun: boolean = false) {
 }
 
 async function main() {
+  const registry = getRegistry();
   const isDryRun = process.argv.includes('--dry-run');
 
   if (isDryRun) {
@@ -134,9 +133,9 @@ async function main() {
     ].filter(Boolean).join(' ');
 
     console.log(`Executing:\n> ${syncCommand}\n`);
-    
+
     // stdio: 'inherit' passes the aws-cli output directly to our terminal
-    execSync(syncCommand, { 
+    execSync(syncCommand, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -144,7 +143,7 @@ async function main() {
         AWS_SECRET_ACCESS_KEY: registry.secretAccessKey
       }
     });
-    
+
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');
     } else {
