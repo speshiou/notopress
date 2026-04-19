@@ -43,6 +43,6 @@ For significant structure changes, it is recommended to create a one-off migrati
 import fs from 'fs';
 const data = JSON.parse(fs.readFileSync('registry.json', 'utf8'));
 data.sites = data.sites.map(s => ({ host: s.domain, ...s }));
-delete data.sites.forEach(s => delete s.domain);
+data.sites.forEach(s => delete s.domain);
 fs.writeFileSync('registry.json', JSON.stringify(data, null, 2));
 ```
