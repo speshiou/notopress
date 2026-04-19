@@ -14,7 +14,7 @@ interface PostMetadata {
   excerpt: string;
 }
 
-function generateIndex(vaultPath: string) {
+function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const postsBaseDir = join(vaultPath, 'posts');
   if (!existsSync(postsBaseDir)) {
     console.warn(`⚠️  Warning: "posts" directory not found in vault: ${postsBaseDir}. Skipping index generation.`);
@@ -69,12 +69,22 @@ function generateIndex(vaultPath: string) {
     posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const indexPath = join(postsDir, 'index.json');
-    writeFileSync(indexPath, JSON.stringify(posts, null, 2));
-    console.log(`✨ Generated [${locale}] index with ${posts.length} posts at: ${indexPath}`);
+    if (dryRun) {
+      console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts at: ${indexPath}`);
+    } else {
+      writeFileSync(indexPath, JSON.stringify(posts, null, 2));
+      console.log(`✨ Generated [${locale}] index with ${posts.length} posts at: ${indexPath}`);
+    }
   }
 }
 
 async function main() {
+  const isDryRun = process.argv.includes('--dry-run');
+
+  if (isDryRun) {
+    console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
+  }
+
   const siteId = await select({
     message: 'Select a site to sync using AWS CLI:',
     choices: registry.sites.map(site => ({
@@ -86,12 +96,12 @@ async function main() {
 
   const site = registry.sites.find(s => s.siteId === siteId);
   if (!site) {
-    console.error('⨯ Site not found in registry.ts');
+    console.error('⨯ Site not found in registry.json');
     process.exit(1);
   }
 
   if (!site.bucketName) {
-    console.error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}] in registry.ts`);
+    console.error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}] in registry.json`);
     process.exit(1);
   }
 
@@ -101,7 +111,7 @@ async function main() {
   }
 
   // Generate index.json at the vault root before syncing
-  generateIndex(site.vaultPath);
+  generateIndex(site.vaultPath, isDryRun);
 
   console.log(`\n☁️  Preparing AWS S3 Sync to Cloudflare R2...`);
   console.log(`- Local Path: ${site.vaultPath}`);
@@ -119,8 +129,9 @@ async function main() {
       `--exclude "*.DS_Store"`,
       `--exclude "*/.git/*"`,
       `--exclude ".git/*"`,
-      `--delete` // Automatically delete remote files that don't exist locally
-    ].join(' ');
+      `--delete`, // Automatically delete remote files that don't exist locally
+      isDryRun ? '--dryrun' : ''
+    ].filter(Boolean).join(' ');
 
     console.log(`Executing:\n> ${syncCommand}\n`);
     
@@ -134,10 +145,14 @@ async function main() {
       }
     });
     
-    console.log('\n✅ Sync successfully completed!');
+    if (isDryRun) {
+      console.log('\n✅ Dry run completed successfully!');
+    } else {
+      console.log('\n✅ Sync successfully completed!');
+    }
 
   } catch (err: any) {
-    console.error('\n⨯ Sync process failed.');
+    console.error(`\n⨯ ${isDryRun ? 'Dry run' : 'Sync process'} failed.`);
     console.error(err.message);
     process.exit(1);
   }

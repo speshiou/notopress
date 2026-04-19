@@ -20,6 +20,30 @@ To get started with Notopress, you will need:
 - **Node.js Runtime**: A modern Node.js environment to host and run the application.
 - **S3-Compatible Storage**: Any S3-compatible service (like AWS S3, R2, or MinIO) to store and serve your content assets.
 
+## Usage
+
+### Syncing Content
+
+Notopress includes a sync script to deploy your local markdown content to your S3-compatible storage.
+
+To start the sync process:
+
+```bash
+npm run sync
+```
+
+#### Dry Run
+
+You can perform a dry run to see what changes would be made without actually modifying any local or remote files:
+
+```bash
+npm run sync -- --dry-run
+```
+
+This will:
+- Preview the `index.json` generation for each locale.
+- Show which files would be uploaded, updated, or deleted on the remote storage using the AWS CLI's `--dryrun` mode.
+
 ## Roadmap
 
 We are constantly working to improve Notopress. Here is what's on our immediate horizon:
