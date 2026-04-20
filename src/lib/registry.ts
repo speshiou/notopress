@@ -33,3 +33,11 @@ Refer to skills/registry-migration.md for detailed migration instructions and th
     throw new Error(`Failed to load registry: ${error.message}${migrationGuidance}`);
   }
 }
+
+/**
+ * Finds a site in the registry based on its domain.
+ */
+export async function getSiteByDomain(domain: string) {
+  const registry = await getRegistry();
+  return registry.sites.find(site => site.domain === domain);
+}
