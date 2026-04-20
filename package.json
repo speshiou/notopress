@@ -9,6 +9,7 @@
     "lint": "eslint",
     "sync": "tsx --env-file=.env scripts/sync.ts",
     "deploy": "tsx --env-file=.env scripts/deploy.ts",
+    "configure": "tsx scripts/deploy.ts --dev",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },

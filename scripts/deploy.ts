@@ -1,5 +1,6 @@
 import { select } from '@inquirer/prompts';
 import { spawn } from 'child_process';
+import { readFile, writeFile } from 'fs/promises';
 import { getRegistry } from '../src/lib/registry';
 
 function execAsync(command: string, options: any = {}): Promise<void> {
@@ -41,13 +42,17 @@ function spawnAsync(command: string, args: string[], options: any = {}): Promise
 }
 
 async function main() {
-  // Check if vercel CLI is installed
-  try {
-    await execAsync('vercel --version', { stdio: 'ignore' });
-  } catch {
-    console.error('⨯ Error: Vercel CLI is not installed or not in PATH.');
-    console.error('  Please install it with: npm install -g vercel');
-    process.exit(1);
+  const isDev = process.argv.includes('--dev');
+
+  // Check if vercel CLI is installed (only if NOT in dev mode)
+  if (!isDev) {
+    try {
+      await execAsync('vercel --version', { stdio: 'ignore' });
+    } catch {
+      console.error('⨯ Error: Vercel CLI is not installed or not in PATH.');
+      console.error('  Please install it with: npm install -g vercel');
+      process.exit(1);
+    }
   }
 
   const registry = await getRegistry();
@@ -85,7 +90,44 @@ async function main() {
     S3_SECRET_ACCESS_KEY: registry.secretAccessKey,
     S3_ENDPOINT: endpoint,
     S3_BUCKET: site.bucketName,
+    VAULT_ROOT: site.siteId,
   };
+
+  if (isDev) {
+    console.log(`\n🛠️  Running in DEV mode - Updating .env.local for ${site.siteId}...`);
+    
+    let envContent = '';
+    try {
+      envContent = await readFile('.env.local', 'utf-8');
+    } catch {
+      // .env.local might not exist, that's fine
+    }
+
+    const lines = envContent.split('\n');
+    const existingVars: Record<string, string> = {};
+    
+    // Parse existing variables while preserving comments or structure is hard with a simple split,
+    // so we'll just parse keys and re-generate.
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        existingVars[key.trim()] = valueParts.join('=').trim();
+      }
+    });
+
+    // Merge new values
+    const finalVars = { ...existingVars, ...envVars };
+
+    const newContent = Object.entries(finalVars)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+    await writeFile('.env.local', newContent);
+    console.log('✅ .env.local updated successfully.');
+    console.log('\n✨ Local development context switched. Restart npm run dev to see changes.');
+    process.exit(0);
+  }
 
   console.log(`\n📡 Synchronizing environment variables to Vercel...`);
 
