@@ -25,8 +25,10 @@ async function main() {
     process.exit(1);
   }
 
-  if (!registry.accountId) {
-    console.error(`⨯ Error: "accountId" is not configured in registry.json`);
+  const endpoint = site.endpoint || (registry.accountId ? `https://${registry.accountId}.r2.cloudflarestorage.com` : undefined);
+
+  if (!endpoint) {
+    console.error(`⨯ Error: No S3 endpoint found. Please provide "endpoint" in site config or "accountId" for Cloudflare R2.`);
     process.exit(1);
   }
 
@@ -37,7 +39,7 @@ async function main() {
   const envVars = {
     S3_ACCESS_KEY_ID: registry.accessKeyId,
     S3_SECRET_ACCESS_KEY: registry.secretAccessKey,
-    S3_ENDPOINT: `https://${registry.accountId}.r2.cloudflarestorage.com`,
+    S3_ENDPOINT: endpoint,
     S3_BUCKET: site.bucketName,
   };
 
@@ -52,15 +54,11 @@ async function main() {
     try {
       // We attempt to remove the variable first to ensure it's updated.
       // The -y flag skips the confirmation prompt.
-      // We ignore errors in case the variable doesn't exist yet.
-      try {
-        spawnSync('vercel', ['env', 'rm', key, 'production', '-y'], {
-          stdio: 'ignore',
-          env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
-        });
-      } catch {
-        // Variable might not exist, ignore
-      }
+      // We ignore the result of the removal in case it doesn't exist yet.
+      spawnSync('vercel', ['env', 'rm', key, 'production', '-y'], {
+        stdio: 'ignore',
+        env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+      });
 
       // Add the variable to the production environment
       // We use spawnSync to pipe the value into stdin safely
