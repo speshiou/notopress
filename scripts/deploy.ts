@@ -31,10 +31,10 @@ async function main() {
 
   const vercelProjectId = site.vercelProjectId || site.siteId;
 
-  const endpoint = site.endpoint || (registry.accountId ? `https://${registry.accountId}.r2.cloudflarestorage.com` : undefined);
+  const endpoint = site.endpoint || registry.endpoint;
 
   if (!endpoint) {
-    console.error(`⨯ Error: No S3 endpoint found. Please provide "endpoint" in site config or "accountId" for Cloudflare R2.`);
+    console.error(`⨯ Error: No S3 endpoint found. Please provide "endpoint" in site or registry configuration.`);
     process.exit(1);
   }
 

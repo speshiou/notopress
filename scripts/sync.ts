@@ -158,19 +158,19 @@ async function main() {
   // Generate index.json at the vault root before syncing
   await generateIndex(site.vaultPath, isDryRun);
 
-  const accountId = registry.accountId || process.env.R2_ACCOUNT_ID;
-  const accessKeyId = registry.accessKeyId || process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY;
+  const endpoint = registry.endpoint || process.env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || process.env.S3_SECRET_ACCESS_KEY;
 
-  if (!accountId || !accessKeyId || !secretAccessKey) {
-    console.error('⨯ Error: Missing R2 credentials. Please provide them in registry.json or via environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).');
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    console.error('⨯ Error: Missing S3 credentials. Please provide them in registry.json or via environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).');
     process.exit(1);
   }
 
-  console.log(`\n☁️  Preparing AWS S3 Sync to Cloudflare R2...`);
+  console.log(`\n☁️  Preparing AWS S3 Sync...`);
   console.log(`- Local Path: ${site.vaultPath}`);
-  console.log(`- R2 Bucket:  ${site.bucketName}`);
-  console.log(`- Account ID: ${accountId}\n`);
+  console.log(`- S3 Bucket:  ${site.bucketName}`);
+  console.log(`- Endpoint:   ${endpoint}\n`);
 
   try {
     // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
@@ -180,7 +180,7 @@ async function main() {
       'aws s3 sync',
       `"${site.vaultPath}/"`,
       `"s3://${site.bucketName}/${site.siteId}/"`,
-      `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
+      `--endpoint-url "${endpoint}"`,
       `--exclude "*.DS_Store"`,
       `--exclude "*/.git/*"`,
       `--exclude ".git/*"`,
@@ -226,7 +226,7 @@ async function main() {
           'aws s3 cp',
           `"${registryTmpPath}"`,
           `"s3://${site.bucketName}/registry.json"`,
-          `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
+          `--endpoint-url "${endpoint}"`,
         ].join(' ');
 
         execSync(uploadRegistryCommand, {

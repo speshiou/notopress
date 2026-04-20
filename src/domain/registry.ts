@@ -10,7 +10,7 @@ export const SiteSchema = z.object({
 });
 
 export const RegistrySchema = z.object({
-  accountId: z.string().optional(),
+  endpoint: z.string().url().optional(),
   accessKeyId: z.string().optional(),
   secretAccessKey: z.string().optional(),
   sites: z.array(SiteSchema),
