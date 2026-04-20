@@ -1,9 +1,62 @@
 import { select } from '@inquirer/prompts';
-import { execSync, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
+import { readFile, writeFile } from 'fs/promises';
 import { getRegistry } from '../src/lib/registry';
+import { ENV_KEYS } from '../src/lib/env';
+
+function execAsync(command: string, options: any = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { ...options, shell: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command failed with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
+}
+
+function spawnAsync(command: string, args: string[], options: any = {}): Promise<{ status: number | null, signal: string | null, error?: Error, stderr: Buffer }> {
+  return new Promise((resolve) => {
+    const { input, ...spawnOptions } = options;
+    const child = spawn(command, args, spawnOptions);
+    let stderr = Buffer.alloc(0);
+    
+    if (child.stderr) {
+      child.stderr.on('data', (data) => {
+        stderr = Buffer.concat([stderr, data]);
+      });
+    }
+
+    if (input && child.stdin) {
+      child.stdin.write(input);
+      child.stdin.end();
+    }
+
+    child.on('close', (code, signal) => {
+      resolve({ status: code, signal, stderr });
+    });
+
+    child.on('error', (error) => {
+      resolve({ status: null, signal: null, error, stderr });
+    });
+  });
+}
 
 async function main() {
-  const registry = getRegistry();
+  const isDev = process.argv.includes('--dev');
+
+  // Check if vercel CLI is installed (only if NOT in dev mode)
+  if (!isDev) {
+    try {
+      await execAsync('vercel --version', { stdio: 'ignore' });
+    } catch {
+      console.error('⨯ Error: Vercel CLI is not installed or not in PATH.');
+      console.error('  Please install it with: npm install -g vercel');
+      process.exit(1);
+    }
+  }
+
+  const registry = await getRegistry();
 
   const siteId = await select({
     message: 'Select a site to deploy to Vercel:',
@@ -20,28 +73,63 @@ async function main() {
     process.exit(1);
   }
 
-  if (!site.vercelProjectId) {
-    console.error(`⨯ Error: "vercelProjectId" is not configured for site [${site.siteId}] in registry.json`);
-    process.exit(1);
-  }
+  const vercelProjectId = site.vercelProjectId || site.siteId;
 
-  const endpoint = site.endpoint || (registry.accountId ? `https://${registry.accountId}.r2.cloudflarestorage.com` : undefined);
+  const endpoint = site.endpoint || registry.endpoint;
 
   if (!endpoint) {
-    console.error(`⨯ Error: No S3 endpoint found. Please provide "endpoint" in site config or "accountId" for Cloudflare R2.`);
+    console.error(`⨯ Error: No S3 endpoint found. Please provide "endpoint" in site or registry configuration.`);
     process.exit(1);
   }
 
   console.log(`\n🚀 Preparing deployment for ${site.domain}...`);
   console.log(`- Site ID: ${site.siteId}`);
-  console.log(`- Vercel Project ID: ${site.vercelProjectId}`);
+  console.log(`- Vercel Project ID: ${vercelProjectId}${site.vercelProjectId ? '' : ' (fallback to siteId)'}`);
 
   const envVars = {
-    S3_ACCESS_KEY_ID: registry.accessKeyId,
-    S3_SECRET_ACCESS_KEY: registry.secretAccessKey,
-    S3_ENDPOINT: endpoint,
-    S3_BUCKET: site.bucketName,
+    [ENV_KEYS.S3_ACCESS_KEY_ID]: registry.accessKeyId,
+    [ENV_KEYS.S3_SECRET_ACCESS_KEY]: registry.secretAccessKey,
+    [ENV_KEYS.S3_ENDPOINT]: endpoint,
+    [ENV_KEYS.S3_BUCKET]: site.bucketName,
+    [ENV_KEYS.VAULT_ROOT]: site.siteId,
   };
+
+  if (isDev) {
+    console.log(`\n🛠️  Running in DEV mode - Updating .env.local for ${site.siteId}...`);
+    
+    let envContent = '';
+    try {
+      envContent = await readFile('.env.local', 'utf-8');
+    } catch {
+      // .env.local might not exist, that's fine
+    }
+
+    const lines = envContent.split('\n');
+    const existingVars: Record<string, string> = {};
+    
+    // Parse existing variables while preserving comments or structure is hard with a simple split,
+    // so we'll just parse keys and re-generate.
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        existingVars[key.trim()] = valueParts.join('=').trim();
+      }
+    });
+
+    // Merge new values
+    const finalVars = { ...existingVars, ...envVars };
+
+    const newContent = Object.entries(finalVars)
+      .filter(([_, v]) => v !== undefined)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+    await writeFile('.env.local', newContent);
+    console.log('✅ .env.local updated successfully.');
+    console.log('\n✨ Local development context switched. Restart npm run dev to see changes.');
+    process.exit(0);
+  }
 
   console.log(`\n📡 Synchronizing environment variables to Vercel...`);
 
@@ -52,24 +140,33 @@ async function main() {
     }
 
     try {
-      // We attempt to remove the variable first to ensure it's updated.
-      // The -y flag skips the confirmation prompt.
-      // We ignore the result of the removal in case it doesn't exist yet.
-      spawnSync('vercel', ['env', 'rm', key, 'production', '-y'], {
-        stdio: 'ignore',
-        env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
-      });
-
-      // Add the variable to the production environment
-      // We use spawnSync to pipe the value into stdin safely
-      const addResult = spawnSync('vercel', ['env', 'add', key, 'production'], {
+      // Step 1: Try to add the environment variable
+      const addResult = await spawnAsync('vercel', ['env', 'add', key, 'production'], {
         input: value,
-        stdio: ['pipe', 'inherit', 'inherit'],
-        env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
       });
 
       if (addResult.status !== 0) {
-        throw new Error(`Command failed with status ${addResult.status}`);
+        const stderr = addResult.stderr.toString();
+        
+        // If it already exists, we use 'update' instead to avoid downtime
+        if (stderr.toLowerCase().includes('already exists')) {
+          const updateResult = await spawnAsync('vercel', ['env', 'update', key, 'production'], {
+            input: value,
+            stdio: ['pipe', 'inherit', 'inherit'],
+            env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
+          });
+
+          if (updateResult.error) throw updateResult.error;
+          if (updateResult.status !== 0) {
+            throw new Error(`Update failed with status ${updateResult.status}`);
+          }
+        } else {
+          // For any other error, we report it and fail
+          process.stderr.write(addResult.stderr);
+          throw addResult.error || new Error(`Command failed with status ${addResult.status}`);
+        }
       }
 
       console.log(`✅ ${key} synchronized.`);
@@ -81,9 +178,9 @@ async function main() {
 
   console.log(`\n📦 Triggering production deployment...`);
   try {
-    execSync('vercel deploy --prod', {
+    await execAsync('vercel deploy --prod', {
       stdio: 'inherit',
-      env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+      env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
     });
     console.log(`\n✨ Deployment successfully triggered!`);
   } catch (err: any) {

@@ -1,11 +1,13 @@
 import { select } from '@inquirer/prompts';
 import { readFile, writeFile, readdir, stat, unlink, access } from 'fs/promises';
 import { constants } from 'fs';
-import { execSync } from 'child_process';
-import { join, basename, extname, relative } from 'path';
+import { spawn } from 'child_process';
+import { join, relative } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
+import { env } from '../src/lib/env';
+import { INDEX_JSON } from '../src/lib/constants';
 
 async function exists(path: string) {
   try {
@@ -14,6 +16,17 @@ async function exists(path: string) {
   } catch {
     return false;
   }
+}
+
+function execAsync(command: string, options: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { ...options, shell: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command failed with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
 }
 
 
@@ -57,7 +70,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
           .split('\n')
           .map(line => line.trim())
           .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
-          [0];
+        [0];
 
         let excerpt = '';
         if (firstParagraph) {
@@ -93,7 +106,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 
         if (posts.length === 0) continue;
 
-        const indexPath = join(postsDir, 'index.json');
+        const indexPath = join(postsDir, INDEX_JSON);
         if (dryRun) {
           console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts at: ${indexPath}`);
         } else {
@@ -110,7 +123,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const posts = await scanMarkdownFiles(vaultPath);
 
   if (posts.length > 0) {
-    const indexPath = join(vaultPath, 'index.json');
+    const indexPath = join(vaultPath, INDEX_JSON);
     if (dryRun) {
       console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts at: ${indexPath}`);
     } else {
@@ -123,7 +136,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 }
 
 async function main() {
-  const registry = getRegistry();
+  const registry = await getRegistry();
   const isDryRun = process.argv.includes('--dry-run');
 
   if (isDryRun) {
@@ -158,19 +171,19 @@ async function main() {
   // Generate index.json at the vault root before syncing
   await generateIndex(site.vaultPath, isDryRun);
 
-  const accountId = registry.accountId || process.env.R2_ACCOUNT_ID;
-  const accessKeyId = registry.accessKeyId || process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY;
+  const endpoint = registry.endpoint || env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
 
-  if (!accountId || !accessKeyId || !secretAccessKey) {
-    console.error('⨯ Error: Missing R2 credentials. Please provide them in registry.json or via environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).');
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    console.error('⨯ Error: Missing S3 credentials. Please provide them in registry.json or via environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).');
     process.exit(1);
   }
 
-  console.log(`\n☁️  Preparing AWS S3 Sync to Cloudflare R2...`);
+  console.log(`\n☁️  Preparing AWS S3 Sync...`);
   console.log(`- Local Path: ${site.vaultPath}`);
-  console.log(`- R2 Bucket:  ${site.bucketName}`);
-  console.log(`- Account ID: ${accountId}\n`);
+  console.log(`- S3 Bucket:  ${site.bucketName}`);
+  console.log(`- Endpoint:   ${endpoint}\n`);
 
   try {
     // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
@@ -180,7 +193,7 @@ async function main() {
       'aws s3 sync',
       `"${site.vaultPath}/"`,
       `"s3://${site.bucketName}/${site.siteId}/"`,
-      `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
+      `--endpoint-url "${endpoint}"`,
       `--exclude "*.DS_Store"`,
       `--exclude "*/.git/*"`,
       `--exclude ".git/*"`,
@@ -191,7 +204,7 @@ async function main() {
     console.log(`Executing:\n> ${syncCommand}\n`);
 
     // stdio: 'inherit' passes the aws-cli output directly to our terminal
-    execSync(syncCommand, {
+    await execAsync(syncCommand, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -226,10 +239,10 @@ async function main() {
           'aws s3 cp',
           `"${registryTmpPath}"`,
           `"s3://${site.bucketName}/registry.json"`,
-          `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
+          `--endpoint-url "${endpoint}"`,
         ].join(' ');
 
-        execSync(uploadRegistryCommand, {
+        await execAsync(uploadRegistryCommand, {
           stdio: 'inherit',
           env: {
             ...process.env,
