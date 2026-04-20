@@ -19,7 +19,7 @@ export async function getRegistry(): Promise<Registry> {
   try {
     const rawData = await readFile(registryPath, 'utf8');
     const jsonData = JSON.parse(rawData);
-    
+
     // Validate with Zod schema
     return RegistrySchema.parse(jsonData);
   } catch (error: any) {
@@ -32,12 +32,4 @@ Refer to skills/registry-migration.md for detailed migration instructions and th
     }
     throw new Error(`Failed to load registry: ${error.message}${migrationGuidance}`);
   }
-}
-
-/**
- * Finds a site in the registry based on its domain.
- */
-export async function getSiteByDomain(domain: string) {
-  const registry = await getRegistry();
-  return registry.sites.find(site => site.domain === domain);
 }
