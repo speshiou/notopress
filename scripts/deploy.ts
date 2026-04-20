@@ -121,6 +121,7 @@ async function main() {
     const finalVars = { ...existingVars, ...envVars };
 
     const newContent = Object.entries(finalVars)
+      .filter(([_, v]) => v !== undefined)
       .map(([k, v]) => `${k}=${v}`)
       .join('\n');
 
