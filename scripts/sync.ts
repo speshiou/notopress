@@ -1,7 +1,7 @@
 import { select } from '@inquirer/prompts';
 import { readFile, writeFile, readdir, stat, unlink, access } from 'fs/promises';
 import { constants } from 'fs';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import { join, basename, extname, relative } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -14,6 +14,17 @@ async function exists(path: string) {
   } catch {
     return false;
   }
+}
+
+function execAsync(command: string, options: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { ...options, shell: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command failed with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
 }
 
 
@@ -123,7 +134,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 }
 
 async function main() {
-  const registry = getRegistry();
+  const registry = await getRegistry();
   const isDryRun = process.argv.includes('--dry-run');
 
   if (isDryRun) {
@@ -191,7 +202,7 @@ async function main() {
     console.log(`Executing:\n> ${syncCommand}\n`);
 
     // stdio: 'inherit' passes the aws-cli output directly to our terminal
-    execSync(syncCommand, {
+    await execAsync(syncCommand, {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -229,7 +240,7 @@ async function main() {
           `--endpoint-url "${endpoint}"`,
         ].join(' ');
 
-        execSync(uploadRegistryCommand, {
+        await execAsync(uploadRegistryCommand, {
           stdio: 'inherit',
           env: {
             ...process.env,

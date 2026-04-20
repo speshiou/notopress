@@ -19,15 +19,19 @@ You can use the following snippet to validate your registry file:
 // scripts/validate-registry.ts
 import { getRegistry } from '../src/lib/registry';
 
-try {
-  const registry = getRegistry();
-  console.log('✅ Registry is valid!');
-  console.log(`Loaded ${registry.sites.length} sites.`);
-} catch (error: any) {
-  console.error('❌ Registry validation failed:');
-  console.error(error.message);
-  process.exit(1);
+async function main() {
+  try {
+    const registry = await getRegistry();
+    console.log('✅ Registry is valid!');
+    console.log(`Loaded ${registry.sites.length} sites.`);
+  } catch (error: any) {
+    console.error('❌ Registry validation failed:');
+    console.error(error.message);
+    process.exit(1);
+  }
 }
+
+main();
 ```
 
 Run it with:

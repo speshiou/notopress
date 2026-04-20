@@ -1,18 +1,56 @@
 import { select } from '@inquirer/prompts';
-import { execSync, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import { getRegistry } from '../src/lib/registry';
+
+function execAsync(command: string, options: any = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { ...options, shell: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command failed with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
+}
+
+function spawnAsync(command: string, args: string[], options: any = {}): Promise<{ status: number | null, signal: string | null, error?: Error, stderr: Buffer }> {
+  return new Promise((resolve) => {
+    const { input, ...spawnOptions } = options;
+    const child = spawn(command, args, spawnOptions);
+    let stderr = Buffer.alloc(0);
+    
+    if (child.stderr) {
+      child.stderr.on('data', (data) => {
+        stderr = Buffer.concat([stderr, data]);
+      });
+    }
+
+    if (input && child.stdin) {
+      child.stdin.write(input);
+      child.stdin.end();
+    }
+
+    child.on('close', (code, signal) => {
+      resolve({ status: code, signal, stderr });
+    });
+
+    child.on('error', (error) => {
+      resolve({ status: null, signal: null, error, stderr });
+    });
+  });
+}
 
 async function main() {
   // Check if vercel CLI is installed
   try {
-    execSync('vercel --version', { stdio: 'ignore' });
+    await execAsync('vercel --version', { stdio: 'ignore' });
   } catch {
     console.error('⨯ Error: Vercel CLI is not installed or not in PATH.');
     console.error('  Please install it with: npm install -g vercel');
     process.exit(1);
   }
 
-  const registry = getRegistry();
+  const registry = await getRegistry();
 
   const siteId = await select({
     message: 'Select a site to deploy to Vercel:',
@@ -59,7 +97,7 @@ async function main() {
 
     try {
       // Step 1: Try to add the environment variable
-      const addResult = spawnSync('vercel', ['env', 'add', key, 'production'], {
+      const addResult = await spawnAsync('vercel', ['env', 'add', key, 'production'], {
         input: value,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
@@ -70,7 +108,7 @@ async function main() {
         
         // If it already exists, we use 'update' instead to avoid downtime
         if (stderr.toLowerCase().includes('already exists')) {
-          const updateResult = spawnSync('vercel', ['env', 'update', key, 'production'], {
+          const updateResult = await spawnAsync('vercel', ['env', 'update', key, 'production'], {
             input: value,
             stdio: ['pipe', 'inherit', 'inherit'],
             env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
@@ -96,7 +134,7 @@ async function main() {
 
   console.log(`\n📦 Triggering production deployment...`);
   try {
-    execSync('vercel deploy --prod', {
+    await execAsync('vercel deploy --prod', {
       stdio: 'inherit',
       env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
     });
