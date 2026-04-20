@@ -20,10 +20,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (!site.vercelProjectId) {
-    console.error(`⨯ Error: "vercelProjectId" is not configured for site [${site.siteId}] in registry.json`);
-    process.exit(1);
-  }
+  const vercelProjectId = site.vercelProjectId || site.siteId;
 
   const endpoint = site.endpoint || (registry.accountId ? `https://${registry.accountId}.r2.cloudflarestorage.com` : undefined);
 
@@ -34,7 +31,7 @@ async function main() {
 
   console.log(`\n🚀 Preparing deployment for ${site.domain}...`);
   console.log(`- Site ID: ${site.siteId}`);
-  console.log(`- Vercel Project ID: ${site.vercelProjectId}`);
+  console.log(`- Vercel Project ID: ${vercelProjectId}${site.vercelProjectId ? '' : ' (fallback to siteId)'}`);
 
   const envVars = {
     S3_ACCESS_KEY_ID: registry.accessKeyId,
@@ -57,7 +54,7 @@ async function main() {
       // We ignore the result of the removal in case it doesn't exist yet.
       spawnSync('vercel', ['env', 'rm', key, 'production', '-y'], {
         stdio: 'ignore',
-        env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+        env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
       });
 
       // Add the variable to the production environment
@@ -65,7 +62,7 @@ async function main() {
       const addResult = spawnSync('vercel', ['env', 'add', key, 'production'], {
         input: value,
         stdio: ['pipe', 'inherit', 'inherit'],
-        env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+        env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
       });
 
       if (addResult.status !== 0) {
@@ -83,7 +80,7 @@ async function main() {
   try {
     execSync('vercel deploy --prod', {
       stdio: 'inherit',
-      env: { ...process.env, VERCEL_PROJECT_ID: site.vercelProjectId }
+      env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
     });
     console.log(`\n✨ Deployment successfully triggered!`);
   } catch (err: any) {
