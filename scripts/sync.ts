@@ -1,7 +1,8 @@
 import { select } from '@inquirer/prompts';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, unlinkSync, opendirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'fs';
 import { execSync } from 'child_process';
 import { join, basename, extname, relative } from 'path';
+import { tmpdir } from 'os';
 import { getRegistry } from '../src/lib/registry';
 
 
@@ -35,9 +36,7 @@ function scanMarkdownFiles(dir: string, baseDir: string = dir): PostMetadata[] {
 
         // Extract Slug: relative path without extension
         const relPath = relative(baseDir, fullPath);
-        const slug = join(
-          relPath.slice(0, relPath.length - extname(relPath).length)
-        );
+        const slug = relPath.slice(0, relPath.length - extname(relPath).length);
 
         // Date: last modified time
         const date = stats.mtime.toISOString();
@@ -209,26 +208,30 @@ async function main() {
         sites: sanitizedSites
       };
 
-      const registryTmpPath = join(process.cwd(), 'registry.sanitized.json');
-      writeFileSync(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
+      const registryTmpPath = join(tmpdir(), `registry.sanitized.${Date.now()}.json`);
+      try {
+        writeFileSync(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
 
-      const uploadRegistryCommand = [
-        'aws s3 cp',
-        `"${registryTmpPath}"`,
-        `"s3://${site.bucketName}/registry.json"`,
-        `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
-      ].join(' ');
+        const uploadRegistryCommand = [
+          'aws s3 cp',
+          `"${registryTmpPath}"`,
+          `"s3://${site.bucketName}/registry.json"`,
+          `--endpoint-url "https://${accountId}.r2.cloudflarestorage.com"`,
+        ].join(' ');
 
-      execSync(uploadRegistryCommand, {
-        stdio: 'inherit',
-        env: {
-          ...process.env,
-          AWS_ACCESS_KEY_ID: accessKeyId,
-          AWS_SECRET_ACCESS_KEY: secretAccessKey
+        execSync(uploadRegistryCommand, {
+          stdio: 'inherit',
+          env: {
+            ...process.env,
+            AWS_ACCESS_KEY_ID: accessKeyId,
+            AWS_SECRET_ACCESS_KEY: secretAccessKey
+          }
+        });
+      } finally {
+        if (existsSync(registryTmpPath)) {
+          unlinkSync(registryTmpPath);
         }
-      });
-
-      unlinkSync(registryTmpPath);
+      }
 
       console.log('\n✅ Sync and registry upload successfully completed!');
     }
