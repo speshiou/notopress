@@ -1,5 +1,6 @@
 import { resolveVaultRequest } from "@/lib/vault";
 import { env } from "@/lib/env";
+import { INDEX_SLUG } from "@/lib/constants";
 import { remark } from "remark";
 import html from "remark-html";
 import Link from "next/link";
@@ -48,7 +49,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
         <div className="flex flex-col min-h-screen bg-white dark:bg-black selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-500">
           <main className="flex-1 max-w-3xl mx-auto w-full py-24 px-8 md:px-12 animate-in fade-in duration-700">
             <header className="mb-20">
-              {result.requestedSlug !== "index" && (
+              {result.requestedSlug !== INDEX_SLUG && (
                 <nav className="mb-12">
                   <Link href="/" className="text-sm font-medium text-zinc-400 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors">
                     ← Home
@@ -56,10 +57,10 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
                 </nav>
               )}
               <h1 className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 mb-6 capitalize leading-tight">
-                {result.requestedSlug === "index" ? "Archive" : result.requestedSlug.split("/").pop()}
+                {result.requestedSlug === INDEX_SLUG ? "Archive" : result.requestedSlug.split("/").pop()}
               </h1>
               <p className="text-lg text-zinc-500 dark:text-zinc-400">
-                Exploring thoughts in <code className="text-sm font-mono bg-zinc-50 dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-800">/{result.requestedSlug === "index" ? "" : result.requestedSlug}</code>
+                Exploring thoughts in <code className="text-sm font-mono bg-zinc-50 dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-800">/{result.requestedSlug === INDEX_SLUG ? "" : result.requestedSlug}</code>
               </p>
             </header>
 

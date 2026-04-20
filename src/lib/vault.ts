@@ -1,5 +1,6 @@
 import { getFileFromS3 } from "./s3";
 import { env } from "./env";
+import { INDEX_SLUG, INDEX_JSON } from "./constants";
 
 export interface PostMetadata {
   title: string;
@@ -25,10 +26,10 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   }
 
   // Normalize slug: empty array or empty string means 'index'
-  const requestedSlug = slugArray && slugArray.length > 0 ? slugArray.join("/") : "index";
+  const requestedSlug = slugArray && slugArray.length > 0 ? slugArray.join("/") : INDEX_SLUG;
 
   // 1. Fetch index.json for validation and collection filtering
-  const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/index.json`);
+  const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
   const allPosts: PostMetadata[] = JSON.parse(indexRaw);
 
   // 2. Routing Priority Logic
@@ -40,29 +41,29 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   }
 
   // 2b. Directory index match (e.g., /folder -> folder/index.md)
-  const indexSlug = `${requestedSlug === "index" ? "" : requestedSlug + "/"}index`;
+  const indexSlug = `${requestedSlug === INDEX_SLUG ? "" : requestedSlug + "/"}${INDEX_SLUG}`;
   // Special case: if requestedSlug is 'index', indexSlug is 'index'. We already checked that in 2a.
   // But for subfolders, e.g., 'blog', indexSlug is 'blog/index'.
-  if (requestedSlug !== "index" && allPosts.some((p) => p.slug === indexSlug)) {
+  if (requestedSlug !== INDEX_SLUG && allPosts.some((p) => p.slug === indexSlug)) {
     const markdown = await getFileFromS3(bucketName, `${vaultRoot}/${indexSlug}.md`);
     return { type: "markdown", content: markdown, matchedSlug: indexSlug };
   }
 
   // 2c. Collection View (list of children in a folder)
-  const dirPrefix = requestedSlug === "index" ? "" : `${requestedSlug}/`;
+  const dirPrefix = requestedSlug === INDEX_SLUG ? "" : `${requestedSlug}/`;
   const hasChildren = allPosts.some((p) => p.slug.startsWith(dirPrefix));
 
-  if (requestedSlug === "index" || hasChildren) {
+  if (requestedSlug === INDEX_SLUG || hasChildren) {
     const collectionPosts = allPosts.filter((p) => {
       if (dirPrefix === "") {
         // Root level: show all top-level files (excluding index itself)
-        return !p.slug.includes("/") && p.slug !== "index";
+        return !p.slug.includes("/") && p.slug !== INDEX_SLUG;
       }
       // Sub-folder: show immediate children only
       if (!p.slug.startsWith(dirPrefix)) return false;
       const relativeSlug = p.slug.slice(dirPrefix.length);
       // Exclude nested children and the directory's own index file
-      return !relativeSlug.includes("/") && p.slug !== "index" && p.slug !== indexSlug;
+      return !relativeSlug.includes("/") && p.slug !== INDEX_SLUG && p.slug !== indexSlug;
     });
 
     return { type: "collection", posts: collectionPosts, requestedSlug };

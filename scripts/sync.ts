@@ -2,11 +2,12 @@ import { select } from '@inquirer/prompts';
 import { readFile, writeFile, readdir, stat, unlink, access } from 'fs/promises';
 import { constants } from 'fs';
 import { spawn } from 'child_process';
-import { join, basename, extname, relative } from 'path';
+import { join, relative } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
-import { env, ENV_KEYS } from '../src/lib/env';
+import { env } from '../src/lib/env';
+import { INDEX_JSON } from '../src/lib/constants';
 
 async function exists(path: string) {
   try {
@@ -69,7 +70,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
           .split('\n')
           .map(line => line.trim())
           .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
-          [0];
+        [0];
 
         let excerpt = '';
         if (firstParagraph) {
@@ -105,7 +106,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 
         if (posts.length === 0) continue;
 
-        const indexPath = join(postsDir, 'index.json');
+        const indexPath = join(postsDir, INDEX_JSON);
         if (dryRun) {
           console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts at: ${indexPath}`);
         } else {
@@ -122,7 +123,7 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const posts = await scanMarkdownFiles(vaultPath);
 
   if (posts.length > 0) {
-    const indexPath = join(vaultPath, 'index.json');
+    const indexPath = join(vaultPath, INDEX_JSON);
     if (dryRun) {
       console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts at: ${indexPath}`);
     } else {
