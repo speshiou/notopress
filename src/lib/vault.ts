@@ -26,7 +26,7 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   }
 
   // Normalize slug: empty array or empty string means 'index'
-  const requestedSlug = slugArray && slugArray.length > 0 ? slugArray.join("/") : INDEX_SLUG;
+  const requestedSlug = slugArray?.filter(Boolean).join("/") || INDEX_SLUG;
 
   // 1. Fetch index.json for validation and collection filtering
   const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
