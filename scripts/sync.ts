@@ -80,6 +80,19 @@ async function main() {
   const registry = getRegistry();
   const isDryRun = process.argv.includes('--dry-run');
 
+  const {
+    R2_ACCOUNT_ID,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    R2_BUCKET_NAME,
+    REGISTRY_PATH
+  } = process.env;
+
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) {
+    console.error('⨯ Error: Missing required environment variables: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME');
+    process.exit(1);
+  }
+
   if (isDryRun) {
     console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   }
@@ -89,18 +102,13 @@ async function main() {
     choices: registry.sites.map(site => ({
       name: `${site.siteId} (${site.domain})`,
       value: site.siteId,
-      description: `Vault: ${site.vaultPath} -> Bucket: ${site.bucketName || 'Not configured'}`,
+      description: `Vault: ${site.vaultPath}`,
     })),
   });
 
   const site = registry.sites.find(s => s.siteId === siteId);
   if (!site) {
     console.error('⨯ Site not found in registry.json');
-    process.exit(1);
-  }
-
-  if (!site.bucketName) {
-    console.error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}] in registry.json`);
     process.exit(1);
   }
 
@@ -114,35 +122,45 @@ async function main() {
 
   console.log(`\n☁️  Preparing AWS S3 Sync to Cloudflare R2...`);
   console.log(`- Local Path: ${site.vaultPath}`);
-  console.log(`- R2 Bucket:  ${site.bucketName}`);
-  console.log(`- Account ID: ${registry.accountId}\n`);
+  console.log(`- R2 Bucket:  ${R2_BUCKET_NAME}/${site.siteId}`);
+  console.log(`- Account ID: ${R2_ACCOUNT_ID}\n`);
 
   try {
-    // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
-    // and not the directory itself.
+    const env = {
+      ...process.env,
+      AWS_ACCESS_KEY_ID: R2_ACCESS_KEY_ID,
+      AWS_SECRET_ACCESS_KEY: R2_SECRET_ACCESS_KEY
+    };
+
+    // 1. Sync site content to s3://bucket/siteId/
     const syncCommand = [
       'aws s3 sync',
       `"${site.vaultPath}/"`,
-      `"s3://${site.bucketName}/"`,
-      `--endpoint-url "https://${registry.accountId}.r2.cloudflarestorage.com"`,
+      `"s3://${R2_BUCKET_NAME}/${site.siteId}/"`,
+      `--endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"`,
       `--exclude "*.DS_Store"`,
       `--exclude "*/.git/*"`,
       `--exclude ".git/*"`,
-      `--delete`, // Automatically delete remote files that don't exist locally
+      `--delete`,
       isDryRun ? '--dryrun' : ''
     ].filter(Boolean).join(' ');
 
     console.log(`Executing:\n> ${syncCommand}\n`);
+    execSync(syncCommand, { stdio: 'inherit', env });
 
-    // stdio: 'inherit' passes the aws-cli output directly to our terminal
-    execSync(syncCommand, {
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        AWS_ACCESS_KEY_ID: registry.accessKeyId,
-        AWS_SECRET_ACCESS_KEY: registry.secretAccessKey
-      }
-    });
+    // 2. Sync registry.json to s3://bucket/registry.json
+    const registryFilePath = REGISTRY_PATH || join(process.cwd(), 'registry.json');
+    const syncRegistryCommand = [
+      'aws s3 cp',
+      `"${registryFilePath}"`,
+      `"s3://${R2_BUCKET_NAME}/registry.json"`,
+      `--endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"`,
+      isDryRun ? '--dryrun' : ''
+    ].filter(Boolean).join(' ');
+
+    console.log(`\n☁️  Syncing registry.json to bucket root...`);
+    console.log(`Executing:\n> ${syncRegistryCommand}\n`);
+    execSync(syncRegistryCommand, { stdio: 'inherit', env });
 
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');
