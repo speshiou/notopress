@@ -8,9 +8,9 @@ export const SiteSchema = z.object({
 });
 
 export const RegistrySchema = z.object({
-  accountId: z.string(),
-  accessKeyId: z.string(),
-  secretAccessKey: z.string(),
+  accountId: z.string().optional(),
+  accessKeyId: z.string().optional(),
+  secretAccessKey: z.string().optional(),
   sites: z.array(SiteSchema),
 });
 
