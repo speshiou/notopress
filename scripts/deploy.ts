@@ -3,6 +3,15 @@ import { execSync, spawnSync } from 'child_process';
 import { getRegistry } from '../src/lib/registry';
 
 async function main() {
+  // Check if vercel CLI is installed
+  try {
+    execSync('vercel --version', { stdio: 'ignore' });
+  } catch {
+    console.error('⨯ Error: Vercel CLI is not installed or not in PATH.');
+    console.error('  Please install it with: npm install -g vercel');
+    process.exit(1);
+  }
+
   const registry = getRegistry();
 
   const siteId = await select({
@@ -49,24 +58,33 @@ async function main() {
     }
 
     try {
-      // We attempt to remove the variable first to ensure it's updated.
-      // The -y flag skips the confirmation prompt.
-      // We ignore the result of the removal in case it doesn't exist yet.
-      spawnSync('vercel', ['env', 'rm', key, 'production', '-y'], {
-        stdio: 'ignore',
-        env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
-      });
-
-      // Add the variable to the production environment
-      // We use spawnSync to pipe the value into stdin safely
+      // Step 1: Try to add the environment variable
       const addResult = spawnSync('vercel', ['env', 'add', key, 'production'], {
         input: value,
-        stdio: ['pipe', 'inherit', 'inherit'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
       });
 
       if (addResult.status !== 0) {
-        throw new Error(`Command failed with status ${addResult.status}`);
+        const stderr = addResult.stderr.toString();
+        
+        // If it already exists, we use 'update' instead to avoid downtime
+        if (stderr.toLowerCase().includes('already exists')) {
+          const updateResult = spawnSync('vercel', ['env', 'update', key, 'production'], {
+            input: value,
+            stdio: ['pipe', 'inherit', 'inherit'],
+            env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
+          });
+
+          if (updateResult.error) throw updateResult.error;
+          if (updateResult.status !== 0) {
+            throw new Error(`Update failed with status ${updateResult.status}`);
+          }
+        } else {
+          // For any other error, we report it and fail
+          process.stderr.write(addResult.stderr);
+          throw addResult.error || new Error(`Command failed with status ${addResult.status}`);
+        }
       }
 
       console.log(`✅ ${key} synchronized.`);
