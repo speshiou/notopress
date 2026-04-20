@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "sync": "tsx --env-file=.env scripts/sync.ts",
+    "deploy": "tsx --env-file=.env scripts/deploy.ts",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },

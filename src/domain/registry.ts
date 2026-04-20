@@ -5,6 +5,7 @@ export const SiteSchema = z.object({
   siteId: z.string(),
   vaultPath: z.string(),
   bucketName: z.string().optional(),
+  vercelProjectId: z.string().optional(),
 });
 
 export const RegistrySchema = z.object({
