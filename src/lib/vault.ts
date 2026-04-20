@@ -17,7 +17,7 @@ export type VaultContent =
  * Resolves a request to the vault and returns the content or metadata.
  * Implements routing priority: Direct Match -> Directory Index -> Collection.
  */
-export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultContent> {
+export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultContent | null> {
   const vaultRoot = env.VAULT_ROOT;
   const bucketName = env.S3_BUCKET;
 
@@ -29,8 +29,15 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   const requestedSlug = slugArray?.filter(Boolean).join("/") || INDEX_SLUG;
 
   // 1. Fetch index.json for validation and collection filtering
-  const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
-  const allPosts: PostMetadata[] = JSON.parse(indexRaw);
+  let allPosts: PostMetadata[];
+  try {
+    const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
+    allPosts = JSON.parse(indexRaw);
+  } catch (error) {
+    // If index.json is missing or invalid, we can't resolve any request
+    console.warn(`Failed to fetch or parse index.json for ${vaultRoot}:`, error);
+    return null;
+  }
 
   // 2. Routing Priority Logic
   
@@ -69,5 +76,5 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
     return { type: "collection", posts: collectionPosts, requestedSlug };
   }
 
-  throw new Error("Vault resource not found");
+  return null;
 }

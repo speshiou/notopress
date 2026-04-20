@@ -8,7 +8,7 @@
       "siteId": "example-blog",
       "vaultPath": "/absolute/path/to/your/obsidian/vault",
       "bucketName": "your-r2-bucket-name",
-      "vercelProjectId": "your-vercel-project-id", // Optional, defaults to siteId
+      "vercelProjectId": "your-vercel-project-id",
       "endpoint": "https://your-custom-s3-endpoint.com"
     }
   ]

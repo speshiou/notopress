@@ -20,6 +20,35 @@ To get started with Notopress, you will need:
 - **Node.js Runtime**: A modern Node.js environment to host and run the application.
 - **S3-Compatible Storage**: Any S3-compatible service (like AWS S3, R2, or MinIO) to store and serve your content assets.
 
+## Configuration
+
+Notopress uses a centralized registry to manage multiple sites and their respective storage configurations.
+
+### Registry Configuration (`registry.json`)
+
+The `registry.json` file is the primary configuration source. You can create it by copying the provided example:
+
+```bash
+cp registry.json.example registry.json
+```
+
+The registry allows you to define global S3 credentials and specific site configurations:
+
+- **Global Settings**: `endpoint`, `accessKeyId`, and `secretAccessKey` can be defined at the root for convenience.
+- **Sites Array**: Each site entry (e.g., `example.com`) can have its own overrides for `endpoint` and `bucketName`.
+
+### Environment Variables
+
+You can also use environment variables for basic configuration or to override registry values. These are typically stored in a `.env` file:
+
+| Variable | Description |
+| :--- | :--- |
+| `S3_ENDPOINT` | Global S3 endpoint URL (fallback if not in registry) |
+| `S3_ACCESS_KEY_ID` | Global S3 access key (fallback if not in registry) |
+| `S3_SECRET_ACCESS_KEY` | Global S3 secret key (fallback if not in registry) |
+| `VAULT_ROOT` | The ID of the site currently being served/synced |
+| `REGISTRY_PATH` | Optional override for the path to `registry.json` |
+
 ## Usage
 
 ### Syncing Content
