@@ -1,9 +1,20 @@
 import { select } from '@inquirer/prompts';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'fs';
+import { readFile, writeFile, readdir, stat, unlink, access } from 'fs/promises';
+import { constants } from 'fs';
 import { execSync } from 'child_process';
 import { join, basename, extname, relative } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
+
+async function exists(path: string) {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 
 interface PostMetadata {
@@ -13,22 +24,22 @@ interface PostMetadata {
   excerpt: string;
 }
 
-function scanMarkdownFiles(dir: string, baseDir: string = dir): PostMetadata[] {
+async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<PostMetadata[]> {
   const posts: PostMetadata[] = [];
 
-  function walk(currentDir: string) {
-    const entries = readdirSync(currentDir, { withFileTypes: true });
+  async function walk(currentDir: string) {
+    const entries = await readdir(currentDir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = join(currentDir, entry.name);
 
       if (entry.isDirectory()) {
         if (entry.name !== '.git' && entry.name !== 'node_modules') {
-          walk(fullPath);
+          await walk(fullPath);
         }
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        const content = readFileSync(fullPath, 'utf-8');
-        const stats = statSync(fullPath);
+        const content = await readFile(fullPath, 'utf-8');
+        const fileStats = await stat(fullPath);
 
         // Extract Title: First H1
         const titleMatch = content.match(/^#\s+(.+)$/m);
@@ -36,10 +47,10 @@ function scanMarkdownFiles(dir: string, baseDir: string = dir): PostMetadata[] {
 
         // Extract Slug: relative path without extension
         const relPath = relative(baseDir, fullPath);
-        const slug = relPath.slice(0, relPath.length - extname(relPath).length);
+        const slug = relPath.replace(/\.md$/, '');
 
         // Date: last modified time
-        const date = stats.mtime.toISOString();
+        const date = fileStats.mtime.toISOString();
 
         // Excerpt: First non-title, non-empty paragraph (truncated)
         const firstParagraph = content
@@ -61,25 +72,24 @@ function scanMarkdownFiles(dir: string, baseDir: string = dir): PostMetadata[] {
     }
   }
 
-  walk(dir);
+  await walk(dir);
 
   // Sort by date descending
   return posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-function generateIndex(vaultPath: string, dryRun: boolean = false) {
+async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const postsBaseDir = join(vaultPath, 'posts');
 
-  if (existsSync(postsBaseDir)) {
+  if (await exists(postsBaseDir)) {
     // Legacy behavior: Get all locale directories (en, ja, zh-hant, etc.)
-    const locales = readdirSync(postsBaseDir).filter(dir => {
-      return statSync(join(postsBaseDir, dir)).isDirectory();
-    });
+    const entries = await readdir(postsBaseDir, { withFileTypes: true });
+    const locales = entries.filter(entry => entry.isDirectory()).map(entry => entry.name);
 
     if (locales.length > 0) {
       for (const locale of locales) {
         const postsDir = join(postsBaseDir, locale);
-        const posts = scanMarkdownFiles(postsDir);
+        const posts = await scanMarkdownFiles(postsDir);
 
         if (posts.length === 0) continue;
 
@@ -87,7 +97,7 @@ function generateIndex(vaultPath: string, dryRun: boolean = false) {
         if (dryRun) {
           console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts at: ${indexPath}`);
         } else {
-          writeFileSync(indexPath, JSON.stringify(posts, null, 2));
+          await writeFile(indexPath, JSON.stringify(posts, null, 2));
           console.log(`✨ Generated [${locale}] index with ${posts.length} posts at: ${indexPath}`);
         }
       }
@@ -97,14 +107,14 @@ function generateIndex(vaultPath: string, dryRun: boolean = false) {
 
   // New behavior: scan vault root if no posts/locale structure
   console.log(`\n🔍 Scanning vault root for markdown files in ${vaultPath}...`);
-  const posts = scanMarkdownFiles(vaultPath);
+  const posts = await scanMarkdownFiles(vaultPath);
 
   if (posts.length > 0) {
     const indexPath = join(vaultPath, 'index.json');
     if (dryRun) {
       console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts at: ${indexPath}`);
     } else {
-      writeFileSync(indexPath, JSON.stringify(posts, null, 2));
+      await writeFile(indexPath, JSON.stringify(posts, null, 2));
       console.log(`✨ Generated vault index with ${posts.length} posts at: ${indexPath}`);
     }
   } else {
@@ -140,13 +150,13 @@ async function main() {
     process.exit(1);
   }
 
-  if (!existsSync(site.vaultPath)) {
+  if (!(await exists(site.vaultPath))) {
     console.error(`⨯ Error: The local vaultPath does not exist: ${site.vaultPath}`);
     process.exit(1);
   }
 
   // Generate index.json at the vault root before syncing
-  generateIndex(site.vaultPath, isDryRun);
+  await generateIndex(site.vaultPath, isDryRun);
 
   const accountId = registry.accountId || process.env.R2_ACCOUNT_ID;
   const accessKeyId = registry.accessKeyId || process.env.R2_ACCESS_KEY_ID;
@@ -208,9 +218,9 @@ async function main() {
         sites: sanitizedSites
       };
 
-      const registryTmpPath = join(tmpdir(), `registry.sanitized.${Date.now()}.json`);
+      const registryTmpPath = join(tmpdir(), `notopress-registry-${randomUUID()}.json`);
       try {
-        writeFileSync(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
+        await writeFile(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
 
         const uploadRegistryCommand = [
           'aws s3 cp',
@@ -228,8 +238,8 @@ async function main() {
           }
         });
       } finally {
-        if (existsSync(registryTmpPath)) {
-          unlinkSync(registryTmpPath);
+        if (await exists(registryTmpPath)) {
+          await unlink(registryTmpPath);
         }
       }
 
