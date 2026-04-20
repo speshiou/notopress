@@ -1,4 +1,5 @@
 import { resolveVaultRequest } from "@/lib/vault";
+import { env } from "@/lib/env";
 import { remark } from "remark";
 import html from "remark-html";
 import Link from "next/link";
@@ -6,7 +7,7 @@ import { notFound } from "next/navigation";
 
 export default async function DynamicPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug: slugArray } = await params;
-  const vaultRoot = process.env.VAULT_ROOT;
+  const vaultRoot = env.VAULT_ROOT;
 
   try {
     const result = await resolveVaultRequest(slugArray);

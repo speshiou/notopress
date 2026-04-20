@@ -2,6 +2,7 @@ import { select } from '@inquirer/prompts';
 import { spawn } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
 import { getRegistry } from '../src/lib/registry';
+import { ENV_KEYS } from '../src/lib/env';
 
 function execAsync(command: string, options: any = {}): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -86,11 +87,11 @@ async function main() {
   console.log(`- Vercel Project ID: ${vercelProjectId}${site.vercelProjectId ? '' : ' (fallback to siteId)'}`);
 
   const envVars = {
-    S3_ACCESS_KEY_ID: registry.accessKeyId,
-    S3_SECRET_ACCESS_KEY: registry.secretAccessKey,
-    S3_ENDPOINT: endpoint,
-    S3_BUCKET: site.bucketName,
-    VAULT_ROOT: site.siteId,
+    [ENV_KEYS.S3_ACCESS_KEY_ID]: registry.accessKeyId,
+    [ENV_KEYS.S3_SECRET_ACCESS_KEY]: registry.secretAccessKey,
+    [ENV_KEYS.S3_ENDPOINT]: endpoint,
+    [ENV_KEYS.S3_BUCKET]: site.bucketName,
+    [ENV_KEYS.VAULT_ROOT]: site.siteId,
   };
 
   if (isDev) {

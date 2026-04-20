@@ -1,4 +1,5 @@
 import { getFileFromS3 } from "./s3";
+import { env } from "./env";
 
 export interface PostMetadata {
   title: string;
@@ -16,8 +17,8 @@ export type VaultContent =
  * Implements routing priority: Direct Match -> Directory Index -> Collection.
  */
 export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultContent> {
-  const vaultRoot = process.env.VAULT_ROOT;
-  const bucketName = process.env.S3_BUCKET;
+  const vaultRoot = env.VAULT_ROOT;
+  const bucketName = env.S3_BUCKET;
 
   if (!vaultRoot || !bucketName) {
     throw new Error("Site configuration missing (VAULT_ROOT or S3_BUCKET).");

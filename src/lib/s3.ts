@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getRegistry } from "./registry";
+import { env } from "./env";
 
 let s3Client: S3Client | null = null;
 
@@ -7,9 +8,9 @@ async function getS3Client() {
   if (s3Client) return s3Client;
 
   const registry = await getRegistry();
-  const endpoint = registry.endpoint || process.env.S3_ENDPOINT;
-  const accessKeyId = registry.accessKeyId || process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = registry.endpoint || env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error("Missing S3 credentials in registry or environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).");

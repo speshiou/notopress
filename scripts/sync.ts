@@ -6,6 +6,7 @@ import { join, basename, extname, relative } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
+import { env, ENV_KEYS } from '../src/lib/env';
 
 async function exists(path: string) {
   try {
@@ -169,9 +170,9 @@ async function main() {
   // Generate index.json at the vault root before syncing
   await generateIndex(site.vaultPath, isDryRun);
 
-  const endpoint = registry.endpoint || process.env.S3_ENDPOINT;
-  const accessKeyId = registry.accessKeyId || process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = registry.endpoint || env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     console.error('⨯ Error: Missing S3 credentials. Please provide them in registry.json or via environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).');
