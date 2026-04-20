@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "sync": "tsx --env-file=.env scripts/sync.ts",
+    "deploy": "tsx --env-file=.env scripts/deploy.ts",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },
@@ -28,6 +29,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
+    "vercel": "^51.8.0",
     "vitest": "^4.1.4"
   }
 }
