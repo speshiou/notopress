@@ -20,7 +20,7 @@ function spawnAsync(command: string, args: string[], options: any = {}): Promise
     const { input, ...spawnOptions } = options;
     const child = spawn(command, args, spawnOptions);
     let stderr = Buffer.alloc(0);
-    
+
     if (child.stderr) {
       child.stderr.on('data', (data) => {
         stderr = Buffer.concat([stderr, data]);
@@ -96,7 +96,7 @@ async function main() {
 
   if (isDev) {
     console.log(`\n🛠️  Running in DEV mode - Updating .env.local for ${site.siteId}...`);
-    
+
     let envContent = '';
     try {
       envContent = await readFile('.env.local', 'utf-8');
@@ -106,7 +106,7 @@ async function main() {
 
     const lines = envContent.split('\n');
     const existingVars: Record<string, string> = {};
-    
+
     // Parse existing variables while preserving comments or structure is hard with a simple split,
     // so we'll just parse keys and re-generate.
     lines.forEach(line => {
@@ -140,8 +140,11 @@ async function main() {
     }
 
     const metadata = Object.values(ENV_METADATA).find(m => m.key === key);
-    const isSensitive = metadata?.isSensitive ?? false;
+    const isSensitive = metadata?.isSensitive === true;
     const sensitiveFlag = isSensitive ? ['--sensitive'] : [];
+
+    // Diagnostic logging to help troubleshoot sensitivity issues
+    console.log(`  Syncing ${key}... (Sensitive: ${isSensitive}${metadata ? '' : ', Metadata NOT FOUND'})`);
 
     try {
       // Step 1: Try to add the environment variable
@@ -153,7 +156,7 @@ async function main() {
 
       if (addResult.status !== 0) {
         const stderr = addResult.stderr.toString();
-        
+
         // If it already exists, we use 'update' instead to avoid downtime
         if (stderr.toLowerCase().includes('already exists')) {
           const updateResult = await spawnAsync('vercel', ['env', 'update', key, 'production', ...sensitiveFlag], {
