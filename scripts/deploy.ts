@@ -2,7 +2,7 @@ import { select } from '@inquirer/prompts';
 import { spawn } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
 import { getRegistry } from '../src/lib/registry';
-import { ENV_KEYS } from '../src/lib/env';
+import { ENV_KEYS, ENV_METADATA } from '../src/lib/env';
 
 function execAsync(command: string, options: any = {}): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -139,9 +139,13 @@ async function main() {
       continue;
     }
 
+    const metadata = Object.values(ENV_METADATA).find(m => m.key === key);
+    const isSensitive = metadata?.isSensitive ?? false;
+    const sensitiveFlag = isSensitive ? ['--sensitive'] : [];
+
     try {
       // Step 1: Try to add the environment variable
-      const addResult = await spawnAsync('vercel', ['env', 'add', key, 'production'], {
+      const addResult = await spawnAsync('vercel', ['env', 'add', key, 'production', ...sensitiveFlag], {
         input: value,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
@@ -152,7 +156,7 @@ async function main() {
         
         // If it already exists, we use 'update' instead to avoid downtime
         if (stderr.toLowerCase().includes('already exists')) {
-          const updateResult = await spawnAsync('vercel', ['env', 'update', key, 'production'], {
+          const updateResult = await spawnAsync('vercel', ['env', 'update', key, 'production', ...sensitiveFlag], {
             input: value,
             stdio: ['pipe', 'inherit', 'inherit'],
             env: { ...process.env, VERCEL_PROJECT_ID: vercelProjectId }
@@ -169,7 +173,7 @@ async function main() {
         }
       }
 
-      console.log(`✅ ${key} synchronized.`);
+      console.log(`✅ ${key} synchronized${isSensitive ? ' (as sensitive)' : ''}.`);
     } catch (err: any) {
       console.error(`⨯ Failed to sync ${key}: ${err.message}`);
       process.exit(1);

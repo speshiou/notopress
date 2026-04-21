@@ -10,6 +10,22 @@ export const ENV_KEYS = {
 } as const;
 
 /**
+ * Metadata for each environment variable, including sensitivity.
+ */
+export interface EnvMetadata {
+  key: string;
+  isSensitive: boolean;
+}
+
+export const ENV_METADATA: Record<keyof typeof ENV_KEYS, EnvMetadata> = {
+  S3_ENDPOINT: { key: ENV_KEYS.S3_ENDPOINT, isSensitive: false },
+  S3_ACCESS_KEY_ID: { key: ENV_KEYS.S3_ACCESS_KEY_ID, isSensitive: true },
+  S3_SECRET_ACCESS_KEY: { key: ENV_KEYS.S3_SECRET_ACCESS_KEY, isSensitive: true },
+  S3_BUCKET: { key: ENV_KEYS.S3_BUCKET, isSensitive: false },
+  VAULT_ROOT: { key: ENV_KEYS.VAULT_ROOT, isSensitive: false },
+};
+
+/**
  * Accessor for environment variables with potential for validation or transformation.
  */
 export const env = {
