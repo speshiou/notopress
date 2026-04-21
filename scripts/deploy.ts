@@ -139,12 +139,15 @@ async function main() {
       continue;
     }
 
-    const metadata = Object.values(ENV_METADATA).find(m => m.key === key);
-    const isSensitive = metadata?.isSensitive === true;
+    const metadata = ENV_METADATA[key as keyof typeof ENV_KEYS];
+    if (!metadata) {
+      throw new Error(`Missing metadata for environment variable: ${key}`);
+    }
+    const isSensitive = metadata.isSensitive;
     const sensitiveFlag = isSensitive ? ['--sensitive'] : [];
 
     // Diagnostic logging to help troubleshoot sensitivity issues
-    console.log(`  Syncing ${key}... (Sensitive: ${isSensitive}${metadata ? '' : ', Metadata NOT FOUND'})`);
+    console.log(`  Syncing ${key}... (Sensitive: ${isSensitive})`);
 
     try {
       // Step 1: Try to add the environment variable
