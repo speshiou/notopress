@@ -37,6 +37,37 @@ interface PostMetadata {
   excerpt: string;
 }
 
+interface VaultIndex {
+  version: number;
+  posts: PostMetadata[];
+  publicFiles: string[];
+}
+
+async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<string[]> {
+  const files: string[] = [];
+
+  async function walk(currentDir: string) {
+    if (!(await exists(currentDir))) return;
+    const entries = await readdir(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        if (entry.name !== '.git' && entry.name !== 'node_modules') {
+          await walk(fullPath);
+        }
+      } else if (entry.isFile()) {
+        const relPath = relative(baseDir, fullPath);
+        files.push(relPath);
+      }
+    }
+  }
+
+  await walk(dir);
+  return files;
+}
+
 async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<PostMetadata[]> {
   const posts: PostMetadata[] = [];
 
@@ -93,6 +124,8 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
 
 async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const postsBaseDir = join(vaultPath, 'posts');
+  const publicBaseDir = join(vaultPath, 'public');
+  const publicFiles = await scanPublicFiles(publicBaseDir);
 
   if (await exists(postsBaseDir)) {
     // Legacy behavior: Get all locale directories (en, ja, zh-hant, etc.)
@@ -104,14 +137,20 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
         const postsDir = join(postsBaseDir, locale);
         const posts = await scanMarkdownFiles(postsDir);
 
-        if (posts.length === 0) continue;
+        if (posts.length === 0 && publicFiles.length === 0) continue;
 
         const indexPath = join(postsDir, INDEX_JSON);
+        const vaultIndex: VaultIndex = {
+          version: 1,
+          posts,
+          publicFiles,
+        };
+
         if (dryRun) {
-          console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts at: ${indexPath}`);
+          console.log(`[DRY RUN] Would generate [${locale}] index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
         } else {
-          await writeFile(indexPath, JSON.stringify(posts, null, 2));
-          console.log(`✨ Generated [${locale}] index with ${posts.length} posts at: ${indexPath}`);
+          await writeFile(indexPath, JSON.stringify(vaultIndex, null, 2));
+          console.log(`✨ Generated [${locale}] index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
         }
       }
       return;
@@ -122,16 +161,22 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   console.log(`\n🔍 Scanning vault root for markdown files in ${vaultPath}...`);
   const posts = await scanMarkdownFiles(vaultPath);
 
-  if (posts.length > 0) {
+  if (posts.length > 0 || publicFiles.length > 0) {
     const indexPath = join(vaultPath, INDEX_JSON);
+    const vaultIndex: VaultIndex = {
+      version: 1,
+      posts,
+      publicFiles,
+    };
+
     if (dryRun) {
-      console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts at: ${indexPath}`);
+      console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
     } else {
-      await writeFile(indexPath, JSON.stringify(posts, null, 2));
-      console.log(`✨ Generated vault index with ${posts.length} posts at: ${indexPath}`);
+      await writeFile(indexPath, JSON.stringify(vaultIndex, null, 2));
+      console.log(`✨ Generated vault index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
     }
   } else {
-    console.warn(`⚠️  No markdown files found in vault: ${vaultPath}. Skipping index generation.`);
+    console.warn(`⚠️  No markdown files or public files found in vault: ${vaultPath}. Skipping index generation.`);
   }
 }
 
