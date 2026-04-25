@@ -56,7 +56,14 @@ async function main() {
     }
   }
 
-  const registry = await getRegistry();
+  // Parse registry path from command line arguments
+  let registryPath: string | undefined;
+  const registryIndex = process.argv.findIndex(arg => arg === '--registry' || arg === '-r');
+  if (registryIndex !== -1 && registryIndex + 1 < process.argv.length) {
+    registryPath = process.argv[registryIndex + 1];
+  }
+
+  const registry = await getRegistry(registryPath);
 
   const siteId = await select({
     message: 'Select a site to deploy to Vercel:',
