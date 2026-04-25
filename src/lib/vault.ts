@@ -9,9 +9,57 @@ export interface PostMetadata {
   excerpt: string;
 }
 
+export interface VaultIndex {
+  version: number;
+  posts: PostMetadata[];
+  publicFiles: string[];
+}
+
 export type VaultContent = 
   | { type: "markdown"; content: string; matchedSlug: string }
   | { type: "collection"; posts: PostMetadata[]; requestedSlug: string };
+
+let cachedIndex: { data: VaultIndex | null; timestamp: number } | null = null;
+const CACHE_TTL = 60 * 1000; // 1 minute
+
+/**
+ * Fetches and parses the vault's index.json, handling both legacy and new formats.
+ */
+export async function getVaultIndex(): Promise<VaultIndex | null> {
+  const now = Date.now();
+  if (cachedIndex && (now - cachedIndex.timestamp < CACHE_TTL)) {
+    return cachedIndex.data;
+  }
+
+  const vaultRoot = env.VAULT_ROOT;
+  const bucketName = env.S3_BUCKET;
+
+  if (!vaultRoot || !bucketName) {
+    throw new Error("Site configuration missing (VAULT_ROOT or S3_BUCKET).");
+  }
+
+  try {
+    const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
+    const parsed = JSON.parse(indexRaw);
+
+    // Backward compatibility: if it's an array, it's the old format (just posts)
+    if (Array.isArray(parsed)) {
+      return {
+        version: 0,
+        posts: parsed,
+        publicFiles: [],
+      };
+    }
+
+    const index = parsed as VaultIndex;
+    cachedIndex = { data: index, timestamp: now };
+    return index;
+  } catch (error) {
+    console.warn(`Failed to fetch or parse index.json for ${vaultRoot}:`, error);
+    cachedIndex = { data: null, timestamp: now };
+    return null;
+  }
+}
 
 /**
  * Resolves a request to the vault and returns the content or metadata.
@@ -29,15 +77,9 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   const requestedSlug = slugArray?.filter(Boolean).join("/") || INDEX_SLUG;
 
   // 1. Fetch index.json for validation and collection filtering
-  let allPosts: PostMetadata[];
-  try {
-    const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
-    allPosts = JSON.parse(indexRaw);
-  } catch (error) {
-    // If index.json is missing or invalid, we can't resolve any request
-    console.warn(`Failed to fetch or parse index.json for ${vaultRoot}:`, error);
-    return null;
-  }
+  const index = await getVaultIndex();
+  if (!index) return null;
+  const allPosts = index.posts;
 
   // 2. Routing Priority Logic
   
