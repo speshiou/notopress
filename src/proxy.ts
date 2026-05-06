@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getVaultIndex } from '@/lib/vault';
 
 export async function proxy(request: NextRequest) {
   const url = new URL(request.url);
@@ -9,39 +8,33 @@ export async function proxy(request: NextRequest) {
   // 1. Skip internal Next.js paths and API routes
   if (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
-    pathname === '/favicon.ico'
+    pathname.startsWith('/api')
   ) {
     return NextResponse.next();
   }
 
-  // 2. Check if the path looks like a static file (has an extension)
+  // 2. Handle fallback for system files like favicon.ico
+  // If the API route redirects back here with ?fallback=true, we skip the vault rewrite.
+  if (url.searchParams.get('fallback') === 'true') {
+    return NextResponse.next();
+  }
+
+  // 3. Check if the path looks like a static file (has an extension)
   const hasExtension = pathname.includes('.') && !pathname.endsWith('/');
   if (!hasExtension) {
     return NextResponse.next();
   }
 
-  // 3. Normalize path for matching (remove leading slash)
+  // 4. Normalize path for matching (remove leading slash)
   const filePath = pathname.slice(1);
 
-  // 4. Check if the file exists in the vault's public directory
-  try {
-    const index = await getVaultIndex();
-    if (index && index.publicFiles && index.publicFiles.includes(filePath)) {
-      // Rewrite to the vault-public API route
-      return NextResponse.rewrite(new URL(`/api/vault-public/${filePath}`, request.url));
-    }
-  } catch (error) {
-    // If we fail to check the index, we just proceed
-    console.error('Middleware: Failed to check vault index:', error);
-  }
-
-  // 5. Fallback to native public dir or other routes
-  return NextResponse.next();
+  // 5. Blind rewrite to vault-public API route
+  // Local files in /public/ are served by Next.js before middleware (if configured)
+  // or will result in a 404 (or fallback redirect) from the API route if not in S3.
+  return NextResponse.rewrite(new URL(`/api/vault-public/${filePath}`, request.url));
 }
 
 export const config = {
   // Apply middleware to all paths except those that clearly shouldn't be matched
-  // But we handle specific exclusions inside the middleware for finer control.
-  matcher: '/((?!_next/static|_next/image|favicon.ico).*)',
+  matcher: '/((?!_next/static|_next/image).*)',
 };

@@ -17,7 +17,8 @@ export interface VaultIndex {
 
 export type VaultContent = 
   | { type: "markdown"; content: string; matchedSlug: string }
-  | { type: "collection"; posts: PostMetadata[]; requestedSlug: string };
+  | { type: "collection"; posts: PostMetadata[]; requestedSlug: string }
+  | { type: "asset"; filePath: string };
 
 let cachedIndex: { data: VaultIndex | null; timestamp: number } | null = null;
 const CACHE_TTL = 60 * 1000; // 1 minute
@@ -63,7 +64,7 @@ export async function getVaultIndex(): Promise<VaultIndex | null> {
 
 /**
  * Resolves a request to the vault and returns the content or metadata.
- * Implements routing priority: Direct Match -> Directory Index -> Collection.
+ * Implements routing priority: Direct Match -> Directory Index -> Asset -> Collection.
  */
 export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultContent | null> {
   const vaultRoot = env.VAULT_ROOT;
@@ -98,7 +99,12 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
     return { type: "markdown", content: markdown, matchedSlug: indexSlug };
   }
 
-  // 2c. Collection View (list of children in a folder)
+  // 2c. Public asset match (e.g., /images/logo.png)
+  if (index.publicFiles && index.publicFiles.includes(requestedSlug)) {
+    return { type: "asset", filePath: requestedSlug };
+  }
+
+  // 2d. Collection View (list of children in a folder)
   const dirPrefix = requestedSlug === INDEX_SLUG ? "" : `${requestedSlug}/`;
   const hasChildren = allPosts.some((p) => p.slug.startsWith(dirPrefix));
 

@@ -88,6 +88,14 @@ export async function GET(
       },
     });
   } catch (error: any) {
+    // Fallback logic for critical system files like favicon.ico
+    if (filePath === "favicon.ico") {
+      const url = new URL(_request.url);
+      url.pathname = "/favicon.ico";
+      url.searchParams.set("fallback", "true");
+      return NextResponse.redirect(url);
+    }
+
     console.error(`Error serving vault public file [${filePath}]:`, error.message);
     return new NextResponse("Not Found", { status: 404 });
   }
