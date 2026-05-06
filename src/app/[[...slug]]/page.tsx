@@ -4,7 +4,7 @@ import { INDEX_SLUG } from "@/lib/constants";
 import { remark } from "remark";
 import html from "remark-html";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 export default async function DynamicPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug: slugArray } = await params;
@@ -14,6 +14,11 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
 
   if (!result) {
     notFound();
+  }
+
+  // 0. Handle public assets (redirect to API route)
+  if (result.type === "asset") {
+    redirect(`/api/vault-public/${result.filePath}`);
   }
 
   // 1. Render matched Markdown file
