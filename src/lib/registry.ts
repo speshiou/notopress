@@ -1,14 +1,15 @@
 import { readFile, access } from 'fs/promises';
 import path from 'path';
 import { RegistrySchema, type Registry } from '../domain/registry';
+import { DEFAULT_REGISTRY_FILENAME } from './constants';
 
 /**
  * Loads and validates the registry configuration.
- * The path can be overridden via the REGISTRY_PATH environment variable.
+ * The path can be overridden via parameter or REGISTRY_PATH environment variable.
  */
-export async function getRegistry(): Promise<Registry> {
-  const defaultPath = path.join(process.cwd(), 'registry.json');
-  const registryPath = process.env.REGISTRY_PATH || defaultPath;
+export async function getRegistry(customPath?: string): Promise<Registry> {
+  const defaultPath = path.join(process.cwd(), DEFAULT_REGISTRY_FILENAME);
+  const registryPath = customPath || process.env.REGISTRY_PATH || defaultPath;
 
   try {
     await access(registryPath);

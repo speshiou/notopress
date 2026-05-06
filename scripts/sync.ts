@@ -9,6 +9,7 @@ import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
 import { INDEX_JSON } from '../src/lib/constants';
 import { PostMetadata, VaultIndex } from '../src/lib/vault';
+import { hasFlag, getFlagValue } from '../src/lib/cli';
 
 async function exists(path: string) {
   try {
@@ -138,8 +139,12 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 }
 
 async function main() {
-  const registry = await getRegistry();
-  const isDryRun = process.argv.includes('--dry-run');
+  const isDryRun = hasFlag({ flag: '--dry-run' });
+
+  // Parse registry path from command line arguments
+  const registryPath = getFlagValue({ flag: '--registry', alias: '-r' });
+
+  const registry = await getRegistry(registryPath);
 
   if (isDryRun) {
     console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
