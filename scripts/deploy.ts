@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
 import { getRegistry } from '../src/lib/registry';
 import { ENV_KEYS, ENV_METADATA } from '../src/lib/env';
+import { hasFlag, getFlagValue } from '../src/lib/cli';
 
 function execAsync(command: string, options: any = {}): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -43,7 +44,7 @@ function spawnAsync(command: string, args: string[], options: any = {}): Promise
 }
 
 async function main() {
-  const isDev = process.argv.includes('--dev');
+  const isDev = hasFlag({ flag: '--dev' });
 
   // Check if vercel CLI is installed (only if NOT in dev mode)
   if (!isDev) {
@@ -57,11 +58,7 @@ async function main() {
   }
 
   // Parse registry path from command line arguments
-  let registryPath: string | undefined;
-  const registryIndex = process.argv.findIndex(arg => arg === '--registry' || arg === '-r');
-  if (registryIndex !== -1 && registryIndex + 1 < process.argv.length) {
-    registryPath = process.argv[registryIndex + 1];
-  }
+  const registryPath = getFlagValue({ flag: '--registry', alias: '-r' });
 
   const registry = await getRegistry(registryPath);
 
