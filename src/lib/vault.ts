@@ -1,19 +1,23 @@
+import { z } from "zod";
 import { getFileFromS3 } from "./s3";
 import { env } from "./env";
 import { INDEX_SLUG, INDEX_JSON } from "./constants";
 
-export interface PostMetadata {
-  title: string;
-  slug: string;
-  date: string;
-  excerpt: string;
-}
+export const PostMetadataSchema = z.object({
+  title: z.string(),
+  slug: z.string(),
+  date: z.string(),
+  excerpt: z.string(),
+});
 
-export interface VaultIndex {
-  version: number;
-  posts: PostMetadata[];
-  publicFiles: string[];
-}
+export const VaultIndexSchema = z.object({
+  version: z.number(),
+  posts: z.array(PostMetadataSchema),
+  publicFiles: z.array(z.string()),
+});
+
+export type PostMetadata = z.infer<typeof PostMetadataSchema>;
+export type VaultIndex = z.infer<typeof VaultIndexSchema>;
 
 export type VaultContent = 
   | { type: "markdown"; content: string; matchedSlug: string }
@@ -45,20 +49,8 @@ export async function getVaultIndex(): Promise<VaultIndex | null> {
 
   try {
     const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
-    const parsed = JSON.parse(indexRaw);
+    const index = VaultIndexSchema.parse(JSON.parse(indexRaw));
 
-    // Backward compatibility: if it's an array, it's the old format (just posts)
-    if (Array.isArray(parsed)) {
-      const legacyIndex = {
-        version: 0,
-        posts: parsed,
-        publicFiles: [],
-      };
-      cachedIndex = { data: legacyIndex, timestamp: now };
-      return legacyIndex;
-    }
-
-    const index = parsed as VaultIndex;
     cachedIndex = { data: index, timestamp: now };
     return index;
   } catch (error) {

@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
 import { INDEX_JSON } from '../src/lib/constants';
+import { PostMetadata, VaultIndex } from '../src/lib/vault';
 
 async function exists(path: string) {
   try {
@@ -29,19 +30,6 @@ function execAsync(command: string, options: any): Promise<void> {
   });
 }
 
-
-interface PostMetadata {
-  title: string;
-  slug: string;
-  date: string;
-  excerpt: string;
-}
-
-interface VaultIndex {
-  version: number;
-  posts: PostMetadata[];
-  publicFiles: string[];
-}
 
 async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<string[]> {
   const files: string[] = [];
