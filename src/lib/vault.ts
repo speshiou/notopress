@@ -21,15 +21,19 @@ export type VaultContent =
   | { type: "asset"; filePath: string };
 
 let cachedIndex: { data: VaultIndex | null; timestamp: number } | null = null;
-const CACHE_TTL = 60 * 1000; // 1 minute
+const SUCCESS_CACHE_TTL = 60 * 1000; // 1 minute
+const ERROR_CACHE_TTL = 5 * 1000;    // 5 seconds
 
 /**
  * Fetches and parses the vault's index.json, handling both legacy and new formats.
  */
 export async function getVaultIndex(): Promise<VaultIndex | null> {
   const now = Date.now();
-  if (cachedIndex && (now - cachedIndex.timestamp < CACHE_TTL)) {
-    return cachedIndex.data;
+  if (cachedIndex) {
+    const ttl = cachedIndex.data === null ? ERROR_CACHE_TTL : SUCCESS_CACHE_TTL;
+    if (now - cachedIndex.timestamp < ttl) {
+      return cachedIndex.data;
+    }
   }
 
   const vaultRoot = env.VAULT_ROOT;
@@ -45,11 +49,13 @@ export async function getVaultIndex(): Promise<VaultIndex | null> {
 
     // Backward compatibility: if it's an array, it's the old format (just posts)
     if (Array.isArray(parsed)) {
-      return {
+      const legacyIndex = {
         version: 0,
         posts: parsed,
         publicFiles: [],
       };
+      cachedIndex = { data: legacyIndex, timestamp: now };
+      return legacyIndex;
     }
 
     const index = parsed as VaultIndex;
@@ -57,6 +63,7 @@ export async function getVaultIndex(): Promise<VaultIndex | null> {
     return index;
   } catch (error) {
     console.warn(`Failed to fetch or parse index.json for ${vaultRoot}:`, error);
+    // Use a shorter TTL for error states to allow faster recovery
     cachedIndex = { data: null, timestamp: now };
     return null;
   }
