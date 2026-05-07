@@ -97,7 +97,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Pa
 
         // Extract Title: Frontmatter title or first H1
         const titleMatch = content.match(/^#\s+(.+)$/m);
-        const title = data.title || (titleMatch ? titleMatch[1].trim() : entry.name);
+        const title = (typeof data.title === 'string' && data.title.trim() !== '' ? data.title : (titleMatch ? titleMatch[1].trim() : entry.name));
 
         // Extract Slug: relative path without extension
         const relPath = relative(baseDir, fullPath);
