@@ -7,6 +7,7 @@ export const PageMetadataSchema = z.object({
   title: z.string(),
   slug: z.string(),
   date: z.string(),
+  updatedAt: z.string(),
   excerpt: z.string(),
 });
 
@@ -20,7 +21,7 @@ export type PageMetadata = z.infer<typeof PageMetadataSchema>;
 export type VaultIndex = z.infer<typeof VaultIndexSchema>;
 
 export type VaultContent = 
-  | { type: "markdown"; content: string; matchedSlug: string }
+  | { type: "markdown"; content: string; matchedSlug: string; metadata: PageMetadata }
   | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
   | { type: "asset"; filePath: string };
 
@@ -84,18 +85,19 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   // 2. Routing Priority Logic
   
   // 2a. Direct file match (e.g., /about -> content/about.md)
-  if (allPages.some((p) => p.slug === requestedSlug)) {
+  const directMatch = allPages.find((p) => p.slug === requestedSlug);
+  if (directMatch) {
     const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${requestedSlug}.md`);
-    return { type: "markdown", content: markdown, matchedSlug: requestedSlug };
+    return { type: "markdown", content: markdown, matchedSlug: requestedSlug, metadata: directMatch };
   }
 
   // 2b. Directory index match (e.g., /folder -> content/folder/page.md)
   const indexSlug = `${requestedSlug === INDEX_SLUG ? "" : requestedSlug + "/"}${INDEX_SLUG}`;
-  // Special case: if requestedSlug is 'page', indexSlug is 'page'. We already checked that in 2a.
-  // But for subfolders, e.g., 'blog', indexSlug is 'blog/page'.
-  if (requestedSlug !== INDEX_SLUG && allPages.some((p) => p.slug === indexSlug)) {
+  const indexMatch = allPages.find((p) => p.slug === indexSlug);
+  
+  if (requestedSlug !== INDEX_SLUG && indexMatch) {
     const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${indexSlug}.md`);
-    return { type: "markdown", content: markdown, matchedSlug: indexSlug };
+    return { type: "markdown", content: markdown, matchedSlug: indexSlug, metadata: indexMatch };
   }
 
   // 2c. Public asset match (e.g., /images/logo.png)

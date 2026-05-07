@@ -1,4 +1,5 @@
 import { select } from '@inquirer/prompts';
+import matter from 'gray-matter';
 import { readFile, writeFile, readdir, stat, unlink, access } from 'fs/promises';
 import { constants } from 'fs';
 import { spawn } from 'child_process';
@@ -71,19 +72,31 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Pa
           await walk(fullPath);
         }
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        const content = await readFile(fullPath, 'utf-8');
+        const fileContent = await readFile(fullPath, 'utf-8');
         const fileStats = await stat(fullPath);
 
-        // Extract Title: First H1
+        const { data, content } = matter(fileContent);
+
+        // Check if published (defaults to true if not specified)
+        if (data.published === false) {
+          console.log(`- Skipping unpublished page: ${entry.name}`);
+          continue;
+        }
+
+        // Extract Title: Frontmatter title or first H1
         const titleMatch = content.match(/^#\s+(.+)$/m);
-        const title = titleMatch ? titleMatch[1].trim() : entry.name;
+        const title = data.title || (titleMatch ? titleMatch[1].trim() : entry.name);
 
         // Extract Slug: relative path without extension
         const relPath = relative(baseDir, fullPath);
         const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
 
-        // Date: last modified time
-        const date = fileStats.mtime.toISOString();
+        // Date: Frontmatter date or last modified time
+        const date = data.date ? new Date(data.date).toISOString() : fileStats.mtime.toISOString();
+        
+        // updatedAt: Frontmatter updated/lastmod or last modified time
+        const manualUpdate = data.updated || data.lastmod;
+        const updatedAt = manualUpdate ? new Date(manualUpdate).toISOString() : fileStats.mtime.toISOString();
 
         // Excerpt: First non-title, non-empty paragraph (truncated)
         const firstParagraph = content
@@ -100,7 +113,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Pa
           }
         }
 
-        pages.push({ title, slug, date, excerpt });
+        pages.push({ title, slug, date, updatedAt, excerpt });
       }
     }
   }
