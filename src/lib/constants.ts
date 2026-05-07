@@ -5,7 +5,7 @@
 /**
  * The reserved slug for directory indexes and the site home page.
  */
-export const INDEX_SLUG = 'index';
+export const INDEX_SLUG = 'page';
 
 /**
  * The filename for the generated post index of a vault.

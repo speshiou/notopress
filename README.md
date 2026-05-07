@@ -20,6 +20,15 @@ To get started with Notopress, you will need:
 - **Node.js Runtime**: A modern Node.js environment to host and run the application.
 - **S3-Compatible Storage**: Any S3-compatible service (like AWS S3, R2, or MinIO) to store and serve your content assets.
 
+## Vault Structure
+
+Notopress requires your content vault to follow a specific directory structure:
+
+- **`content/` (Required)**: This directory contains all your markdown files.
+    - Directory indices must be named **`page.md`** (e.g., `blog/page.md` maps to `/blog`).
+    - The site home page must be located at **`content/page.md`**.
+- **`public/` (Optional)**: This directory contains static assets (images, PDFs, etc.) that will be served at the same path as they appear in the folder.
+
 ## Configuration
 
 Notopress uses a centralized registry to manage multiple sites and their respective storage configurations.
@@ -70,7 +79,7 @@ npm run sync -- --dry-run
 ```
 
 This will:
-- Preview the `index.json` generation for each locale.
+- Preview the `index.json` generation for the `content/` directory.
 - Show which files would be uploaded, updated, or deleted on the remote storage using the AWS CLI's `--dryrun` mode.
 
 ## Roadmap

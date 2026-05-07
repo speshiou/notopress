@@ -67,7 +67,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
       const fullPath = join(currentDir, entry.name);
 
       if (entry.isDirectory()) {
-        if (entry.name !== '.git' && entry.name !== 'node_modules' && entry.name !== 'public') {
+        if (entry.name !== '.git' && entry.name !== 'node_modules') {
           await walk(fullPath);
         }
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
@@ -113,11 +113,16 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
 
 async function generateIndex(vaultPath: string, dryRun: boolean = false) {
   const publicBaseDir = join(vaultPath, 'public');
-  const publicFiles = await scanPublicFiles(publicBaseDir);
+  const publicFiles = await exists(publicBaseDir) ? await scanPublicFiles(publicBaseDir) : [];
 
-  // Scan vault root for markdown files
-  console.log(`\n🔍 Scanning vault root for markdown files in ${vaultPath}...`);
-  const posts = await scanMarkdownFiles(vaultPath);
+  const contentDir = join(vaultPath, 'content');
+  if (!(await exists(contentDir))) {
+    throw new Error(`⨯ Error: The required "content" directory is missing in the vault: ${vaultPath}`);
+  }
+
+  // Scan content directory for markdown files
+  console.log(`\n🔍 Scanning vault "content" directory for markdown files in ${contentDir}...`);
+  const posts = await scanMarkdownFiles(contentDir);
 
   if (posts.length > 0 || publicFiles.length > 0) {
     const indexPath = join(vaultPath, INDEX_JSON);

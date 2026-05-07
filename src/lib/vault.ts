@@ -83,18 +83,18 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
 
   // 2. Routing Priority Logic
   
-  // 2a. Direct file match (e.g., /about -> about.md)
+  // 2a. Direct file match (e.g., /about -> content/about.md)
   if (allPosts.some((p) => p.slug === requestedSlug)) {
-    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/${requestedSlug}.md`);
+    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${requestedSlug}.md`);
     return { type: "markdown", content: markdown, matchedSlug: requestedSlug };
   }
 
-  // 2b. Directory index match (e.g., /folder -> folder/index.md)
+  // 2b. Directory index match (e.g., /folder -> content/folder/page.md)
   const indexSlug = `${requestedSlug === INDEX_SLUG ? "" : requestedSlug + "/"}${INDEX_SLUG}`;
-  // Special case: if requestedSlug is 'index', indexSlug is 'index'. We already checked that in 2a.
-  // But for subfolders, e.g., 'blog', indexSlug is 'blog/index'.
+  // Special case: if requestedSlug is 'page', indexSlug is 'page'. We already checked that in 2a.
+  // But for subfolders, e.g., 'blog', indexSlug is 'blog/page'.
   if (requestedSlug !== INDEX_SLUG && allPosts.some((p) => p.slug === indexSlug)) {
-    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/${indexSlug}.md`);
+    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${indexSlug}.md`);
     return { type: "markdown", content: markdown, matchedSlug: indexSlug };
   }
 
