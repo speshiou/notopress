@@ -3,7 +3,7 @@ import { getFileFromS3 } from "./s3";
 import { env } from "./env";
 import { INDEX_SLUG, INDEX_JSON } from "./constants";
 
-export const PostMetadataSchema = z.object({
+export const PageMetadataSchema = z.object({
   title: z.string(),
   slug: z.string(),
   date: z.string(),
@@ -12,16 +12,16 @@ export const PostMetadataSchema = z.object({
 
 export const VaultIndexSchema = z.object({
   version: z.number(),
-  posts: z.array(PostMetadataSchema),
+  pages: z.array(PageMetadataSchema),
   publicFiles: z.array(z.string()),
 });
 
-export type PostMetadata = z.infer<typeof PostMetadataSchema>;
+export type PageMetadata = z.infer<typeof PageMetadataSchema>;
 export type VaultIndex = z.infer<typeof VaultIndexSchema>;
 
 export type VaultContent = 
   | { type: "markdown"; content: string; matchedSlug: string }
-  | { type: "collection"; posts: PostMetadata[]; requestedSlug: string }
+  | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
   | { type: "asset"; filePath: string };
 
 let cachedIndex: { data: VaultIndex | null; timestamp: number } | null = null;
@@ -79,12 +79,12 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   // 1. Fetch index.json for validation and collection filtering
   const index = await getVaultIndex();
   if (!index) return null;
-  const allPosts = index.posts;
+  const allPages = index.pages;
 
   // 2. Routing Priority Logic
   
   // 2a. Direct file match (e.g., /about -> content/about.md)
-  if (allPosts.some((p) => p.slug === requestedSlug)) {
+  if (allPages.some((p) => p.slug === requestedSlug)) {
     const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${requestedSlug}.md`);
     return { type: "markdown", content: markdown, matchedSlug: requestedSlug };
   }
@@ -93,7 +93,7 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   const indexSlug = `${requestedSlug === INDEX_SLUG ? "" : requestedSlug + "/"}${INDEX_SLUG}`;
   // Special case: if requestedSlug is 'page', indexSlug is 'page'. We already checked that in 2a.
   // But for subfolders, e.g., 'blog', indexSlug is 'blog/page'.
-  if (requestedSlug !== INDEX_SLUG && allPosts.some((p) => p.slug === indexSlug)) {
+  if (requestedSlug !== INDEX_SLUG && allPages.some((p) => p.slug === indexSlug)) {
     const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${indexSlug}.md`);
     return { type: "markdown", content: markdown, matchedSlug: indexSlug };
   }
@@ -105,10 +105,10 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
 
   // 2d. Collection View (list of children in a folder)
   const dirPrefix = requestedSlug === INDEX_SLUG ? "" : `${requestedSlug}/`;
-  const hasChildren = allPosts.some((p) => p.slug.startsWith(dirPrefix));
+  const hasChildren = allPages.some((p) => p.slug.startsWith(dirPrefix));
 
   if (requestedSlug === INDEX_SLUG || hasChildren) {
-    const collectionPosts = allPosts.filter((p) => {
+    const collectionPages = allPages.filter((p) => {
       if (dirPrefix === "") {
         // Root level: show all top-level files (excluding index itself)
         return !p.slug.includes("/") && p.slug !== INDEX_SLUG;
@@ -120,7 +120,7 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
       return !relativeSlug.includes("/") && p.slug !== INDEX_SLUG && p.slug !== indexSlug;
     });
 
-    return { type: "collection", posts: collectionPosts, requestedSlug };
+    return { type: "collection", pages: collectionPages, requestedSlug };
   }
 
   return null;

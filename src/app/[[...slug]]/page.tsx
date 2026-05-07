@@ -34,7 +34,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
               ← Home
             </Link>
           </nav>
-          <article 
+          <article
             className="prose prose-zinc dark:prose-invert prose-lg max-w-none 
               prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100
               prose-p:leading-8 prose-p:text-zinc-600 dark:prose-p:text-zinc-400
@@ -43,7 +43,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
               prose-code:text-zinc-800 dark:prose-code:text-zinc-300 prose-code:bg-zinc-100 dark:prose-code:bg-zinc-900/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
               prose-img:rounded-3xl prose-img:shadow-2xl prose-img:mx-auto prose-img:border prose-img:border-zinc-100 dark:prose-img:border-zinc-800
               prose-hr:border-zinc-100 dark:prose-hr:border-zinc-900"
-            dangerouslySetInnerHTML={{ __html: contentHtml }} 
+            dangerouslySetInnerHTML={{ __html: contentHtml }}
           />
         </main>
         <Footer vaultRoot={vaultRoot || ""} />
@@ -73,21 +73,21 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
           </header>
 
           <div className="grid gap-16">
-            {result.posts.length > 0 ? (
-              result.posts.map((post) => (
-                <Link key={post.slug} href={`/${post.slug}`} className="group block">
+            {result.pages.length > 0 ? (
+              result.pages.map((page) => (
+                <Link key={page.slug} href={`/${page.slug}`} className="group block">
                   <article className="space-y-4">
                     <div className="flex items-center gap-3 text-xs font-bold tracking-widest uppercase text-zinc-400 dark:text-zinc-500">
-                      <span>{new Date(post.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>
+                      <span>{new Date(page.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>
                       <span className="w-1 h-1 rounded-full bg-zinc-200 dark:bg-zinc-800" />
-                      <span>{post.slug.split("/").length > 1 ? post.slug.split("/").slice(0, -1).join(" / ") : "Root"}</span>
+                      <span>{page.slug.split("/").length > 1 ? page.slug.split("/").slice(0, -1).join(" / ") : "Root"}</span>
                     </div>
                     <h2 className="text-3xl font-semibold text-zinc-800 dark:text-zinc-200 group-hover:text-zinc-500 dark:group-hover:text-zinc-400 transition-colors tracking-tight">
-                      {post.title}
+                      {page.title}
                     </h2>
-                    {post.excerpt && (
+                    {page.excerpt && (
                       <p className="text-lg text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-3">
-                        {post.excerpt}
+                        {page.excerpt}
                       </p>
                     )}
                     <div className="pt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100 group-hover:translate-x-1 transition-transform inline-flex items-center gap-2">

@@ -7,8 +7,8 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
-import { INDEX_JSON } from '../src/lib/constants';
-import { PostMetadata, VaultIndex } from '../src/lib/vault';
+import { INDEX_JSON, INDEX_SLUG } from '../src/lib/constants';
+import { PageMetadata, VaultIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 
 async function exists(path: string) {
@@ -57,8 +57,8 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
-async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<PostMetadata[]> {
-  const posts: PostMetadata[] = [];
+async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<PageMetadata[]> {
+  const pages: PageMetadata[] = [];
 
   async function walk(currentDir: string) {
     const entries = await readdir(currentDir, { withFileTypes: true });
@@ -100,7 +100,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
           }
         }
 
-        posts.push({ title, slug, date, excerpt });
+        pages.push({ title, slug, date, excerpt });
       }
     }
   }
@@ -108,7 +108,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Po
   await walk(dir);
 
   // Sort by date descending
-  return posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 async function generateIndex(vaultPath: string, dryRun: boolean = false) {
@@ -122,21 +122,26 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 
   // Scan content directory for markdown files
   console.log(`\n🔍 Scanning vault "content" directory for markdown files in ${contentDir}...`);
-  const posts = await scanMarkdownFiles(contentDir);
+  const pages = await scanMarkdownFiles(contentDir);
 
-  if (posts.length > 0 || publicFiles.length > 0) {
+  const hasRootPage = pages.some(p => p.slug === INDEX_SLUG);
+  if (!hasRootPage) {
+    console.warn(`⚠️  Warning: No root content page found at content/${INDEX_SLUG}.md. The site home page will fallback to a collection view of all pages.`);
+  }
+
+  if (pages.length > 0 || publicFiles.length > 0) {
     const indexPath = join(vaultPath, INDEX_JSON);
     const vaultIndex: VaultIndex = {
       version: 1,
-      posts,
+      pages,
       publicFiles,
     };
 
     if (dryRun) {
-      console.log(`[DRY RUN] Would generate vault index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
+      console.log(`[DRY RUN] Would generate vault index with ${pages.length} pages and ${publicFiles.length} public files at: ${indexPath}`);
     } else {
       await writeFile(indexPath, JSON.stringify(vaultIndex, null, 2));
-      console.log(`✨ Generated vault index with ${posts.length} posts and ${publicFiles.length} public files at: ${indexPath}`);
+      console.log(`✨ Generated vault index with ${pages.length} pages and ${publicFiles.length} public files at: ${indexPath}`);
     }
   } else {
     console.warn(`⚠️  No markdown files or public files found in vault: ${vaultPath}. Skipping index generation.`);
