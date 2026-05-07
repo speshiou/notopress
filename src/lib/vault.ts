@@ -7,7 +7,7 @@ export const PageMetadataSchema = z.object({
   title: z.string(),
   slug: z.string(),
   date: z.string(),
-  updatedAt: z.string(),
+  updatedAt: z.string().optional(),
   excerpt: z.string(),
 });
 

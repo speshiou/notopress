@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
   }
 
   const { metadata } = result;
-  
+
   return {
     title: metadata.title,
     description: metadata.excerpt,
@@ -57,13 +57,17 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
   // 1. Render matched Markdown file
   if (result.type === "markdown") {
     const { content: markdownBody } = matter(result.content);
-    const processedContent = await remark().use(html).process(markdownBody);
+
+    // Strip the first H1 from the body if it exists, to avoid double titles
+    const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
+
+    const processedContent = await remark().use(html).process(bodyWithoutTitle);
     const contentHtml = processedContent.toString();
     const { metadata } = result;
 
     const publishedDate = new Date(metadata.date);
-    const updatedDate = new Date(metadata.updatedAt);
-    const hasBeenUpdated = updatedDate.getTime() - publishedDate.getTime() > 24 * 60 * 60 * 1000; // More than 1 day difference
+    const updatedDate = metadata.updatedAt ? new Date(metadata.updatedAt) : null;
+    const hasBeenUpdated = updatedDate && updatedDate.getTime() - publishedDate.getTime() > 24 * 60 * 60 * 1000; // More than 1 day difference
 
     return (
       <div className="flex flex-col min-h-screen bg-white dark:bg-black selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-500">
@@ -73,7 +77,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
               ← Home
             </Link>
           </nav>
-          
+
           <header className="mb-16">
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 mb-8 leading-tight">
               {metadata.title}
@@ -82,7 +86,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
               <time dateTime={metadata.date} className="flex items-center gap-2">
                 Published on {publishedDate.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
               </time>
-              {hasBeenUpdated && (
+              {hasBeenUpdated && updatedDate && (
                 <>
                   <span className="text-zinc-200 dark:text-zinc-800">•</span>
                   <span className="italic">
