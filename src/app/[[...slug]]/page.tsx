@@ -3,8 +3,41 @@ import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
 import { remark } from "remark";
 import html from "remark-html";
+import matter from "gray-matter";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { Metadata } from "next";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug?: string[] }> }): Promise<Metadata> {
+  const { slug: slugArray } = await params;
+  const result = await resolveVaultRequest(slugArray);
+
+  if (!result || result.type !== "markdown") {
+    return {};
+  }
+
+  const { metadata } = result;
+
+  return {
+    title: metadata.title,
+    description: metadata.excerpt,
+    openGraph: {
+      title: metadata.title,
+      description: metadata.excerpt,
+      type: "article",
+      publishedTime: metadata.date,
+      modifiedTime: metadata.updatedAt,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: metadata.title,
+      description: metadata.excerpt,
+    },
+    alternates: {
+      canonical: `/${metadata.slug}`,
+    },
+  };
+}
 
 export default async function DynamicPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug: slugArray } = await params;
@@ -23,8 +56,18 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
 
   // 1. Render matched Markdown file
   if (result.type === "markdown") {
-    const processedContent = await remark().use(html).process(result.content);
+    const { content: markdownBody } = matter(result.content);
+
+    // Strip the first H1 from the body if it exists, to avoid double titles
+    const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
+
+    const processedContent = await remark().use(html).process(bodyWithoutTitle);
     const contentHtml = processedContent.toString();
+    const { metadata } = result;
+
+    const publishedDate = new Date(metadata.date);
+    const updatedDate = metadata.updatedAt ? new Date(metadata.updatedAt) : null;
+    const hasBeenUpdated = updatedDate && updatedDate.getTime() - publishedDate.getTime() > 24 * 60 * 60 * 1000; // More than 1 day difference
 
     return (
       <div className="flex flex-col min-h-screen bg-white dark:bg-black selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-500">
@@ -34,6 +77,26 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
               ← Home
             </Link>
           </nav>
+
+          <header className="mb-16">
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 mb-8 leading-tight">
+              {metadata.title}
+            </h1>
+            <div className="flex flex-wrap items-center gap-4 text-sm font-medium text-zinc-400 dark:text-zinc-500">
+              <time dateTime={metadata.date} className="flex items-center gap-2">
+                Published on {publishedDate.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+              </time>
+              {hasBeenUpdated && updatedDate && (
+                <>
+                  <span className="text-zinc-200 dark:text-zinc-800">•</span>
+                  <span className="italic">
+                    Last updated {updatedDate.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                  </span>
+                </>
+              )}
+            </div>
+          </header>
+
           <article
             className="prose prose-zinc dark:prose-invert prose-lg max-w-none 
               prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100
