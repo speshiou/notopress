@@ -21,7 +21,7 @@ async function exists(path: string) {
   }
 }
 
-function execAsync(command: string, options: any): Promise<void> {
+async function execAsync(command: string, options: any): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { ...options, shell: true });
     child.on('close', (code) => {
@@ -30,6 +30,18 @@ function execAsync(command: string, options: any): Promise<void> {
     });
     child.on('error', (err) => reject(err));
   });
+}
+
+function parseSafeDate(dateInput: any, fallback: Date, label: string, filePath: string): string {
+  if (!dateInput) return fallback.toISOString();
+  
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) {
+    console.warn(`⚠️  Warning: Invalid ${label} "${dateInput}" in ${filePath}. Falling back to file modification time.`);
+    return fallback.toISOString();
+  }
+  
+  return date.toISOString();
 }
 
 
@@ -92,11 +104,11 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Pa
         const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
 
         // Date: Frontmatter date or last modified time
-        const date = data.date ? new Date(data.date).toISOString() : fileStats.mtime.toISOString();
+        const date = parseSafeDate(data.date, fileStats.mtime, 'date', relPath);
         
         // updatedAt: Frontmatter updated/lastmod or last modified time
         const manualUpdate = data.updated || data.lastmod;
-        const updatedAt = manualUpdate ? new Date(manualUpdate).toISOString() : fileStats.mtime.toISOString();
+        const updatedAt = parseSafeDate(manualUpdate, fileStats.mtime, 'updated', relPath);
 
         // Excerpt: First non-title, non-empty paragraph (truncated)
         const firstParagraph = content
