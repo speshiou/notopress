@@ -48,7 +48,7 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
         }
       } else if (entry.isFile()) {
         const relPath = relative(baseDir, fullPath);
-        files.push(relPath);
+        files.push(relPath.replace(/\\/g, '/'));
       }
     }
   }
@@ -80,7 +80,7 @@ async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<Pa
 
         // Extract Slug: relative path without extension
         const relPath = relative(baseDir, fullPath);
-        const slug = relPath.replace(/\.md$/, '');
+        const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
 
         // Date: last modified time
         const date = fileStats.mtime.toISOString();
