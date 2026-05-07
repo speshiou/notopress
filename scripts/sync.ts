@@ -117,7 +117,8 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
 
   const contentDir = join(vaultPath, 'content');
   if (!(await exists(contentDir))) {
-    throw new Error(`⨯ Error: The required "content" directory is missing in the vault: ${vaultPath}`);
+    console.error(`⨯ Error: The required "content" directory is missing in the vault: ${vaultPath}`);
+    process.exit(1);
   }
 
   // Scan content directory for markdown files
