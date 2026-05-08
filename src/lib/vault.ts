@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getFileFromS3 } from "./s3";
 import { env } from "./env";
-import { INDEX_SLUG, INDEX_JSON } from "./constants";
+import { INDEX_SLUG, INDEX_JSON, ROOT_JSON } from "./constants";
 
 export const PageMetadataSchema = z.object({
   title: z.string(),
@@ -14,30 +14,35 @@ export const PageMetadataSchema = z.object({
 export const VaultIndexSchema = z.object({
   version: z.number(),
   pages: z.array(PageMetadataSchema),
-  publicFiles: z.array(z.string()),
+  directories: z.array(z.string()).optional(),
+  publicFiles: z.array(z.string()).optional(),
 });
 
 export type PageMetadata = z.infer<typeof PageMetadataSchema>;
 export type VaultIndex = z.infer<typeof VaultIndexSchema>;
 
-export type VaultContent = 
+export type VaultContent =
   | { type: "markdown"; content: string; matchedSlug: string; metadata: PageMetadata }
   | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
   | { type: "asset"; filePath: string };
 
-let cachedIndex: { data: VaultIndex | null; timestamp: number } | null = null;
+// Cache for multiple indices
+const indexCache = new Map<string, { data: VaultIndex | null; timestamp: number }>();
 const SUCCESS_CACHE_TTL = 60 * 1000; // 1 minute
 const ERROR_CACHE_TTL = 5 * 1000;    // 5 seconds
 
 /**
- * Fetches and parses the vault's index.json, handling both legacy and new formats.
+ * Fetches and parses a specific index.json or root.json from the vault.
  */
-export async function getVaultIndex(): Promise<VaultIndex | null> {
+export async function getVaultIndex(subPath: string = ""): Promise<VaultIndex | null> {
   const now = Date.now();
-  if (cachedIndex) {
-    const ttl = cachedIndex.data === null ? ERROR_CACHE_TTL : SUCCESS_CACHE_TTL;
-    if (now - cachedIndex.timestamp < ttl) {
-      return cachedIndex.data;
+  const cacheKey = subPath || "ROOT";
+
+  const cached = indexCache.get(cacheKey);
+  if (cached) {
+    const ttl = cached.data === null ? ERROR_CACHE_TTL : SUCCESS_CACHE_TTL;
+    if (now - cached.timestamp < ttl) {
+      return cached.data;
     }
   }
 
@@ -49,22 +54,21 @@ export async function getVaultIndex(): Promise<VaultIndex | null> {
   }
 
   try {
-    const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${INDEX_JSON}`);
+    const fileName = subPath === "" ? ROOT_JSON : `content/${subPath}/${INDEX_JSON}`;
+    const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${fileName}`);
     const index = VaultIndexSchema.parse(JSON.parse(indexRaw));
 
-    cachedIndex = { data: index, timestamp: now };
+    indexCache.set(cacheKey, { data: index, timestamp: now });
     return index;
   } catch (error) {
-    console.warn(`Failed to fetch or parse index.json for ${vaultRoot}:`, error);
-    // Use a shorter TTL for error states to allow faster recovery
-    cachedIndex = { data: null, timestamp: now };
+    console.warn(`Failed to fetch index at "${subPath}" for ${vaultRoot}:`, error);
+    indexCache.set(cacheKey, { data: null, timestamp: now });
     return null;
   }
 }
 
 /**
- * Resolves a request to the vault and returns the content or metadata.
- * Implements routing priority: Direct Match -> Directory Index -> Asset -> Collection.
+ * Resolves a request by jumping directly to the correct index using the master directory map.
  */
 export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultContent | null> {
   const vaultRoot = env.VAULT_ROOT;
@@ -74,55 +78,63 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
     throw new Error("Site configuration missing (VAULT_ROOT or S3_BUCKET).");
   }
 
-  // Normalize slug: empty array or empty string means 'index'
-  const requestedSlug = slugArray?.filter(Boolean).join("/") || INDEX_SLUG;
+  const segments = slugArray?.filter(Boolean) || [];
+  const requestedSlug = segments.join("/") || INDEX_SLUG;
 
-  // 1. Fetch index.json for validation and collection filtering
-  const index = await getVaultIndex();
-  if (!index) return null;
-  const allPages = index.pages;
+  // 1. Fetch root index (The Master Map)
+  const rootIndex = await getVaultIndex("");
+  if (!rootIndex) return null;
 
-  // 2. Routing Priority Logic
-  
-  // 2a. Direct file match (e.g., /about -> content/about.md)
-  const directMatch = allPages.find((p) => p.slug === requestedSlug);
-  if (directMatch) {
-    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${requestedSlug}.md`);
-    return { type: "markdown", content: markdown, matchedSlug: requestedSlug, metadata: directMatch };
-  }
-
-  // 2b. Directory index match (e.g., /folder -> content/folder/page.md)
-  const indexSlug = `${requestedSlug === INDEX_SLUG ? "" : requestedSlug + "/"}${INDEX_SLUG}`;
-  const indexMatch = allPages.find((p) => p.slug === indexSlug);
-  
-  if (requestedSlug !== INDEX_SLUG && indexMatch) {
-    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${indexSlug}.md`);
-    return { type: "markdown", content: markdown, matchedSlug: indexSlug, metadata: indexMatch };
-  }
-
-  // 2c. Public asset match (e.g., /images/logo.png)
-  if (index.publicFiles && index.publicFiles.includes(requestedSlug)) {
+  // 2. Check for public asset match (only in root.json)
+  if (segments.length > 0 && rootIndex.publicFiles?.includes(requestedSlug)) {
     return { type: "asset", filePath: requestedSlug };
   }
 
-  // 2d. Collection View (list of children in a folder)
-  const dirPrefix = requestedSlug === INDEX_SLUG ? "" : `${requestedSlug}/`;
-  const hasChildren = allPages.some((p) => p.slug.startsWith(dirPrefix));
+  // 3. Routing Priority Logic
 
-  if (requestedSlug === INDEX_SLUG || hasChildren) {
-    const collectionPages = allPages.filter((p) => {
-      if (dirPrefix === "") {
-        // Root level: show all top-level files (excluding index itself)
-        return !p.slug.includes("/") && p.slug !== INDEX_SLUG;
-      }
-      // Sub-folder: show immediate children only
-      if (!p.slug.startsWith(dirPrefix)) return false;
-      const relativeSlug = p.slug.slice(dirPrefix.length);
-      // Exclude nested children and the directory's own index file
-      return !relativeSlug.includes("/") && p.slug !== INDEX_SLUG && p.slug !== indexSlug;
-    });
+  // 3a. Is it a page at the root level?
+  const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
+  if (rootPageMatch) {
+    const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${rootPageMatch.slug}.md`);
+    return { type: "markdown", content: markdown, matchedSlug: rootPageMatch.slug, metadata: rootPageMatch };
+  }
 
-    return { type: "collection", pages: collectionPages, requestedSlug };
+  // 3b. Is it a page in a nested directory? (Direct Jump)
+  const parentDir = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
+  const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
+
+  if (parentDir && rootIndex.directories?.includes(parentDir)) {
+    const dirIndex = await getVaultIndex(parentDir);
+    const nestedMatch = dirIndex?.pages.find(p => p.slug === lastSegment);
+    if (nestedMatch) {
+      // requestedSlug is the full path required for S3
+      const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${requestedSlug}.md`);
+      return { type: "markdown", content: markdown, matchedSlug: requestedSlug, metadata: nestedMatch };
+    }
+  }
+
+  // 3c. Is it a directory? (Collection View)
+  const isDirectory = rootIndex.directories?.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
+  if (isDirectory) {
+    const targetDir = requestedSlug === INDEX_SLUG ? "" : requestedSlug;
+    const dirIndex = await getVaultIndex(targetDir);
+
+    if (dirIndex) {
+      // Pages are already relative, just exclude the index file
+      const collectionPages = dirIndex.pages.filter(p => p.slug !== INDEX_SLUG);
+      return { type: "collection", pages: collectionPages, requestedSlug };
+    }
+  }
+
+  // 3d. Fallback: Is it an index page inside a folder (e.g., /folder -> folder/page.md)
+  if (rootIndex.directories?.includes(requestedSlug)) {
+    const dirIndex = await getVaultIndex(requestedSlug);
+    const indexMatch = dirIndex?.pages.find(p => p.slug === INDEX_SLUG);
+    if (indexMatch) {
+      const fullPath = `${requestedSlug}/${INDEX_SLUG}`;
+      const markdown = await getFileFromS3(bucketName, `${vaultRoot}/content/${fullPath}.md`);
+      return { type: "markdown", content: markdown, matchedSlug: fullPath, metadata: indexMatch };
+    }
   }
 
   return null;

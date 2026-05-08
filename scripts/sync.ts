@@ -8,7 +8,7 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
-import { INDEX_JSON, INDEX_SLUG } from '../src/lib/constants';
+import { INDEX_JSON, INDEX_SLUG, ROOT_JSON } from '../src/lib/constants';
 import { PageMetadata, VaultIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 
@@ -34,13 +34,13 @@ async function execAsync(command: string, options: any): Promise<void> {
 
 function parseSafeDate(dateInput: any, fallback: Date, label: string, filePath: string): string {
   if (!dateInput) return fallback.toISOString();
-  
+
   const date = new Date(dateInput);
   if (isNaN(date.getTime())) {
     console.warn(`⚠️  Warning: Invalid ${label} "${dateInput}" in ${filePath}. Falling back to file modification time.`);
     return fallback.toISOString();
   }
-  
+
   return date.toISOString();
 }
 
@@ -70,73 +70,81 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
-async function scanMarkdownFiles(dir: string, baseDir: string = dir): Promise<PageMetadata[]> {
+async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): Promise<{ index: VaultIndex; allDirs: string[] }> {
+  const entries = await readdir(dir, { withFileTypes: true });
   const pages: PageMetadata[] = [];
+  const directories: string[] = [];
+  let allDirs: string[] = [];
 
-  async function walk(currentDir: string) {
-    const entries = await readdir(currentDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
 
-    for (const entry of entries) {
-      const fullPath = join(currentDir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '.git' && entry.name !== 'node_modules') {
+        const result = await scanAndGenerate(fullPath, baseDir, dryRun);
+        directories.push(entry.name);
 
-      if (entry.isDirectory()) {
-        if (entry.name !== '.git' && entry.name !== 'node_modules') {
-          await walk(fullPath);
-        }
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        const fileContent = await readFile(fullPath, 'utf-8');
-        const fileStats = await stat(fullPath);
-
-        const { data, content } = matter(fileContent);
-
-        // Check if published (defaults to true if not specified)
-        if (data.published === false) {
-          console.log(`- Skipping unpublished page: ${entry.name}`);
-          continue;
-        }
-
-        // Extract Title: Frontmatter title or first H1
-        const titleMatch = content.match(/^#\s+(.+)$/m);
-        const title = (typeof data.title === 'string' && data.title.trim() !== '' ? data.title : (titleMatch ? titleMatch[1].trim() : entry.name));
-
-        // Extract Slug: relative path without extension
-        const relPath = relative(baseDir, fullPath);
-        const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
-
-        // Date: Frontmatter date or last modified time
-        const date = parseSafeDate(data.date, fileStats.mtime, 'date', relPath);
-        
-        // updatedAt: Frontmatter updated/lastmod or last modified time
-        const manualUpdate = data.updated || data.lastmod;
-        const updatedAt = parseSafeDate(manualUpdate, fileStats.mtime, 'updated', relPath);
-
-        // Excerpt: First non-title, non-empty paragraph (truncated)
-        const firstParagraph = content
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
-        [0];
-
-        let excerpt = '';
-        if (firstParagraph) {
-          excerpt = firstParagraph.slice(0, 160);
-          if (firstParagraph.length > 160) {
-            excerpt += '...';
-          }
-        }
-
-        pages.push({ title, slug, date, updatedAt, excerpt });
+        const relDir = relative(baseDir, fullPath).replace(/\\/g, '/');
+        allDirs.push(relDir, ...result.allDirs);
       }
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      const fileContent = await readFile(fullPath, 'utf-8');
+      const fileStats = await stat(fullPath);
+
+      const { data, content } = matter(fileContent);
+
+      if (data.published === false) {
+        continue;
+      }
+
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = (typeof data.title === 'string' && data.title.trim() !== '' ? data.title : (titleMatch ? titleMatch[1].trim() : entry.name));
+
+      const relPath = relative(dir, fullPath);
+      const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
+
+      const date = parseSafeDate(data.date, fileStats.mtime, 'date', relPath);
+      const manualUpdate = data.updated || data.lastmod;
+      const updatedAt = parseSafeDate(manualUpdate, fileStats.mtime, 'updated', relPath);
+
+      const firstParagraph = content
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
+      [0];
+
+      let excerpt = '';
+      if (firstParagraph) {
+        excerpt = firstParagraph.slice(0, 160);
+        if (firstParagraph.length > 160) {
+          excerpt += '...';
+        }
+      }
+
+      pages.push({ title, slug, date, updatedAt, excerpt });
     }
   }
 
-  await walk(dir);
+  pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Sort by date descending
-  return pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const indexData: VaultIndex = {
+    version: 1,
+    pages,
+    directories,
+  };
+
+  const indexPath = join(dir, INDEX_JSON);
+  const relDirName = relative(baseDir, dir) || 'root';
+
+  if (!dryRun) {
+    await writeFile(indexPath, JSON.stringify(indexData, null, 2));
+    console.log(`✨ Generated index for "${relDirName}"`);
+  }
+
+  return { index: indexData, allDirs };
 }
 
-async function generateIndex(vaultPath: string, dryRun: boolean = false) {
+async function generateIndices(vaultPath: string, dryRun: boolean = false) {
   const publicBaseDir = join(vaultPath, 'public');
   const publicFiles = await exists(publicBaseDir) ? await scanPublicFiles(publicBaseDir) : [];
 
@@ -146,31 +154,23 @@ async function generateIndex(vaultPath: string, dryRun: boolean = false) {
     process.exit(1);
   }
 
-  // Scan content directory for markdown files
-  console.log(`\n🔍 Scanning vault "content" directory for markdown files in ${contentDir}...`);
-  const pages = await scanMarkdownFiles(contentDir);
+  // 1. Recursive generation of index.json for each level in content/
+  console.log(`\n🔍 Recursively scanning "content" directory in ${contentDir}...`);
+  const { index: rootContentIndex, allDirs } = await scanAndGenerate(contentDir, contentDir, dryRun);
 
-  const hasRootPage = pages.some(p => p.slug === INDEX_SLUG);
-  if (!hasRootPage) {
-    console.warn(`⚠️  Warning: No root content page found at content/${INDEX_SLUG}.md. The site home page will fallback to a collection view of all pages.`);
-  }
+  // 2. Generate root.json at vault root pointing to top-level content
+  const rootPath = join(vaultPath, ROOT_JSON);
+  const vaultRootIndex: VaultIndex = {
+    ...rootContentIndex,
+    directories: allDirs, // root.json contains the full directory map
+    publicFiles,
+  };
 
-  if (pages.length > 0 || publicFiles.length > 0) {
-    const indexPath = join(vaultPath, INDEX_JSON);
-    const vaultIndex: VaultIndex = {
-      version: 1,
-      pages,
-      publicFiles,
-    };
-
-    if (dryRun) {
-      console.log(`[DRY RUN] Would generate vault index with ${pages.length} pages and ${publicFiles.length} public files at: ${indexPath}`);
-    } else {
-      await writeFile(indexPath, JSON.stringify(vaultIndex, null, 2));
-      console.log(`✨ Generated vault index with ${pages.length} pages and ${publicFiles.length} public files at: ${indexPath}`);
-    }
+  if (dryRun) {
+    console.log(`[DRY RUN] Would generate master root index at: ${rootPath}`);
   } else {
-    console.warn(`⚠️  No markdown files or public files found in vault: ${vaultPath}. Skipping index generation.`);
+    await writeFile(rootPath, JSON.stringify(vaultRootIndex, null, 2));
+    console.log(`✨ Generated master root index with ${allDirs.length} directories at: ${rootPath}`);
   }
 }
 
@@ -211,8 +211,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Generate index.json at the vault root before syncing
-  await generateIndex(site.vaultPath, isDryRun);
+  // Generate index files at every level and root.json at the vault root before syncing
+  await generateIndices(site.vaultPath, isDryRun);
 
   const endpoint = registry.endpoint || env.S3_ENDPOINT;
   const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;

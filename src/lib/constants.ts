@@ -13,6 +13,11 @@ export const INDEX_SLUG = 'page';
 export const INDEX_JSON = 'index.json';
 
 /**
+ * The filename for the master sitemap index of a vault.
+ */
+export const ROOT_JSON = 'root.json';
+
+/**
  * The default filename for the registry configuration.
  */
 export const DEFAULT_REGISTRY_FILENAME = 'registry.json';
