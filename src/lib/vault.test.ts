@@ -106,4 +106,34 @@ describe("Vault Resolution (Unit Tests)", () => {
       expect(result.pages[0].title).toBe("Post 1");
     }
   });
+
+  it("should prioritize index page over collection view in a directory", async () => {
+    const mockRoot = {
+      version: 1,
+      pages: [],
+      directories: ["blog"],
+      publicFiles: [],
+    };
+
+    const mockBlogIndex = {
+      version: 1,
+      pages: [
+        { title: "Blog Home", slug: INDEX_SLUG, date: "2024-01-01", excerpt: "Home" },
+        { title: "Other Post", slug: "other", date: "2024-01-02", excerpt: "Other" },
+      ],
+    };
+
+    vi.mocked(s3.getFileFromS3)
+      .mockResolvedValueOnce(JSON.stringify(mockRoot))
+      .mockResolvedValueOnce(JSON.stringify(mockBlogIndex))
+      .mockResolvedValueOnce("# Welcome to the Blog");
+
+    const result = await resolveVaultRequest(mockConfig, ["blog"]);
+
+    expect(result?.type).toBe("markdown");
+    if (result?.type === "markdown") {
+      expect(result.metadata.title).toBe("Blog Home");
+      expect(result.content).toBe("# Welcome to the Blog");
+    }
+  });
 });

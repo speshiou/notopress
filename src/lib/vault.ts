@@ -124,27 +124,24 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
     }
   }
 
-  // 3c. Is it a directory? (Collection View)
+  // 3c. Is it a directory? (Serves Index Page or Collection View)
   const isDirectory = rootIndex.directories.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
   if (isDirectory) {
     const targetDir = requestedSlug === INDEX_SLUG ? "" : requestedSlug;
     const dirIndex = await fetchDirectoryIndex(config, targetDir);
     
     if (dirIndex) {
-      // Pages are already relative, just exclude the index file
+      // Priority 1: Check for explicit index page (e.g. folder/page.md)
+      const indexMatch = dirIndex.pages.find(p => p.slug === INDEX_SLUG);
+      if (indexMatch) {
+        const fullPath = targetDir ? `${targetDir}/${INDEX_SLUG}` : INDEX_SLUG;
+        const markdown = await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullPath}.md`);
+        return { type: "markdown", content: markdown, matchedSlug: fullPath, metadata: indexMatch };
+      }
+
+      // Priority 2: Return collection view
       const collectionPages = dirIndex.pages.filter(p => p.slug !== INDEX_SLUG);
       return { type: "collection", pages: collectionPages, requestedSlug: targetDir };
-    }
-  }
-
-  // 3d. Fallback: Is it an index page inside a folder (e.g., /folder -> folder/page.md)
-  if (rootIndex.directories.includes(requestedSlug)) {
-    const dirIndex = await fetchDirectoryIndex(config, requestedSlug);
-    const indexMatch = dirIndex?.pages.find(p => p.slug === INDEX_SLUG);
-    if (indexMatch) {
-      const fullPath = `${requestedSlug}/${INDEX_SLUG}`;
-      const markdown = await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullPath}.md`);
-      return { type: "markdown", content: markdown, matchedSlug: fullPath, metadata: indexMatch };
     }
   }
 
