@@ -8,8 +8,8 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
-import { INDEX_JSON, INDEX_SLUG, ROOT_JSON } from '../src/lib/constants';
-import { PageMetadata, VaultIndex } from '../src/lib/vault';
+import { INDEX_JSON, ROOT_JSON } from '../src/lib/constants';
+import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 
 async function exists(path: string) {
@@ -70,10 +70,9 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
-async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): Promise<{ index: VaultIndex; allDirs: string[] }> {
+async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
   const entries = await readdir(dir, { withFileTypes: true });
   const pages: PageMetadata[] = [];
-  const directories: string[] = [];
   let allDirs: string[] = [];
 
   for (const entry of entries) {
@@ -82,7 +81,6 @@ async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): P
     if (entry.isDirectory()) {
       if (entry.name !== '.git' && entry.name !== 'node_modules') {
         const result = await scanAndGenerate(fullPath, baseDir, dryRun);
-        directories.push(entry.name);
 
         const relDir = relative(baseDir, fullPath).replace(/\\/g, '/');
         allDirs.push(relDir, ...result.allDirs);
@@ -127,10 +125,9 @@ async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): P
 
   pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const indexData: VaultIndex = {
+  const indexData: VaultDirectoryIndex = {
     version: 1,
     pages,
-    directories,
   };
 
   const indexPath = join(dir, INDEX_JSON);
@@ -160,7 +157,7 @@ async function generateIndices(vaultPath: string, dryRun: boolean = false) {
 
   // 2. Generate root.json at vault root pointing to top-level content
   const rootPath = join(vaultPath, ROOT_JSON);
-  const vaultRootIndex: VaultIndex = {
+  const vaultRootIndex: VaultRootIndex = {
     ...rootContentIndex,
     directories: allDirs, // root.json contains the full directory map
     publicFiles,

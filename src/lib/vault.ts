@@ -11,15 +11,20 @@ export const PageMetadataSchema = z.object({
   excerpt: z.string(),
 });
 
-export const VaultIndexSchema = z.object({
+export const VaultDirectoryIndexSchema = z.object({
   version: z.number(),
   pages: z.array(PageMetadataSchema),
-  directories: z.array(z.string()).optional(),
-  publicFiles: z.array(z.string()).optional(),
+});
+
+export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
+  directories: z.array(z.string()),
+  publicFiles: z.array(z.string()),
 });
 
 export type PageMetadata = z.infer<typeof PageMetadataSchema>;
-export type VaultIndex = z.infer<typeof VaultIndexSchema>;
+export type VaultDirectoryIndex = z.infer<typeof VaultDirectoryIndexSchema>;
+export type VaultRootIndex = z.infer<typeof VaultRootIndexSchema>;
+export type VaultIndex = VaultDirectoryIndex | VaultRootIndex;
 
 export type VaultContent =
   | { type: "markdown"; content: string; matchedSlug: string; metadata: PageMetadata }
@@ -33,7 +38,10 @@ const ERROR_CACHE_TTL = 5 * 1000;    // 5 seconds
 
 /**
  * Fetches and parses a specific index.json or root.json from the vault.
+ * Uses overloads to ensure type safety without force-casting.
  */
+export async function getVaultIndex(subPath: ""): Promise<VaultRootIndex | null>;
+export async function getVaultIndex(subPath: string): Promise<VaultDirectoryIndex | null>;
 export async function getVaultIndex(subPath: string = ""): Promise<VaultIndex | null> {
   const now = Date.now();
   const cacheKey = subPath || "ROOT";
@@ -54,9 +62,12 @@ export async function getVaultIndex(subPath: string = ""): Promise<VaultIndex | 
   }
 
   try {
-    const fileName = subPath === "" ? ROOT_JSON : `content/${subPath}/${INDEX_JSON}`;
+    const isRoot = subPath === "";
+    const fileName = isRoot ? ROOT_JSON : `content/${subPath}/${INDEX_JSON}`;
     const indexRaw = await getFileFromS3(bucketName, `${vaultRoot}/${fileName}`);
-    const index = VaultIndexSchema.parse(JSON.parse(indexRaw));
+    
+    const schema = isRoot ? VaultRootIndexSchema : VaultDirectoryIndexSchema;
+    const index = schema.parse(JSON.parse(indexRaw));
 
     indexCache.set(cacheKey, { data: index, timestamp: now });
     return index;
@@ -86,12 +97,12 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   if (!rootIndex) return null;
 
   // 2. Check for public asset match (only in root.json)
-  if (segments.length > 0 && rootIndex.publicFiles?.includes(requestedSlug)) {
+  if (segments.length > 0 && rootIndex.publicFiles.includes(requestedSlug)) {
     return { type: "asset", filePath: requestedSlug };
   }
 
   // 3. Routing Priority Logic
-
+  
   // 3a. Is it a page at the root level?
   const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
   if (rootPageMatch) {
@@ -103,7 +114,7 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   const parentDir = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
   const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
 
-  if (parentDir && rootIndex.directories?.includes(parentDir)) {
+  if (parentDir && rootIndex.directories.includes(parentDir)) {
     const dirIndex = await getVaultIndex(parentDir);
     const nestedMatch = dirIndex?.pages.find(p => p.slug === lastSegment);
     if (nestedMatch) {
@@ -114,20 +125,20 @@ export async function resolveVaultRequest(slugArray?: string[]): Promise<VaultCo
   }
 
   // 3c. Is it a directory? (Collection View)
-  const isDirectory = rootIndex.directories?.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
+  const isDirectory = rootIndex.directories.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
   if (isDirectory) {
     const targetDir = requestedSlug === INDEX_SLUG ? "" : requestedSlug;
     const dirIndex = await getVaultIndex(targetDir);
-
+    
     if (dirIndex) {
       // Pages are already relative, just exclude the index file
       const collectionPages = dirIndex.pages.filter(p => p.slug !== INDEX_SLUG);
-      return { type: "collection", pages: collectionPages, requestedSlug };
+      return { type: "collection", pages: collectionPages, requestedSlug: targetDir };
     }
   }
 
   // 3d. Fallback: Is it an index page inside a folder (e.g., /folder -> folder/page.md)
-  if (rootIndex.directories?.includes(requestedSlug)) {
+  if (rootIndex.directories.includes(requestedSlug)) {
     const dirIndex = await getVaultIndex(requestedSlug);
     const indexMatch = dirIndex?.pages.find(p => p.slug === INDEX_SLUG);
     if (indexMatch) {
