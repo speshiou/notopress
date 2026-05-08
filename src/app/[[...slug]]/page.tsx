@@ -10,7 +10,11 @@ import type { Metadata } from "next";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug?: string[] }> }): Promise<Metadata> {
   const { slug: slugArray } = await params;
-  const result = await resolveVaultRequest(slugArray);
+  const vaultConfig = {
+    bucketName: env.S3_BUCKET!,
+    vaultRoot: env.VAULT_ROOT!,
+  };
+  const result = await resolveVaultRequest(vaultConfig, slugArray);
 
   if (!result || result.type !== "markdown") {
     return {};
@@ -41,9 +45,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
 
 export default async function DynamicPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug: slugArray } = await params;
-  const vaultRoot = env.VAULT_ROOT;
+  const vaultConfig = {
+    bucketName: env.S3_BUCKET!,
+    vaultRoot: env.VAULT_ROOT!,
+  };
+  const vaultRoot = vaultConfig.vaultRoot;
 
-  const result = await resolveVaultRequest(slugArray);
+  const result = await resolveVaultRequest(vaultConfig, slugArray);
 
   if (!result) {
     notFound();
