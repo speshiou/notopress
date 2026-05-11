@@ -8,7 +8,7 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
-import { INDEX_JSON, ROOT_JSON } from '../src/lib/constants';
+import { INDEX_JSON, ROOT_JSON, SITEMAP_XML, SITEMAP_PAGES_XML } from '../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 
@@ -44,6 +44,50 @@ function parseSafeDate(dateInput: any, fallback: Date, label: string, filePath: 
   return date.toISOString();
 }
 
+function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+    }
+    return c;
+  });
+}
+
+function generateSitemapXml(domain: string, pages: PageMetadata[], baseSlug: string = ''): string {
+  const baseUrl = `https://${domain}`;
+  const entries = pages.map(page => {
+    const slug = baseSlug ? `${baseSlug}/${page.slug}` : page.slug;
+    const url = `${baseUrl}/${slug === 'page' ? '' : slug}`;
+    return `  <url>
+    <loc>${escapeXml(url)}</loc>
+    <lastmod>${page.updatedAt || page.date}</lastmod>
+  </url>`;
+  }).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries}
+</urlset>`;
+}
+
+function generateSitemapIndexXml(domain: string, sitemaps: string[]): string {
+  const baseUrl = `https://${domain}`;
+  const entries = sitemaps.map(path => {
+    const url = `${baseUrl}/${path}`;
+    return `  <sitemap>
+    <loc>${escapeXml(url)}</loc>
+  </sitemap>`;
+  }).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries}
+</sitemapindex>`;
+}
 
 async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<string[]> {
   const files: string[] = [];
@@ -70,20 +114,22 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
-async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
+async function scanAndGenerate(dir: string, baseDir: string, domain: string, dryRun: boolean): Promise<{ index: VaultDirectoryIndex; allDirs: string[]; sitemapDirs: string[] }> {
   const entries = await readdir(dir, { withFileTypes: true });
   const pages: PageMetadata[] = [];
   let allDirs: string[] = [];
+  let sitemapDirs: string[] = [];
 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
 
     if (entry.isDirectory()) {
       if (entry.name !== '.git' && entry.name !== 'node_modules') {
-        const result = await scanAndGenerate(fullPath, baseDir, dryRun);
+        const result = await scanAndGenerate(fullPath, baseDir, domain, dryRun);
 
         const relDir = relative(baseDir, fullPath).replace(/\\/g, '/');
         allDirs.push(relDir, ...result.allDirs);
+        sitemapDirs.push(...result.sitemapDirs);
       }
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       const fileContent = await readFile(fullPath, 'utf-8');
@@ -131,17 +177,28 @@ async function scanAndGenerate(dir: string, baseDir: string, dryRun: boolean): P
   };
 
   const indexPath = join(dir, INDEX_JSON);
-  const relDirName = relative(baseDir, dir) || 'root';
+  const sitemapPath = join(dir, SITEMAP_XML);
+  const relDir = relative(baseDir, dir).replace(/\\/g, '/');
+  const relDirName = relDir || 'root';
 
   if (!dryRun) {
     await writeFile(indexPath, JSON.stringify(indexData, null, 2));
     console.log(`✨ Generated index for "${relDirName}"`);
+
+    if (pages.length > 0) {
+      const sitemapXml = generateSitemapXml(domain, pages, relDir);
+      await writeFile(sitemapPath, sitemapXml);
+      console.log(`✨ Generated sitemap.xml for "${relDirName}"`);
+      if (relDir) {
+        sitemapDirs.push(relDir);
+      }
+    }
   }
 
-  return { index: indexData, allDirs };
+  return { index: indexData, allDirs, sitemapDirs };
 }
 
-async function generateIndices(vaultPath: string, dryRun: boolean = false) {
+async function generateIndices(vaultPath: string, domain: string, dryRun: boolean = false) {
   const publicBaseDir = join(vaultPath, 'public');
   const publicFiles = await exists(publicBaseDir) ? await scanPublicFiles(publicBaseDir) : [];
 
@@ -151,9 +208,9 @@ async function generateIndices(vaultPath: string, dryRun: boolean = false) {
     process.exit(1);
   }
 
-  // 1. Recursive generation of index.json for each level in content/
+  // 1. Recursive generation of index.json and sitemap.xml for each level in content/
   console.log(`\n🔍 Recursively scanning "content" directory in ${contentDir}...`);
-  const { index: rootContentIndex, allDirs } = await scanAndGenerate(contentDir, contentDir, dryRun);
+  const { index: rootContentIndex, allDirs, sitemapDirs } = await scanAndGenerate(contentDir, contentDir, domain, dryRun);
 
   // 2. Generate root.json at vault root pointing to top-level content
   const rootPath = join(vaultPath, ROOT_JSON);
@@ -163,11 +220,28 @@ async function generateIndices(vaultPath: string, dryRun: boolean = false) {
     publicFiles,
   };
 
+  // 3. Generate sitemaps at vault root
+  const sitemapIndexPath = join(vaultPath, SITEMAP_XML);
+  const sitemapPagesPath = join(vaultPath, SITEMAP_PAGES_XML);
+
   if (dryRun) {
     console.log(`[DRY RUN] Would generate master root index at: ${rootPath}`);
+    console.log(`[DRY RUN] Would generate root sitemap index at: ${sitemapIndexPath}`);
+    console.log(`[DRY RUN] Would generate root pages sitemap at: ${sitemapPagesPath}`);
   } else {
     await writeFile(rootPath, JSON.stringify(vaultRootIndex, null, 2));
     console.log(`✨ Generated master root index with ${allDirs.length} directories at: ${rootPath}`);
+
+    // root sitemap_pages.xml for root pages
+    const rootSitemapPagesXml = generateSitemapXml(domain, rootContentIndex.pages);
+    await writeFile(sitemapPagesPath, rootSitemapPagesXml);
+    console.log(`✨ Generated root pages sitemap at: ${sitemapPagesPath}`);
+
+    // root sitemap.xml as an index of all other sitemaps
+    const subSitemaps = sitemapDirs.map(dir => `${dir}/${SITEMAP_XML}`);
+    const sitemapIndexXml = generateSitemapIndexXml(domain, [SITEMAP_PAGES_XML, ...subSitemaps]);
+    await writeFile(sitemapIndexPath, sitemapIndexXml);
+    console.log(`✨ Generated root sitemap index at: ${sitemapIndexPath}`);
   }
 }
 
@@ -209,7 +283,7 @@ async function main() {
   }
 
   // Generate index files at every level and root.json at the vault root before syncing
-  await generateIndices(site.vaultPath, isDryRun);
+  await generateIndices(site.vaultPath, site.domain, isDryRun);
 
   const endpoint = registry.endpoint || env.S3_ENDPOINT;
   const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;

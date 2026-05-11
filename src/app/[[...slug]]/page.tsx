@@ -57,11 +57,6 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
     notFound();
   }
 
-  // 0. Handle public assets (redirect to API route)
-  if (result.type === "asset") {
-    redirect(`/api/vault-public/${result.filePath}`);
-  }
-
   // 1. Render matched Markdown file
   if (result.type === "markdown") {
     const { content: markdownBody } = matter(result.content);

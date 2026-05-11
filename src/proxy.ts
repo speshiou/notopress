@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { fetchRootIndex } from './lib/vault';
+import { env } from './lib/env';
 
 export async function proxy(request: NextRequest) {
   const url = new URL(request.url);
@@ -14,24 +16,43 @@ export async function proxy(request: NextRequest) {
   }
 
   // 2. Handle fallback for system files like favicon.ico
-  // If the API route redirects back here with ?fallback=true, we skip the vault rewrite.
   if (url.searchParams.get('fallback') === 'true') {
     return NextResponse.next();
   }
 
-  // 3. Check if the path looks like a static file (has an extension)
-  const hasExtension = pathname.includes('.') && !pathname.endsWith('/');
-  if (!hasExtension) {
-    return NextResponse.next();
+  // 3. Handle sitemap.xml and sitemap_pages.xml
+  if (pathname === '/sitemap.xml' || pathname === '/sitemap_pages.xml') {
+    return NextResponse.rewrite(new URL(`/api/sitemap${pathname}`, request.url));
   }
 
-  // 4. Normalize path for matching (remove leading slash)
-  const filePath = pathname.slice(1);
+  // 4. Handle nested sitemap.xml (e.g., /dir/sitemap.xml -> /api/sitemap/content/dir/sitemap.xml)
+  if (pathname.endsWith('/sitemap.xml')) {
+    const dirPath = pathname.slice(1, -'sitemap.xml'.length);
+    return NextResponse.rewrite(new URL(`/api/sitemap/content/${dirPath}sitemap.xml`, request.url));
+  }
 
-  // 5. Blind rewrite to vault-public API route
-  // Local files in /public/ are served by Next.js before middleware (if configured)
-  // or will result in a 404 (or fallback redirect) from the API route if not in S3.
-  return NextResponse.rewrite(new URL(`/api/vault-public/${filePath}`, request.url));
+  // 5. Check if the path looks like a static file (has an extension)
+  const hasExtension = pathname.includes('.') && !pathname.endsWith('/');
+  if (hasExtension) {
+    const filePath = pathname.slice(1);
+    return NextResponse.rewrite(new URL(`/api/vault-public/${filePath}`, request.url));
+  }
+
+  // 6. Check if it's a public file without extension (from root.json)
+  const vaultConfig = {
+    bucketName: env.S3_BUCKET!,
+    vaultRoot: env.VAULT_ROOT!,
+  };
+
+  if (vaultConfig.bucketName && vaultConfig.vaultRoot) {
+    const rootIndex = await fetchRootIndex(vaultConfig);
+    const filePath = pathname.slice(1);
+    if (rootIndex?.publicFiles.includes(filePath)) {
+      return NextResponse.rewrite(new URL(`/api/vault-public/${filePath}`, request.url));
+    }
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
