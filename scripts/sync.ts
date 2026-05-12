@@ -22,7 +22,7 @@ async function exists(path: string) {
   }
 }
 
-async function execAsync(command: string, options: any): Promise<void> {
+async function execAsync({ command, options }: { command: string; options: any }): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { ...options, shell: true });
     child.on('close', (code) => {
@@ -33,7 +33,17 @@ async function execAsync(command: string, options: any): Promise<void> {
   });
 }
 
-function parseSafeDate(dateInput: any, fallback: Date, label: string, filePath: string): string {
+function parseSafeDate({
+  dateInput,
+  fallback,
+  label,
+  filePath,
+}: {
+  dateInput: any;
+  fallback: Date;
+  label: string;
+  filePath: string;
+}): string {
   if (!dateInput) return fallback.toISOString();
 
   const date = new Date(dateInput);
@@ -86,7 +96,15 @@ ${sitemapTags}
 </sitemapindex>`;
 }
 
-function mapPagesToSitemapUrls(pages: PageMetadata[], domain: string, relDir: string = '') {
+function mapPagesToSitemapUrls({
+  pages,
+  domain,
+  relDir = '',
+}: {
+  pages: PageMetadata[];
+  domain: string;
+  relDir?: string;
+}) {
   return pages.map((p) => {
     const urlPath = p.slug === INDEX_SLUG ? relDir : relDir ? `${relDir}/${p.slug}` : p.slug;
     return {
@@ -96,13 +114,19 @@ function mapPagesToSitemapUrls(pages: PageMetadata[], domain: string, relDir: st
   });
 }
 
-async function writeSitemapFile(
-  fullPath: string,
-  relPath: string,
-  content: string,
-  dryRun: boolean,
-  label: string
-) {
+async function writeSitemapFile({
+  fullPath,
+  relPath,
+  content,
+  dryRun,
+  label,
+}: {
+  fullPath: string;
+  relPath: string;
+  content: string;
+  dryRun: boolean;
+  label: string;
+}) {
   if (!dryRun) {
     const dir = join(fullPath, '..');
     await mkdir(dir, { recursive: true });
@@ -113,7 +137,7 @@ async function writeSitemapFile(
   }
 }
 
-async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<string[]> {
+async function scanPublicFiles({ dir, baseDir = dir }: { dir: string; baseDir?: string }): Promise<string[]> {
   const files: string[] = [];
 
   async function walk(currentDir: string) {
@@ -138,34 +162,50 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
-async function generateAllSitemaps(
-  domain: string,
-  allIndices: Map<string, VaultDirectoryIndex>,
-  vaultPath: string,
-  dryRun: boolean
-): Promise<string[]> {
+async function generateAllSitemaps({
+  domain,
+  allIndices,
+  vaultPath,
+  dryRun,
+}: {
+  domain: string;
+  allIndices: Map<string, VaultDirectoryIndex>;
+  vaultPath: string;
+  dryRun: boolean;
+}): Promise<string[]> {
   const subSitemaps: string[] = [];
   for (const [relDir, indexData] of allIndices.entries()) {
     if (relDir === '') continue; // Skip root, handled separately
     if (indexData.pages.length === 0) continue;
 
-    const sitemapUrls = mapPagesToSitemapUrls(indexData.pages, domain, relDir);
+    const sitemapUrls = mapPagesToSitemapUrls({ pages: indexData.pages, domain, relDir });
     const sitemapContent = generateSitemapXml(sitemapUrls);
     const sitemapPath = join(vaultPath, 'public', relDir, SITEMAP_XML);
     const relSitemapPath = `public/${relDir}/${SITEMAP_XML}`;
 
-    await writeSitemapFile(sitemapPath, relSitemapPath, sitemapContent, dryRun, `sitemap for "${relDir}"`);
+    await writeSitemapFile({
+      fullPath: sitemapPath,
+      relPath: relSitemapPath,
+      content: sitemapContent,
+      dryRun,
+      label: `sitemap for "${relDir}"`,
+    });
     subSitemaps.push(`${relDir}/${SITEMAP_XML}`);
   }
   return subSitemaps;
 }
 
-async function scanAndGenerate(
-  dir: string,
-  baseDir: string,
-  dryRun: boolean,
-  allIndices: Map<string, VaultDirectoryIndex>
-): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
+async function scanAndGenerate({
+  dir,
+  baseDir,
+  dryRun,
+  allIndices,
+}: {
+  dir: string;
+  baseDir: string;
+  dryRun: boolean;
+  allIndices: Map<string, VaultDirectoryIndex>;
+}): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
   const entries = await readdir(dir, { withFileTypes: true });
   const pages: PageMetadata[] = [];
   let allDirs: string[] = [];
@@ -177,7 +217,7 @@ async function scanAndGenerate(
 
     if (entry.isDirectory()) {
       if (entry.name !== '.git' && entry.name !== 'node_modules') {
-        const result = await scanAndGenerate(fullPath, baseDir, dryRun, allIndices);
+        const result = await scanAndGenerate({ dir: fullPath, baseDir, dryRun, allIndices });
 
         const childRelDir = relative(baseDir, fullPath).replace(/\\/g, '/');
         allDirs.push(childRelDir, ...result.allDirs);
@@ -193,20 +233,29 @@ async function scanAndGenerate(
       }
 
       const titleMatch = content.match(/^#\s+(.+)$/m);
-      const title = (typeof data.title === 'string' && data.title.trim() !== '' ? data.title : (titleMatch ? titleMatch[1].trim() : entry.name));
+      const title =
+        typeof data.title === 'string' && data.title.trim() !== ''
+          ? data.title
+          : titleMatch
+          ? titleMatch[1].trim()
+          : entry.name;
 
       const relPath = relative(dir, fullPath);
       const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
 
-      const date = parseSafeDate(data.date, fileStats.mtime, 'date', relPath);
+      const date = parseSafeDate({ dateInput: data.date, fallback: fileStats.mtime, label: 'date', filePath: relPath });
       const manualUpdate = data.updated || data.lastmod;
-      const updatedAt = parseSafeDate(manualUpdate, fileStats.mtime, 'updated', relPath);
+      const updatedAt = parseSafeDate({
+        dateInput: manualUpdate,
+        fallback: fileStats.mtime,
+        label: 'updated',
+        filePath: relPath,
+      });
 
       const firstParagraph = content
         .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#') && !line.startsWith('>'))
-      [0];
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#') && !line.startsWith('>'))[0];
 
       let excerpt = '';
       if (firstParagraph) {
@@ -269,7 +318,7 @@ async function selectSite(registry: Registry): Promise<Site> {
   return site;
 }
 
-async function syncSite(site: Site, registry: Registry, isDryRun: boolean) {
+async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Registry; isDryRun: boolean }) {
   const endpoint = site.endpoint || registry.endpoint || env.S3_ENDPOINT;
   const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
   const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
@@ -306,17 +355,20 @@ async function syncSite(site: Site, registry: Registry, isDryRun: boolean) {
   console.log(`Executing:\n> ${syncCommand}\n`);
 
   // stdio: 'inherit' passes the aws-cli output directly to our terminal
-  await execAsync(syncCommand, {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      AWS_ACCESS_KEY_ID: accessKeyId,
-      AWS_SECRET_ACCESS_KEY: secretAccessKey,
+  await execAsync({
+    command: syncCommand,
+    options: {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        AWS_ACCESS_KEY_ID: accessKeyId,
+        AWS_SECRET_ACCESS_KEY: secretAccessKey,
+      },
     },
   });
 }
 
-async function uploadRegistry(site: Site, registry: Registry) {
+async function uploadRegistry({ site, registry }: { site: Site; registry: Registry }) {
   const endpoint = site.endpoint || registry.endpoint || env.S3_ENDPOINT;
   const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
   const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
@@ -349,12 +401,15 @@ async function uploadRegistry(site: Site, registry: Registry) {
       `--endpoint-url "${endpoint}"`,
     ].join(' ');
 
-    await execAsync(uploadRegistryCommand, {
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        AWS_ACCESS_KEY_ID: accessKeyId,
-        AWS_SECRET_ACCESS_KEY: secretAccessKey,
+    await execAsync({
+      command: uploadRegistryCommand,
+      options: {
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          AWS_ACCESS_KEY_ID: accessKeyId,
+          AWS_SECRET_ACCESS_KEY: secretAccessKey,
+        },
       },
     });
   } finally {
@@ -364,7 +419,13 @@ async function uploadRegistry(site: Site, registry: Registry) {
   }
 }
 
-async function generateIndices(vaultPath: string, dryRun: boolean = false) {
+async function generateIndices({
+  vaultPath,
+  dryRun = false,
+}: {
+  vaultPath: string;
+  dryRun?: boolean;
+}): Promise<{ rootContentIndex: VaultDirectoryIndex; allIndices: Map<string, VaultDirectoryIndex> }> {
   const contentDir = join(vaultPath, 'content');
   if (!(await exists(contentDir))) {
     console.error(`⨯ Error: The required "content" directory is missing in the vault: ${vaultPath}`);
@@ -374,19 +435,19 @@ async function generateIndices(vaultPath: string, dryRun: boolean = false) {
   // 1. Recursive generation of index.json for each level in content/
   console.log(`\n🔍 Recursively scanning "content" directory in ${contentDir}...`);
   const allIndices = new Map<string, VaultDirectoryIndex>();
-  const { index: rootContentIndex, allDirs } = await scanAndGenerate(
-    contentDir,
-    contentDir,
+  const { index: rootContentIndex, allDirs } = await scanAndGenerate({
+    dir: contentDir,
+    baseDir: contentDir,
     dryRun,
-    allIndices
-  );
+    allIndices,
+  });
 
   const publicBaseDir = join(vaultPath, 'public');
   if (!dryRun) {
     await mkdir(publicBaseDir, { recursive: true });
   }
 
-  const publicFiles = (await exists(publicBaseDir)) ? await scanPublicFiles(publicBaseDir) : [];
+  const publicFiles = (await exists(publicBaseDir)) ? await scanPublicFiles({ dir: publicBaseDir }) : [];
 
   // 2. Generate root.json at vault root pointing to top-level content
   const rootPath = join(vaultPath, ROOT_JSON);
@@ -406,29 +467,41 @@ async function generateIndices(vaultPath: string, dryRun: boolean = false) {
   return { rootContentIndex, allIndices };
 }
 
-async function generateSitemaps(
-  vaultPath: string,
-  domain: string | undefined,
-  rootContentIndex: VaultDirectoryIndex,
-  allIndices: Map<string, VaultDirectoryIndex>,
-  dryRun: boolean
-) {
+async function generateSitemaps({
+  vaultPath,
+  domain,
+  rootContentIndex,
+  allIndices,
+  dryRun,
+}: {
+  vaultPath: string;
+  domain: string | undefined;
+  rootContentIndex: VaultDirectoryIndex;
+  allIndices: Map<string, VaultDirectoryIndex>;
+  dryRun: boolean;
+}) {
   if (!domain) {
     console.log('ℹ️  Skipping sitemap generation because "domain" is not configured in registry.json');
     return;
   }
 
   const publicBaseDir = join(vaultPath, 'public');
-  const subSitemaps = await generateAllSitemaps(domain, allIndices, vaultPath, dryRun);
+  const subSitemaps = await generateAllSitemaps({ domain, allIndices, vaultPath, dryRun });
   const rootPages = rootContentIndex.pages;
-  const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls(rootPages, domain) : [];
+  const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls({ pages: rootPages, domain }) : [];
 
   if (subSitemaps.length === 0) {
     // Case 1: No sub-sitemaps, write root pages to sitemap.xml directly
     if (sitemapUrls.length > 0) {
       const sitemapContent = generateSitemapXml(sitemapUrls);
       const sitemapPath = join(publicBaseDir, SITEMAP_XML);
-      await writeSitemapFile(sitemapPath, `public/${SITEMAP_XML}`, sitemapContent, dryRun, 'sitemap');
+      await writeSitemapFile({
+        fullPath: sitemapPath,
+        relPath: `public/${SITEMAP_XML}`,
+        content: sitemapContent,
+        dryRun,
+        label: 'sitemap',
+      });
     }
   } else {
     // Case 2: Sub-sitemaps exist, sitemap.xml should be an index
@@ -437,7 +510,13 @@ async function generateSitemaps(
     if (sitemapUrls.length > 0) {
       const sitemapContent = generateSitemapXml(sitemapUrls);
       const sitemapPath = join(publicBaseDir, SITEMAP_PAGES_XML);
-      await writeSitemapFile(sitemapPath, `public/${SITEMAP_PAGES_XML}`, sitemapContent, dryRun, 'root pages sitemap');
+      await writeSitemapFile({
+        fullPath: sitemapPath,
+        relPath: `public/${SITEMAP_PAGES_XML}`,
+        content: sitemapContent,
+        dryRun,
+        label: 'root pages sitemap',
+      });
       sitemaps.push({ loc: `https://${domain}/${SITEMAP_PAGES_XML}` });
     }
 
@@ -448,7 +527,13 @@ async function generateSitemaps(
     if (sitemaps.length > 0) {
       const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
       const sitemapIndexPath = join(publicBaseDir, SITEMAP_XML);
-      await writeSitemapFile(sitemapIndexPath, `public/${SITEMAP_XML}`, sitemapIndexContent, dryRun, 'master sitemap index');
+      await writeSitemapFile({
+        fullPath: sitemapIndexPath,
+        relPath: `public/${SITEMAP_XML}`,
+        content: sitemapIndexContent,
+        dryRun,
+        label: 'master sitemap index',
+      });
     }
   }
 }
@@ -467,17 +552,23 @@ async function main() {
     const site = await selectSite(registry);
 
     // Generate index files at every level and root.json at the vault root
-    const { rootContentIndex, allIndices } = await generateIndices(site.vaultPath, isDryRun);
+    const { rootContentIndex, allIndices } = await generateIndices({ vaultPath: site.vaultPath, dryRun: isDryRun });
 
     // Generate sitemaps based on the collected indices
-    await generateSitemaps(site.vaultPath, site.domain, rootContentIndex, allIndices, isDryRun);
+    await generateSitemaps({
+      vaultPath: site.vaultPath,
+      domain: site.domain,
+      rootContentIndex,
+      allIndices,
+      dryRun: isDryRun,
+    });
 
-    await syncSite(site, registry, isDryRun);
+    await syncSite({ site, registry, isDryRun });
 
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');
     } else {
-      await uploadRegistry(site, registry);
+      await uploadRegistry({ site, registry });
       console.log('\n✅ Sync and registry upload successfully completed!');
     }
   } catch (err: any) {
