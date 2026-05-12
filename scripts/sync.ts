@@ -44,11 +44,22 @@ function parseSafeDate(dateInput: any, fallback: Date, label: string, filePath: 
   return date.toISOString();
 }
 
+function escapeXml(unsafe: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  };
+  return unsafe.replace(/[&<>"']/g, (m) => map[m]);
+}
+
 function generateSitemapXml(urls: { loc: string; lastmod?: string }[]): string {
   const urlTags = urls
     .map(
       (url) => `  <url>
-    <loc>${url.loc}</loc>${url.lastmod ? `\n    <lastmod>${url.lastmod}</lastmod>` : ''}
+    <loc>${escapeXml(url.loc)}</loc>${url.lastmod ? `\n    <lastmod>${url.lastmod}</lastmod>` : ''}
   </url>`
     )
     .join('\n');
@@ -63,7 +74,7 @@ function generateSitemapIndexXml(sitemaps: { loc: string; lastmod?: string }[]):
   const sitemapTags = sitemaps
     .map(
       (sitemap) => `  <sitemap>
-    <loc>${sitemap.loc}</loc>${sitemap.lastmod ? `\n    <lastmod>${sitemap.lastmod}</lastmod>` : ''}
+    <loc>${escapeXml(sitemap.loc)}</loc>${sitemap.lastmod ? `\n    <lastmod>${sitemap.lastmod}</lastmod>` : ''}
   </sitemap>`
     )
     .join('\n');
@@ -191,10 +202,7 @@ async function scanAndGenerate(
       const sitemapDir = join(vaultPath, 'public', relDir);
 
       if (!dryRun) {
-        if (!(await exists(sitemapDir))) {
-          await mkdir(sitemapDir, { recursive: true });
-        }
-
+        await mkdir(sitemapDir, { recursive: true });
         await writeFile(sitemapPath, sitemapContent);
         console.log(`✨ Generated sitemap for "${relDir}" at public/${relDir}/sitemap.xml`);
       } else {
