@@ -1,3 +1,8 @@
+---
+title: Coding Conventions
+description: Standards and best practices for the Notopress repository.
+---
+
 # Coding Conventions
 
 This document outlines the coding standards and best practices for the Notopress repository. All contributors and AI agents must follow these rules to ensure consistency, maintainability, and type safety.

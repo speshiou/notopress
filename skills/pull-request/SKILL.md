@@ -1,3 +1,8 @@
+---
+title: Pull Request Creation
+description: Guidelines and automation patterns for creating pull requests using GitHub CLI.
+---
+
 # Pull Request Skill
 
 When creating pull requests for this repository, follow these guidelines:

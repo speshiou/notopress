@@ -14,5 +14,6 @@ Always run `npm run type-check` after making changes to verify basic syntax erro
 
 # Skills
 Consult the `skills/` directory for specific guides and automation patterns:
-- [Pull Request Creation](skills/pull-request.md)
-- [Registry Migration](skills/registry-migration.md)
+- [Pull Request Creation](skills/pull-request/SKILL.md)
+- [Registry Migration](skills/registry-migration/SKILL.md)
+- [Coding Conventions](skills/coding-conventions/SKILL.md)
