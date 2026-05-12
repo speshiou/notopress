@@ -233,47 +233,70 @@ async function generateIndices(vaultPath: string, domain: string, dryRun: boolea
     subSitemaps
   );
 
-  // Generate sitemap_pages.xml for root level pages
-  const rootPages = rootContentIndex.pages;
-  if (rootPages.length > 0) {
-    const sitemapUrls = rootPages.map((p) => {
-      const path = p.slug === INDEX_SLUG ? '' : p.slug;
-      return {
-        loc: `https://${domain}/${path}`,
-        lastmod: p.updatedAt || p.date,
-      };
-    });
-    const sitemapContent = generateSitemapXml(sitemapUrls);
-    const sitemapPath = join(vaultPath, 'public', 'sitemap_pages.xml');
-    if (!dryRun) {
-      await writeFile(sitemapPath, sitemapContent);
-      console.log(`✨ Generated root pages sitemap at public/sitemap_pages.xml`);
-    } else {
-      console.log(`[DRY RUN] Would generate root pages sitemap at public/sitemap_pages.xml`);
-    }
-  }
-
-  // Generate main sitemap.xml as a sitemap index
-  const sitemaps = [];
-  if (rootPages.length > 0) {
-    sitemaps.push({ loc: `https://${domain}/sitemap_pages.xml` });
-  }
-  for (const subSitemap of subSitemaps) {
-    sitemaps.push({ loc: `https://${domain}/${subSitemap}` });
-  }
-
-  if (sitemaps.length > 0) {
-    const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
-    const sitemapIndexPath = join(vaultPath, 'public', 'sitemap.xml');
-    if (!dryRun) {
-      await writeFile(sitemapIndexPath, sitemapIndexContent);
-      console.log(`✨ Generated master sitemap index at public/sitemap.xml`);
-    } else {
-      console.log(`[DRY RUN] Would generate master sitemap index at public/sitemap.xml`);
-    }
-  }
-
   const publicBaseDir = join(vaultPath, 'public');
+  if (!dryRun) {
+    await mkdir(publicBaseDir, { recursive: true });
+  }
+
+  // Generate sitemaps
+  const rootPages = rootContentIndex.pages;
+  if (subSitemaps.length === 0) {
+    // Case 1: No sub-sitemaps, write root pages to sitemap.xml directly
+    if (rootPages.length > 0) {
+      const sitemapUrls = rootPages.map((p) => {
+        const path = p.slug === INDEX_SLUG ? '' : p.slug;
+        return {
+          loc: `https://${domain}/${path}`,
+          lastmod: p.updatedAt || p.date,
+        };
+      });
+      const sitemapContent = generateSitemapXml(sitemapUrls);
+      const sitemapPath = join(publicBaseDir, 'sitemap.xml');
+      if (!dryRun) {
+        await writeFile(sitemapPath, sitemapContent);
+        console.log(`✨ Generated sitemap at public/sitemap.xml`);
+      } else {
+        console.log(`[DRY RUN] Would generate sitemap at public/sitemap.xml`);
+      }
+    }
+  } else {
+    // Case 2: Sub-sitemaps exist, sitemap.xml should be an index
+    const sitemaps = [];
+
+    if (rootPages.length > 0) {
+      const sitemapUrls = rootPages.map((p) => {
+        const path = p.slug === INDEX_SLUG ? '' : p.slug;
+        return {
+          loc: `https://${domain}/${path}`,
+          lastmod: p.updatedAt || p.date,
+        };
+      });
+      const sitemapContent = generateSitemapXml(sitemapUrls);
+      const sitemapPath = join(publicBaseDir, 'sitemap_pages.xml');
+      if (!dryRun) {
+        await writeFile(sitemapPath, sitemapContent);
+        console.log(`✨ Generated root pages sitemap at public/sitemap_pages.xml`);
+      } else {
+        console.log(`[DRY RUN] Would generate root pages sitemap at public/sitemap_pages.xml`);
+      }
+      sitemaps.push({ loc: `https://${domain}/sitemap_pages.xml` });
+    }
+
+    for (const subSitemap of subSitemaps) {
+      sitemaps.push({ loc: `https://${domain}/${subSitemap}` });
+    }
+
+    if (sitemaps.length > 0) {
+      const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
+      const sitemapIndexPath = join(publicBaseDir, 'sitemap.xml');
+      if (!dryRun) {
+        await writeFile(sitemapIndexPath, sitemapIndexContent);
+        console.log(`✨ Generated master sitemap index at public/sitemap.xml`);
+      } else {
+        console.log(`[DRY RUN] Would generate master sitemap index at public/sitemap.xml`);
+      }
+    }
+  }
   const publicFiles = (await exists(publicBaseDir)) ? await scanPublicFiles(publicBaseDir) : [];
 
   // 2. Generate root.json at vault root pointing to top-level content
