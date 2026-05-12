@@ -37,14 +37,33 @@ Notopress uses a centralized registry to manage multiple sites and their respect
 
 The `registry.json` file is the primary configuration source. You can create it by copying the provided example:
 
-```bash
 cp registry.json.example registry.json
 ```
 
-The registry allows you to define global S3 credentials and specific site configurations:
+By default, Notopress looks for `registry.json` in the project root. You can customize this path in two ways:
+- **CLI Flag**: Use `--registry` or `-r` (e.g., `npm run sync -- --registry ./my-registry.json`).
+- **Environment Variable**: Set the `REGISTRY_PATH` environment variable.
 
-- **Global Settings**: `endpoint`, `accessKeyId`, and `secretAccessKey` can be defined at the root for convenience.
-- **Sites Array**: Each site entry (e.g., `example.com`) can have its own overrides for `endpoint` and `bucketName`.
+The registry allows you to define global S3 credentials and specific site configurations.
+
+#### Global Properties
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `endpoint` | `string` | The S3-compatible API endpoint (e.g., Cloudflare R2 endpoint). |
+| `accessKeyId` | `string` | Your S3 access key ID. |
+| `secretAccessKey` | `string` | Your S3 secret access key. |
+| `sites` | `array` | An array of site configuration objects. |
+
+#### Site Properties
+Each object in the `sites` array supports the following properties:
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `domain` | `string` | The domain name of the site (e.g., `example.com`). This is used to generate absolute URLs in the sitemap. |
+| `siteId` | `string` | A unique identifier for the site, used for its subdirectory in the S3 bucket. |
+| `vaultPath` | `string` | The absolute local filesystem path to your Obsidian vault. |
+| `bucketName` | `string` | (Optional) The S3 bucket name. Defaults to global if not specified. |
+| `endpoint` | `string` | (Optional) Override the global S3 endpoint for this specific site. |
+| `vercelProjectId` | `string` | (Optional) The Vercel Project ID associated with this site. |
 
 ### Environment Variables
 
