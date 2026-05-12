@@ -1,8 +1,9 @@
 import { select } from '@inquirer/prompts';
 import matter from 'gray-matter';
+import { z } from 'zod';
 import { readFile, writeFile, readdir, stat, unlink, access, mkdir } from 'fs/promises';
 import { constants } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, SpawnOptions } from 'child_process';
 import { join, relative } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -22,7 +23,7 @@ async function exists(path: string) {
   }
 }
 
-async function execAsync({ command, options }: { command: string; options: any }): Promise<void> {
+async function execAsync({ command, options }: { command: string; options: SpawnOptions }): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { ...options, shell: true });
     child.on('close', (code) => {
@@ -33,22 +34,34 @@ async function execAsync({ command, options }: { command: string; options: any }
   });
 }
 
+const DateInputSchema = z.union([z.string(), z.number(), z.date()]);
+
 function parseSafeDate({
   dateInput,
   fallback,
   label,
   filePath,
 }: {
-  dateInput: any;
+  dateInput: unknown;
   fallback: Date;
   label: string;
   filePath: string;
 }): string {
   if (!dateInput) return fallback.toISOString();
 
-  const date = new Date(dateInput);
+  const result = DateInputSchema.safeParse(dateInput);
+  if (!result.success) {
+    console.warn(
+      `⚠️  Warning: Invalid ${label} type for "${dateInput}" in ${filePath}. Falling back to file modification time.`
+    );
+    return fallback.toISOString();
+  }
+
+  const date = new Date(result.data);
   if (isNaN(date.getTime())) {
-    console.warn(`⚠️  Warning: Invalid ${label} "${dateInput}" in ${filePath}. Falling back to file modification time.`);
+    console.warn(
+      `⚠️  Warning: Invalid ${label} value "${dateInput}" in ${filePath}. Falling back to file modification time.`
+    );
     return fallback.toISOString();
   }
 
@@ -571,9 +584,10 @@ async function main() {
       await uploadRegistry({ site, registry });
       console.log('\n✅ Sync and registry upload successfully completed!');
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`\n⨯ ${isDryRun ? 'Dry run' : 'Sync process'} failed.`);
-    console.error(err.message);
+    console.error(message);
     process.exit(1);
   }
 }
