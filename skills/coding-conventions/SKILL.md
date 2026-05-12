@@ -61,5 +61,23 @@ function sync({ path, bucket, dryRun }: { path: string; bucket: string; dryRun: 
 ## 4. Error Handling
 
 - Always use `try...catch` blocks for asynchronous operations.
-- In `catch` blocks, treat the error as `unknown` and use type guards to safely access properties like `message`.
+- In `catch` blocks, treat the error as `unknown`.
+- If the error is an instance of `Error`, log its `message`.
+- If the error is not an `Error` object, log the entire object or use `JSON.stringify` to ensure helpful debugging information is captured (avoiding unhelpful `[object Object]` outputs).
 - Provide user-friendly error messages that explain *what* failed and *why*.
+
+## 5. Command Execution
+
+- When executing external commands (e.g., using `spawn`), always use an **argument array** instead of a single command string.
+- Avoid using `shell: true` whenever possible. It is more secure and robust against special characters in paths or names.
+- Manual quoting of arguments is fragile; letting the OS handle the argument array is the standard practice.
+
+```typescript
+// ❌ Avoid
+const cmd = `aws s3 sync "${path}" "s3://${bucket}"`;
+spawn(cmd, { shell: true });
+
+// ✅ Preferred
+const args = ['s3', 'sync', path, `s3://${bucket}`];
+spawn('aws', args, { shell: false });
+```

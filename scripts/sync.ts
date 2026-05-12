@@ -23,12 +23,21 @@ async function exists(path: string) {
   }
 }
 
-async function execAsync({ command, options }: { command: string; options: SpawnOptions }): Promise<void> {
+async function execAsync({
+  command,
+  args,
+  options,
+}: {
+  command: string;
+  args: string[];
+  options: SpawnOptions;
+}): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, { ...options, shell: true });
+    // shell: false is more secure and robust against special characters
+    const child = spawn(command, args, { ...options, shell: false });
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`Command failed with code ${code}`));
+      else reject(new Error(`Command "${command} ${args.join(' ')}" failed with code ${code}`));
     });
     child.on('error', (err) => reject(err));
   });
@@ -351,25 +360,32 @@ async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Re
   // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
   // and not the directory itself.
   // Each site is synced to its own subdirectory in the bucket: /{site-id}/*
-  const syncCommand = [
-    'aws s3 sync',
-    `"${site.vaultPath}/"`,
-    `"s3://${site.bucketName}/${site.siteId}/"`,
-    `--endpoint-url "${endpoint}"`,
-    `--exclude "*.DS_Store"`,
-    `--exclude "*/.git/*"`,
-    `--exclude ".git/*"`,
-    `--delete`, // Automatically delete remote files that don't exist locally
-    isDryRun ? '--dryrun' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const args = [
+    's3',
+    'sync',
+    `${site.vaultPath}/`,
+    `s3://${site.bucketName}/${site.siteId}/`,
+    '--endpoint-url',
+    endpoint,
+    '--exclude',
+    '*.DS_Store',
+    '--exclude',
+    '*/.git/*',
+    '--exclude',
+    '.git/*',
+    '--delete',
+  ];
 
-  console.log(`Executing:\n> ${syncCommand}\n`);
+  if (isDryRun) {
+    args.push('--dryrun');
+  }
+
+  console.log(`Executing:\n> aws ${args.join(' ')}\n`);
 
   // stdio: 'inherit' passes the aws-cli output directly to our terminal
   await execAsync({
-    command: syncCommand,
+    command: 'aws',
+    args,
     options: {
       stdio: 'inherit',
       env: {
@@ -407,15 +423,11 @@ async function uploadRegistry({ site, registry }: { site: Site; registry: Regist
   try {
     await writeFile(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
 
-    const uploadRegistryCommand = [
-      'aws s3 cp',
-      `"${registryTmpPath}"`,
-      `"s3://${site.bucketName}/registry.json"`,
-      `--endpoint-url "${endpoint}"`,
-    ].join(' ');
+    const args = ['s3', 'cp', registryTmpPath, `s3://${site.bucketName}/registry.json`, '--endpoint-url', endpoint];
 
     await execAsync({
-      command: uploadRegistryCommand,
+      command: 'aws',
+      args,
       options: {
         stdio: 'inherit',
         env: {
@@ -585,9 +597,13 @@ async function main() {
       console.log('\n✅ Sync and registry upload successfully completed!');
     }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
     console.error(`\n⨯ ${isDryRun ? 'Dry run' : 'Sync process'} failed.`);
-    console.error(message);
+    if (err instanceof Error) {
+      console.error(err.message);
+    } else {
+      console.error('An unknown error occurred:');
+      console.error(err);
+    }
     process.exit(1);
   }
 }
