@@ -8,7 +8,7 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { getRegistry } from '../src/lib/registry';
 import { env } from '../src/lib/env';
-import { INDEX_JSON, ROOT_JSON, INDEX_SLUG } from '../src/lib/constants';
+import { INDEX_JSON, ROOT_JSON, INDEX_SLUG, SITEMAP_XML, SITEMAP_PAGES_XML } from '../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 
@@ -83,6 +83,33 @@ function generateSitemapIndexXml(sitemaps: { loc: string; lastmod?: string }[]):
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${sitemapTags}
 </sitemapindex>`;
+}
+
+function mapPagesToSitemapUrls(pages: PageMetadata[], domain: string, relDir: string = '') {
+  return pages.map((p) => {
+    const urlPath = p.slug === INDEX_SLUG ? relDir : relDir ? `${relDir}/${p.slug}` : p.slug;
+    return {
+      loc: `https://${domain}/${urlPath}`,
+      lastmod: p.updatedAt || p.date,
+    };
+  });
+}
+
+async function writeSitemapFile(
+  fullPath: string,
+  relPath: string,
+  content: string,
+  dryRun: boolean,
+  label: string
+) {
+  if (!dryRun) {
+    const dir = join(fullPath, '..');
+    await mkdir(dir, { recursive: true });
+    await writeFile(fullPath, content);
+    console.log(`✨ Generated ${label} at ${relPath}`);
+  } else {
+    console.log(`[DRY RUN] Would generate ${label} at ${relPath}`);
+  }
 }
 
 async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<string[]> {
@@ -189,27 +216,14 @@ async function scanAndGenerate(
 
   // Generate sitemap for this directory if it has pages and is NOT the root
   if (pages.length > 0 && relDir !== '') {
-      const sitemapUrls = pages.map((p) => {
-        const path = p.slug === INDEX_SLUG ? relDir : `${relDir}/${p.slug}`;
-        return {
-          loc: `https://${domain}/${path}`,
-          lastmod: p.updatedAt || p.date,
-        };
-      });
+    const sitemapUrls = mapPagesToSitemapUrls(pages, domain, relDir);
+    const sitemapContent = generateSitemapXml(sitemapUrls);
+    const sitemapPath = join(vaultPath, 'public', relDir, SITEMAP_XML);
+    const relSitemapPath = `public/${relDir}/${SITEMAP_XML}`;
 
-      const sitemapContent = generateSitemapXml(sitemapUrls);
-      const sitemapPath = join(vaultPath, 'public', relDir, 'sitemap.xml');
-      const sitemapDir = join(vaultPath, 'public', relDir);
-
-      if (!dryRun) {
-        await mkdir(sitemapDir, { recursive: true });
-        await writeFile(sitemapPath, sitemapContent);
-        console.log(`✨ Generated sitemap for "${relDir}" at public/${relDir}/sitemap.xml`);
-      } else {
-        console.log(`[DRY RUN] Would generate sitemap for "${relDir}" at public/${relDir}/sitemap.xml`);
-      }
-      subSitemaps.push(`${relDir}/sitemap.xml`);
-    }
+    await writeSitemapFile(sitemapPath, relSitemapPath, sitemapContent, dryRun, `sitemap for "${relDir}"`);
+    subSitemaps.push(`${relDir}/${SITEMAP_XML}`);
+  }
 
   return { index: indexData, allDirs };
 }
@@ -240,46 +254,24 @@ async function generateIndices(vaultPath: string, domain: string, dryRun: boolea
 
   // Generate sitemaps
   const rootPages = rootContentIndex.pages;
+  const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls(rootPages, domain) : [];
+
   if (subSitemaps.length === 0) {
     // Case 1: No sub-sitemaps, write root pages to sitemap.xml directly
-    if (rootPages.length > 0) {
-      const sitemapUrls = rootPages.map((p) => {
-        const path = p.slug === INDEX_SLUG ? '' : p.slug;
-        return {
-          loc: `https://${domain}/${path}`,
-          lastmod: p.updatedAt || p.date,
-        };
-      });
+    if (sitemapUrls.length > 0) {
       const sitemapContent = generateSitemapXml(sitemapUrls);
-      const sitemapPath = join(publicBaseDir, 'sitemap.xml');
-      if (!dryRun) {
-        await writeFile(sitemapPath, sitemapContent);
-        console.log(`✨ Generated sitemap at public/sitemap.xml`);
-      } else {
-        console.log(`[DRY RUN] Would generate sitemap at public/sitemap.xml`);
-      }
+      const sitemapPath = join(publicBaseDir, SITEMAP_XML);
+      await writeSitemapFile(sitemapPath, `public/${SITEMAP_XML}`, sitemapContent, dryRun, 'sitemap');
     }
   } else {
     // Case 2: Sub-sitemaps exist, sitemap.xml should be an index
     const sitemaps = [];
 
-    if (rootPages.length > 0) {
-      const sitemapUrls = rootPages.map((p) => {
-        const path = p.slug === INDEX_SLUG ? '' : p.slug;
-        return {
-          loc: `https://${domain}/${path}`,
-          lastmod: p.updatedAt || p.date,
-        };
-      });
+    if (sitemapUrls.length > 0) {
       const sitemapContent = generateSitemapXml(sitemapUrls);
-      const sitemapPath = join(publicBaseDir, 'sitemap_pages.xml');
-      if (!dryRun) {
-        await writeFile(sitemapPath, sitemapContent);
-        console.log(`✨ Generated root pages sitemap at public/sitemap_pages.xml`);
-      } else {
-        console.log(`[DRY RUN] Would generate root pages sitemap at public/sitemap_pages.xml`);
-      }
-      sitemaps.push({ loc: `https://${domain}/sitemap_pages.xml` });
+      const sitemapPath = join(publicBaseDir, SITEMAP_PAGES_XML);
+      await writeSitemapFile(sitemapPath, `public/${SITEMAP_PAGES_XML}`, sitemapContent, dryRun, 'root pages sitemap');
+      sitemaps.push({ loc: `https://${domain}/${SITEMAP_PAGES_XML}` });
     }
 
     for (const subSitemap of subSitemaps) {
@@ -288,13 +280,8 @@ async function generateIndices(vaultPath: string, domain: string, dryRun: boolea
 
     if (sitemaps.length > 0) {
       const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
-      const sitemapIndexPath = join(publicBaseDir, 'sitemap.xml');
-      if (!dryRun) {
-        await writeFile(sitemapIndexPath, sitemapIndexContent);
-        console.log(`✨ Generated master sitemap index at public/sitemap.xml`);
-      } else {
-        console.log(`[DRY RUN] Would generate master sitemap index at public/sitemap.xml`);
-      }
+      const sitemapIndexPath = join(publicBaseDir, SITEMAP_XML);
+      await writeSitemapFile(sitemapIndexPath, `public/${SITEMAP_XML}`, sitemapIndexContent, dryRun, 'master sitemap index');
     }
   }
   const publicFiles = (await exists(publicBaseDir)) ? await scanPublicFiles(publicBaseDir) : [];
