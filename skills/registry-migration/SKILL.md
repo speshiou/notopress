@@ -1,9 +1,14 @@
+---
+title: Registry Migration
+description: Guidelines for migrating registry.json data to match the latest schema.
+---
+
 # Registry Migration Skill
 
 As the project evolves, the structure of `registry.json` may change. This skill provides guidelines for migrating your registry data to match the latest schema.
 
 ## Schema Source of Truth
-The canonical schema is defined in [src/domain/registry.ts](../src/domain/registry.ts) using Zod. Always refer to this file to see the expected structure.
+The canonical schema is defined in [src/domain/registry.ts](../../src/domain/registry.ts) using Zod. Always refer to this file to see the expected structure.
 
 ## Migration Workflow
 

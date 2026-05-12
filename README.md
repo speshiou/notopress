@@ -33,7 +33,7 @@ Keep your images, PDFs, and other assets organized here.
 - **Zero Configuration**: Just drop a file in `public/assets/logo.png` and it's available at `/assets/logo.png`.
 
 ### Automated SEO & Sitemaps
-Every time you sync, Notopress automatically generates a valid, search-engine-friendly `sitemap.xml`.
+Every time you sync, Notopress automatically generates a valid, search-engine-friendly `sitemap.xml` (if a `domain` is configured).
 - **Discovery**: Helps search engines find and index all your content instantly.
 - **Scalability**: For large sites, Notopress automatically creates a sitemap index and nested sub-sitemaps to keep things organized and within search engine limits.
 
@@ -68,7 +68,7 @@ The registry manages global defaults and site-specific overrides.
 **Site-Specific Settings**
 | Property | Type | Description |
 | :--- | :--- | :--- |
-| `domain` | `string` | Your site's domain. Used to generate absolute URLs for the sitemap. |
+| `domain` | `string` | (Optional) Your site's domain. Used to generate absolute URLs for the sitemap. If omitted, sitemap generation will be skipped. |
 | `siteId` | `string` | A unique ID for the site, used as its root folder in S3. |
 | `vaultPath` | `string` | Absolute path to your local markdown vault. |
 | `bucketName` | `string` | (Optional) The S3 bucket name. |

@@ -18,6 +18,16 @@ export const INDEX_JSON = 'index.json';
 export const ROOT_JSON = 'root.json';
 
 /**
+ * The filename for the default sitemap.
+ */
+export const SITEMAP_XML = 'sitemap.xml';
+
+/**
+ * The filename for the sitemap containing individual pages.
+ */
+export const SITEMAP_PAGES_XML = 'sitemap_pages.xml';
+
+/**
  * The default filename for the registry configuration.
  */
 export const DEFAULT_REGISTRY_FILENAME = 'registry.json';
