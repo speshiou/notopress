@@ -1,115 +1,114 @@
 # Notopress
 
 > [!CAUTION]
-> This project is currently under active development. Expect breaking changes and potential backward incompatibility as we evolve.
+> Notopress is currently under active development. Expect breaking changes and potential backward incompatibility as we evolve.
 
-Notopress is a modern tool for building markdown-based, content-driven websites. Whether you're creating technical documentation, a personal blog, or high-performance marketing pages, Notopress provides a streamlined workflow to turn your markdown files into a polished web presence.
+Notopress is a tool for creating highly customizable, markdown-based, content-driven websites. Whether you're building technical documentation, a personal blog, or unique marketing pages, Notopress bridges the gap between your favorite writing environment and the web with a focus on flexibility, simplicity, and SEO.
 
-## Features & Scenarios
+## Why Notopress?
 
-Notopress is designed to be flexible and fit into your existing writing workflow:
+Notopress is designed to fit seamlessly into your existing workflow, rather than forcing you into a new one:
 
-- **Obsidian Integration**: Manage your entire site directly from your Obsidian vault.
-- **Manual Control**: Simply write and organize your markdown files manually in your preferred editor.
-- **AI-Assisted Publishing**: Grant AI agents access to your content vaults to generate or refine articles with ease.
+- **Obsidian-First**: Manage your entire site directly from your Obsidian vault. What you see in your notes is what you get on the web.
+- **Developer-Friendly**: Write and organize files manually in your favorite editor with zero friction.
+- **AI-Powered**: Perfect for AI agents! Grant them access to your vaults to generate, refine, or translate content automatically.
 
 ## Requirements
 
-To get started with Notopress, you will need:
+- **Node.js**: A modern Node.js runtime to build and run your site.
+- **S3-Compatible Storage**: Any S3-compatible service (AWS S3, Cloudflare R2, MinIO, etc.) to store and serve your content.
 
-- **Node.js Runtime**: A modern Node.js environment to host and run the application.
-- **S3-Compatible Storage**: Any S3-compatible service (like AWS S3, R2, or MinIO) to store and serve your content assets.
+## Organizing Your Vault
 
-## Vault Structure
+Notopress looks for a specific but intuitive structure in your vault:
 
-Notopress requires your content vault to follow a specific directory structure:
+### `content/` (The Core)
+This is where your writing lives.
+- **Clean URLs**: Directory indices are named `page.md` (e.g., `blog/page.md` becomes `yoursite.com/blog`).
+- **Home Page**: Your site's landing page is simply `content/page.md`.
 
-- **`content/` (Required)**: This directory contains all your markdown files.
-    - Directory indices must be named **`page.md`** (e.g., `blog/page.md` maps to `/blog`).
-    - The site home page must be located at **`content/page.md`**.
-- **`public/` (Optional)**: This directory contains static assets (images, PDFs, etc.) that will be served at the same path as they appear in the folder.
+### `public/` (Static Assets)
+Keep your images, PDFs, and other assets organized here.
+- **Mirroring**: The folder structure in `public/` perfectly mirrors your URL structure.
+- **Zero Configuration**: Just drop a file in `public/assets/logo.png` and it's available at `/assets/logo.png`.
+
+### Automated SEO & Sitemaps
+Every time you sync, Notopress automatically generates a valid, search-engine-friendly `sitemap.xml`.
+- **Discovery**: Helps search engines find and index all your content instantly.
+- **Scalability**: For large sites, Notopress automatically creates a sitemap index and nested sub-sitemaps to keep things organized and within search engine limits.
 
 ## Configuration
 
-Notopress uses a centralized registry to manage multiple sites and their respective storage configurations.
+Notopress uses a centralized `registry.json` to manage multiple sites and their storage settings.
 
-### Registry Configuration (`registry.json`)
+### Setting Up Your Registry
 
-The `registry.json` file is the primary configuration source. You can create it by copying the provided example:
+Start by copying the provided example:
 
+```bash
 cp registry.json.example registry.json
 ```
 
-By default, Notopress looks for `registry.json` in the project root. You can customize this path in two ways:
-- **CLI Flag**: Use `--registry` or `-r` (e.g., `npm run sync -- --registry ./my-registry.json`).
-- **Environment Variable**: Set the `REGISTRY_PATH` environment variable.
+By default, Notopress looks for `registry.json` in the project root. You can customize this path:
+- **CLI Flag**: `--registry` or `-r` (e.g., `npm run sync -- -r ./custom-registry.json`).
+- **Environment**: Set the `REGISTRY_PATH` environment variable.
 
-The registry allows you to define global S3 credentials and specific site configurations.
+#### Registry Properties
 
-#### Global Properties
+The registry manages global defaults and site-specific overrides.
+
+**Global Settings**
 | Property | Type | Description |
 | :--- | :--- | :--- |
-| `endpoint` | `string` | The S3-compatible API endpoint (e.g., Cloudflare R2 endpoint). |
+| `endpoint` | `string` | Your S3-compatible API endpoint (e.g., Cloudflare R2). |
 | `accessKeyId` | `string` | Your S3 access key ID. |
 | `secretAccessKey` | `string` | Your S3 secret access key. |
-| `sites` | `array` | An array of site configuration objects. |
+| `sites` | `array` | List of site configurations. |
 
-#### Site Properties
-Each object in the `sites` array supports the following properties:
+**Site-Specific Settings**
 | Property | Type | Description |
 | :--- | :--- | :--- |
-| `domain` | `string` | The domain name of the site (e.g., `example.com`). This is used to generate absolute URLs in the sitemap. |
-| `siteId` | `string` | A unique identifier for the site, used for its subdirectory in the S3 bucket. |
-| `vaultPath` | `string` | The absolute local filesystem path to your Obsidian vault. |
-| `bucketName` | `string` | (Optional) The S3 bucket name. Defaults to global if not specified. |
-| `endpoint` | `string` | (Optional) Override the global S3 endpoint for this specific site. |
-| `vercelProjectId` | `string` | (Optional) The Vercel Project ID associated with this site. |
+| `domain` | `string` | Your site's domain. Used to generate absolute URLs for the sitemap. |
+| `siteId` | `string` | A unique ID for the site, used as its root folder in S3. |
+| `vaultPath` | `string` | Absolute path to your local markdown vault. |
+| `bucketName` | `string` | (Optional) The S3 bucket name. |
+| `endpoint` | `string` | (Optional) Override the global endpoint for this site. |
 
-### Environment Variables
+### Environment Overrides
 
-You can also use environment variables for basic configuration or to override registry values. These are typically stored in a `.env` file:
+You can also use a `.env` file for quick overrides or local development:
 
 | Variable | Description |
 | :--- | :--- |
-| `S3_ENDPOINT` | Global S3 endpoint URL (fallback if not in registry) |
-| `S3_ACCESS_KEY_ID` | Global S3 access key (fallback if not in registry) |
-| `S3_SECRET_ACCESS_KEY` | Global S3 secret key (fallback if not in registry) |
-| `VAULT_ROOT` | The ID of the site currently being served/synced |
-| `REGISTRY_PATH` | Optional override for the path to `registry.json` |
+| `S3_ENDPOINT` | Fallback S3 endpoint URL. |
+| `S3_ACCESS_KEY_ID` | Fallback S3 access key. |
+| `S3_SECRET_ACCESS_KEY` | Fallback S3 secret key. |
+| `VAULT_ROOT` | The ID of the site currently being served/synced. |
 
-## Usage
+## Deploying Your Content
 
-### Syncing Content
-
-Notopress includes a sync script to deploy your local markdown content to your S3-compatible storage.
-
-To start the sync process:
+Ready to go live? The sync script handles everything from index generation to S3 uploading.
 
 ```bash
 npm run sync
 ```
 
-#### Dry Run
-
-You can perform a dry run to see what changes would be made without actually modifying any local or remote files:
+### Safety First: Dry Run
+Before making any changes, you can preview what will happen:
 
 ```bash
 npm run sync -- --dry-run
 ```
 
-This will:
-- Preview the `index.json` generation for the `content/` directory.
-- Show which files would be uploaded, updated, or deleted on the remote storage using the AWS CLI's `--dryrun` mode.
+This will preview the `index.json` metadata and use the AWS CLI's `--dryrun` mode to show exactly which files would be modified on your storage.
 
 ## Roadmap
 
-We are constantly working to improve Notopress. Here is what's on our immediate horizon:
-
-- [ ] **Localization**: Support for multi-language sites and easy translation workflows.
-- [ ] **Multi-site Support**: Manage multiple distinct websites from a single Notopress instance.
-- [ ] **Responsive Images**: Automatic image optimization and responsive sizing for faster page loads.
-- [ ] **Customizable Themes**: Flexible theming system to make your site look exactly how you want.
+- [ ] **Localization**: Native support for multi-language sites.
+- [ ] **Multi-site Hosting**: Serve multiple distinct domains from one instance.
+- [ ] **Asset Optimization**: Automatic responsive images and WebP conversion.
+- [ ] **Custom Themes**: A flexible system for bespoke site designs.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+MIT License. See [LICENSE.md](LICENSE.md) for details.
