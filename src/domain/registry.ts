@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const SiteSchema = z.object({
-  domain: z.string(),
+  domain: z.string().optional(),
   siteId: z.string(),
   vaultPath: z.string(),
   bucketName: z.string().optional(),
