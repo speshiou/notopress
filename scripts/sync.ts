@@ -11,6 +11,7 @@ import { env } from '../src/lib/env';
 import { INDEX_JSON, ROOT_JSON, INDEX_SLUG, SITEMAP_XML, SITEMAP_PAGES_XML } from '../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../src/lib/vault';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
+import { Registry, Site } from '../src/domain/registry';
 
 async function exists(path: string) {
   try {
@@ -137,13 +138,33 @@ async function scanPublicFiles(dir: string, baseDir: string = dir): Promise<stri
   return files;
 }
 
+async function generateAllSitemaps(
+  domain: string,
+  allIndices: Map<string, VaultDirectoryIndex>,
+  vaultPath: string,
+  dryRun: boolean
+): Promise<string[]> {
+  const subSitemaps: string[] = [];
+  for (const [relDir, indexData] of allIndices.entries()) {
+    if (relDir === '') continue; // Skip root, handled separately
+    if (indexData.pages.length === 0) continue;
+
+    const sitemapUrls = mapPagesToSitemapUrls(indexData.pages, domain, relDir);
+    const sitemapContent = generateSitemapXml(sitemapUrls);
+    const sitemapPath = join(vaultPath, 'public', relDir, SITEMAP_XML);
+    const relSitemapPath = `public/${relDir}/${SITEMAP_XML}`;
+
+    await writeSitemapFile(sitemapPath, relSitemapPath, sitemapContent, dryRun, `sitemap for "${relDir}"`);
+    subSitemaps.push(`${relDir}/${SITEMAP_XML}`);
+  }
+  return subSitemaps;
+}
+
 async function scanAndGenerate(
   dir: string,
   baseDir: string,
   dryRun: boolean,
-  domain: string | undefined,
-  vaultPath: string,
-  subSitemaps: string[]
+  allIndices: Map<string, VaultDirectoryIndex>
 ): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
   const entries = await readdir(dir, { withFileTypes: true });
   const pages: PageMetadata[] = [];
@@ -156,7 +177,7 @@ async function scanAndGenerate(
 
     if (entry.isDirectory()) {
       if (entry.name !== '.git' && entry.name !== 'node_modules') {
-        const result = await scanAndGenerate(fullPath, baseDir, dryRun, domain, vaultPath, subSitemaps);
+        const result = await scanAndGenerate(fullPath, baseDir, dryRun, allIndices);
 
         const childRelDir = relative(baseDir, fullPath).replace(/\\/g, '/');
         allDirs.push(childRelDir, ...result.allDirs);
@@ -214,21 +235,136 @@ async function scanAndGenerate(
     console.log(`✨ Generated index for "${relDirName}"`);
   }
 
-  // Generate sitemap for this directory if it has pages and is NOT the root
-  if (domain && pages.length > 0 && relDir !== '') {
-    const sitemapUrls = mapPagesToSitemapUrls(pages, domain, relDir);
-    const sitemapContent = generateSitemapXml(sitemapUrls);
-    const sitemapPath = join(vaultPath, 'public', relDir, SITEMAP_XML);
-    const relSitemapPath = `public/${relDir}/${SITEMAP_XML}`;
-
-    await writeSitemapFile(sitemapPath, relSitemapPath, sitemapContent, dryRun, `sitemap for "${relDir}"`);
-    subSitemaps.push(`${relDir}/${SITEMAP_XML}`);
-  }
+  allIndices.set(relDir, indexData);
 
   return { index: indexData, allDirs };
 }
 
-async function generateIndices(vaultPath: string, domain: string | undefined, dryRun: boolean = false) {
+async function selectSite(registry: Registry): Promise<Site> {
+  const siteId = await select({
+    message: 'Select a site to sync using AWS CLI:',
+    choices: registry.sites.map((site) => ({
+      name: `${site.siteId} (${site.domain || 'no domain'})`,
+      value: site.siteId,
+      description: `Vault: ${site.vaultPath} -> Bucket: ${site.bucketName || 'Not configured'}`,
+    })),
+  });
+
+  const site = registry.sites.find((s) => s.siteId === siteId);
+  if (!site) {
+    console.error('⨯ Site not found in registry.json');
+    process.exit(1);
+  }
+
+  if (!site.bucketName) {
+    console.error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}] in registry.json`);
+    process.exit(1);
+  }
+
+  if (!(await exists(site.vaultPath))) {
+    console.error(`⨯ Error: The local vaultPath does not exist: ${site.vaultPath}`);
+    process.exit(1);
+  }
+
+  return site;
+}
+
+async function syncSite(site: Site, registry: Registry, isDryRun: boolean) {
+  const endpoint = site.endpoint || registry.endpoint || env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    console.error(
+      '⨯ Error: Missing S3 credentials. Please provide them in registry.json or via environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).'
+    );
+    process.exit(1);
+  }
+
+  console.log(`\n☁️  Preparing AWS S3 Sync...`);
+  console.log(`- Local Path: ${site.vaultPath}`);
+  console.log(`- S3 Bucket:  ${site.bucketName}`);
+  console.log(`- Endpoint:   ${endpoint}\n`);
+
+  // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
+  // and not the directory itself.
+  // Each site is synced to its own subdirectory in the bucket: /{site-id}/*
+  const syncCommand = [
+    'aws s3 sync',
+    `"${site.vaultPath}/"`,
+    `"s3://${site.bucketName}/${site.siteId}/"`,
+    `--endpoint-url "${endpoint}"`,
+    `--exclude "*.DS_Store"`,
+    `--exclude "*/.git/*"`,
+    `--exclude ".git/*"`,
+    `--delete`, // Automatically delete remote files that don't exist locally
+    isDryRun ? '--dryrun' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  console.log(`Executing:\n> ${syncCommand}\n`);
+
+  // stdio: 'inherit' passes the aws-cli output directly to our terminal
+  await execAsync(syncCommand, {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      AWS_ACCESS_KEY_ID: accessKeyId,
+      AWS_SECRET_ACCESS_KEY: secretAccessKey,
+    },
+  });
+}
+
+async function uploadRegistry(site: Site, registry: Registry) {
+  const endpoint = site.endpoint || registry.endpoint || env.S3_ENDPOINT;
+  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) return;
+
+  console.log('\n✨ Uploading sanitized registry.json to bucket root...');
+
+  // Sanitize registry: remove sensitive credentials and local vault paths
+  const sanitizedSites = registry.sites
+    .filter((s) => s.bucketName === site.bucketName)
+    .map((s) => ({
+      domain: s.domain,
+      siteId: s.siteId,
+      // vaultPath is omitted or can be a placeholder
+    }));
+
+  const sanitizedRegistry = {
+    sites: sanitizedSites,
+  };
+
+  const registryTmpPath = join(tmpdir(), `notopress-registry-${randomUUID()}.json`);
+  try {
+    await writeFile(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
+
+    const uploadRegistryCommand = [
+      'aws s3 cp',
+      `"${registryTmpPath}"`,
+      `"s3://${site.bucketName}/registry.json"`,
+      `--endpoint-url "${endpoint}"`,
+    ].join(' ');
+
+    await execAsync(uploadRegistryCommand, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        AWS_ACCESS_KEY_ID: accessKeyId,
+        AWS_SECRET_ACCESS_KEY: secretAccessKey,
+      },
+    });
+  } finally {
+    if (await exists(registryTmpPath)) {
+      await unlink(registryTmpPath);
+    }
+  }
+}
+
+async function generateIndices(vaultPath: string, dryRun: boolean = false) {
   const contentDir = join(vaultPath, 'content');
   if (!(await exists(contentDir))) {
     console.error(`⨯ Error: The required "content" directory is missing in the vault: ${vaultPath}`);
@@ -237,14 +373,12 @@ async function generateIndices(vaultPath: string, domain: string | undefined, dr
 
   // 1. Recursive generation of index.json for each level in content/
   console.log(`\n🔍 Recursively scanning "content" directory in ${contentDir}...`);
-  const subSitemaps: string[] = [];
+  const allIndices = new Map<string, VaultDirectoryIndex>();
   const { index: rootContentIndex, allDirs } = await scanAndGenerate(
     contentDir,
     contentDir,
     dryRun,
-    domain,
-    vaultPath,
-    subSitemaps
+    allIndices
   );
 
   const publicBaseDir = join(vaultPath, 'public');
@@ -252,42 +386,6 @@ async function generateIndices(vaultPath: string, domain: string | undefined, dr
     await mkdir(publicBaseDir, { recursive: true });
   }
 
-  // Generate sitemaps
-  if (!domain) {
-    console.log('ℹ️  Skipping sitemap generation because "domain" is not configured in registry.json');
-  } else {
-    const rootPages = rootContentIndex.pages;
-    const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls(rootPages, domain) : [];
-
-    if (subSitemaps.length === 0) {
-      // Case 1: No sub-sitemaps, write root pages to sitemap.xml directly
-      if (sitemapUrls.length > 0) {
-        const sitemapContent = generateSitemapXml(sitemapUrls);
-        const sitemapPath = join(publicBaseDir, SITEMAP_XML);
-        await writeSitemapFile(sitemapPath, `public/${SITEMAP_XML}`, sitemapContent, dryRun, 'sitemap');
-      }
-    } else {
-      // Case 2: Sub-sitemaps exist, sitemap.xml should be an index
-      const sitemaps = [];
-
-      if (sitemapUrls.length > 0) {
-        const sitemapContent = generateSitemapXml(sitemapUrls);
-        const sitemapPath = join(publicBaseDir, SITEMAP_PAGES_XML);
-        await writeSitemapFile(sitemapPath, `public/${SITEMAP_PAGES_XML}`, sitemapContent, dryRun, 'root pages sitemap');
-        sitemaps.push({ loc: `https://${domain}/${SITEMAP_PAGES_XML}` });
-      }
-
-      for (const subSitemap of subSitemaps) {
-        sitemaps.push({ loc: `https://${domain}/${subSitemap}` });
-      }
-
-      if (sitemaps.length > 0) {
-        const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
-        const sitemapIndexPath = join(publicBaseDir, SITEMAP_XML);
-        await writeSitemapFile(sitemapIndexPath, `public/${SITEMAP_XML}`, sitemapIndexContent, dryRun, 'master sitemap index');
-      }
-    }
-  }
   const publicFiles = (await exists(publicBaseDir)) ? await scanPublicFiles(publicBaseDir) : [];
 
   // 2. Generate root.json at vault root pointing to top-level content
@@ -304,136 +402,84 @@ async function generateIndices(vaultPath: string, domain: string | undefined, dr
     await writeFile(rootPath, JSON.stringify(vaultRootIndex, null, 2));
     console.log(`✨ Generated master root index with ${allDirs.length} directories at: ${rootPath}`);
   }
+
+  return { rootContentIndex, allIndices };
+}
+
+async function generateSitemaps(
+  vaultPath: string,
+  domain: string | undefined,
+  rootContentIndex: VaultDirectoryIndex,
+  allIndices: Map<string, VaultDirectoryIndex>,
+  dryRun: boolean
+) {
+  if (!domain) {
+    console.log('ℹ️  Skipping sitemap generation because "domain" is not configured in registry.json');
+    return;
+  }
+
+  const publicBaseDir = join(vaultPath, 'public');
+  const subSitemaps = await generateAllSitemaps(domain, allIndices, vaultPath, dryRun);
+  const rootPages = rootContentIndex.pages;
+  const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls(rootPages, domain) : [];
+
+  if (subSitemaps.length === 0) {
+    // Case 1: No sub-sitemaps, write root pages to sitemap.xml directly
+    if (sitemapUrls.length > 0) {
+      const sitemapContent = generateSitemapXml(sitemapUrls);
+      const sitemapPath = join(publicBaseDir, SITEMAP_XML);
+      await writeSitemapFile(sitemapPath, `public/${SITEMAP_XML}`, sitemapContent, dryRun, 'sitemap');
+    }
+  } else {
+    // Case 2: Sub-sitemaps exist, sitemap.xml should be an index
+    const sitemaps = [];
+
+    if (sitemapUrls.length > 0) {
+      const sitemapContent = generateSitemapXml(sitemapUrls);
+      const sitemapPath = join(publicBaseDir, SITEMAP_PAGES_XML);
+      await writeSitemapFile(sitemapPath, `public/${SITEMAP_PAGES_XML}`, sitemapContent, dryRun, 'root pages sitemap');
+      sitemaps.push({ loc: `https://${domain}/${SITEMAP_PAGES_XML}` });
+    }
+
+    for (const subSitemap of subSitemaps) {
+      sitemaps.push({ loc: `https://${domain}/${subSitemap}` });
+    }
+
+    if (sitemaps.length > 0) {
+      const sitemapIndexContent = generateSitemapIndexXml(sitemaps);
+      const sitemapIndexPath = join(publicBaseDir, SITEMAP_XML);
+      await writeSitemapFile(sitemapIndexPath, `public/${SITEMAP_XML}`, sitemapIndexContent, dryRun, 'master sitemap index');
+    }
+  }
 }
 
 async function main() {
   const isDryRun = hasFlag({ flag: '--dry-run' });
-
-  // Parse registry path from command line arguments
   const registryPath = getFlagValue({ flag: '--registry', alias: '-r' });
 
-  const registry = await getRegistry(registryPath);
-
-  if (isDryRun) {
-    console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
-  }
-
-  const siteId = await select({
-    message: 'Select a site to sync using AWS CLI:',
-    choices: registry.sites.map(site => ({
-      name: `${site.siteId} (${site.domain})`,
-      value: site.siteId,
-      description: `Vault: ${site.vaultPath} -> Bucket: ${site.bucketName || 'Not configured'}`,
-    })),
-  });
-
-  const site = registry.sites.find(s => s.siteId === siteId);
-  if (!site) {
-    console.error('⨯ Site not found in registry.json');
-    process.exit(1);
-  }
-
-  if (!site.bucketName) {
-    console.error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}] in registry.json`);
-    process.exit(1);
-  }
-
-  if (!(await exists(site.vaultPath))) {
-    console.error(`⨯ Error: The local vaultPath does not exist: ${site.vaultPath}`);
-    process.exit(1);
-  }
-
-  // Generate index files at every level and root.json at the vault root before syncing
-  await generateIndices(site.vaultPath, site.domain, isDryRun);
-
-  const endpoint = registry.endpoint || env.S3_ENDPOINT;
-  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
-
-  if (!endpoint || !accessKeyId || !secretAccessKey) {
-    console.error('⨯ Error: Missing S3 credentials. Please provide them in registry.json or via environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).');
-    process.exit(1);
-  }
-
-  console.log(`\n☁️  Preparing AWS S3 Sync...`);
-  console.log(`- Local Path: ${site.vaultPath}`);
-  console.log(`- S3 Bucket:  ${site.bucketName}`);
-  console.log(`- Endpoint:   ${endpoint}\n`);
-
   try {
-    // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
-    // and not the directory itself.
-    // Each site is synced to its own subdirectory in the bucket: /{site-id}/*
-    const syncCommand = [
-      'aws s3 sync',
-      `"${site.vaultPath}/"`,
-      `"s3://${site.bucketName}/${site.siteId}/"`,
-      `--endpoint-url "${endpoint}"`,
-      `--exclude "*.DS_Store"`,
-      `--exclude "*/.git/*"`,
-      `--exclude ".git/*"`,
-      `--delete`, // Automatically delete remote files that don't exist locally
-      isDryRun ? '--dryrun' : ''
-    ].filter(Boolean).join(' ');
+    const registry = await getRegistry(registryPath);
 
-    console.log(`Executing:\n> ${syncCommand}\n`);
+    if (isDryRun) {
+      console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
+    }
 
-    // stdio: 'inherit' passes the aws-cli output directly to our terminal
-    await execAsync(syncCommand, {
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        AWS_ACCESS_KEY_ID: accessKeyId,
-        AWS_SECRET_ACCESS_KEY: secretAccessKey
-      }
-    });
+    const site = await selectSite(registry);
+
+    // Generate index files at every level and root.json at the vault root
+    const { rootContentIndex, allIndices } = await generateIndices(site.vaultPath, isDryRun);
+
+    // Generate sitemaps based on the collected indices
+    await generateSitemaps(site.vaultPath, site.domain, rootContentIndex, allIndices, isDryRun);
+
+    await syncSite(site, registry, isDryRun);
 
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');
     } else {
-      console.log('\n✨ Uploading sanitized registry.json to bucket root...');
-
-      // Sanitize registry: remove sensitive credentials and local vault paths
-      const sanitizedSites = registry.sites
-        .filter(s => s.bucketName === site.bucketName)
-        .map(s => ({
-          domain: s.domain,
-          siteId: s.siteId,
-          // vaultPath is omitted or can be a placeholder
-        }));
-
-      const sanitizedRegistry = {
-        sites: sanitizedSites
-      };
-
-      const registryTmpPath = join(tmpdir(), `notopress-registry-${randomUUID()}.json`);
-      try {
-        await writeFile(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
-
-        const uploadRegistryCommand = [
-          'aws s3 cp',
-          `"${registryTmpPath}"`,
-          `"s3://${site.bucketName}/registry.json"`,
-          `--endpoint-url "${endpoint}"`,
-        ].join(' ');
-
-        await execAsync(uploadRegistryCommand, {
-          stdio: 'inherit',
-          env: {
-            ...process.env,
-            AWS_ACCESS_KEY_ID: accessKeyId,
-            AWS_SECRET_ACCESS_KEY: secretAccessKey
-          }
-        });
-      } finally {
-        if (await exists(registryTmpPath)) {
-          await unlink(registryTmpPath);
-        }
-      }
-
+      await uploadRegistry(site, registry);
       console.log('\n✅ Sync and registry upload successfully completed!');
     }
-
   } catch (err: any) {
     console.error(`\n⨯ ${isDryRun ? 'Dry run' : 'Sync process'} failed.`);
     console.error(err.message);
