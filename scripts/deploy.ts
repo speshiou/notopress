@@ -27,6 +27,8 @@ type SpawnWithInputOptions = SpawnOptions & {
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
+const VERCEL_CONFIG_PATH = 'vercel.json';
+
 async function exists(path: string) {
   try {
     await access(path, constants.F_OK);
@@ -773,7 +775,7 @@ async function deployToVercel({ site }: { site: Site }) {
   console.log(`\n📦 Triggering production deployment...`);
   await execAsync({
     command: 'vercel',
-    args: ['deploy', '--prod'],
+    args: ['deploy', '--prod', '--local-config', VERCEL_CONFIG_PATH],
     options: {
       stdio: 'inherit',
       env: getVercelCommandEnv({ projectId: vercelProjectId }),
