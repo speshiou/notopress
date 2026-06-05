@@ -310,8 +310,8 @@ async function scanAndGenerate({
           ? titleMatch[1].trim()
           : entry.name;
 
-      const relPath = relative(dir, fullPath);
-      const slug = relPath.replace(/\.md$/, '').replace(/\\/g, '/');
+      const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
+      const slug = relative(dir, fullPath).replace(/\.md$/, '').replace(/\\/g, '/');
 
       const date = parseSafeDate({ dateInput: data.date, fallback: fileStats.mtime, label: 'date', filePath: relPath });
       const manualUpdate = data.updated || data.lastmod;
@@ -368,6 +368,11 @@ async function selectSite({
   mode: RunMode;
   siteId?: string;
 }): Promise<Site> {
+  if (registry.sites.length === 0) {
+    console.error('⨯ Error: No sites found in registry.json');
+    process.exit(1);
+  }
+
   const actionLabel = mode === 'sync' ? 'sync using AWS CLI' : mode === 'configure' ? 'configure locally' : 'sync and deploy';
 
   const selectedSiteId =
