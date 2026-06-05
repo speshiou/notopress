@@ -7,9 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "sync": "tsx --env-file=.env scripts/sync.ts",
-    "deploy": "tsx --env-file=.env scripts/deploy.ts",
-    "configure": "tsx scripts/deploy.ts --dev",
+    "sync": "tsx --env-file=.env scripts/deploy.ts --sync",
+    "deploy": "tsx --env-file=.env scripts/deploy.ts --deploy",
+    "configure": "tsx --env-file=.env scripts/deploy.ts --configure",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },
