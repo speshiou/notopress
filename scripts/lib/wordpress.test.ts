@@ -60,7 +60,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
+        '<figure class="wp-block-image"><img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" /><figcaption>Pic</figcaption></figure>'
       );
     });
 
@@ -78,7 +78,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" alt="Direct" />'
+        '<figure class="wp-block-image"><img src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" alt="Direct" /><figcaption>Direct</figcaption></figure>'
       );
     });
 

@@ -32,6 +32,18 @@ describe("createMarkdownRenderer", () => {
     });
     await expect(renderer.renderMarkdownContent({ markdown: "![alt](image.png)", thumbnailSizes: [320] })).resolves.toBe("rendered");
   });
+
+  it("renders standard markdown images as HTML wrapped in figure and figcaption", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![My Alt Text](image.png)",
+      thumbnailSizes: [320],
+      publicFiles: ["image.png"],
+    });
+    expect(html).toContain('<figure class="wp-block-image">');
+    expect(html).toContain('<img src="/image.png" alt="My Alt Text"');
+    expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
+  });
 });
 
 describe("preprocessWikilinks", () => {

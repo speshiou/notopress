@@ -35,7 +35,7 @@ async function wpFetch({
 }: WpFetchArgs) {
   const url = `${endpoint.replace(/\/+$/, '')}${apiPath}`;
   const auth = Buffer.from(`${credentials.username}:${credentials.applicationPassword}`).toString('base64');
-  
+
   const headers: Record<string, string> = {
     'Authorization': `Basic ${auth}`,
   };
@@ -119,10 +119,12 @@ export async function replaceLocalImagesWithThumbnails({
       domain: site.domain,
     });
 
-    // Preserve the alt text attribute if present
+    // Preserve the alt text attribute if present and use it as a caption
     const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
-    const altAttr = altMatch ? ` alt="${altMatch[1]}"` : '';
-    const newImgTag = `<img src="${encodeURI(absoluteUrl)}"${altAttr} />`;
+    const altText = altMatch ? altMatch[1] : '';
+    const altAttr = altText ? ` alt="${altText}"` : '';
+    const figcaption = altText ? `<figcaption>${altText}</figcaption>` : '';
+    const newImgTag = `<figure class="wp-block-image"><img src="${encodeURI(absoluteUrl)}"${altAttr} />${figcaption}</figure>`;
 
     processedHtml = processedHtml.replaceAll(fullMatch, newImgTag);
   }

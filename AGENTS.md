@@ -5,7 +5,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- END:nextjs-agent-rules -->
 
 # Verification
-Always run `npm run type-check` after making changes to verify basic syntax errors.
+- Always run `npm run type-check` after making changes to verify basic syntax errors.
+- **Strictly avoid using `any` type** anywhere in the codebase. Always write proper TypeScript types, schemas, or interfaces for safety and clarity.
+
 
 # Architecture
 - Keep main entrance files clean as orchestrators. Move feature logic, parsing, file scanning, rendering transforms, and other reusable behavior into focused modules instead of letting scripts or page files grow bloated.

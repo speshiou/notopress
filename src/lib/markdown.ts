@@ -4,10 +4,17 @@ import type { Plugin } from "unified";
 import { getResponsiveImageAttributes } from "./responsive-images";
 
 export type MarkdownNode = {
-  type: string;
+  type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
   url?: string;
+  alt?: string;
+  title?: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, string | number | boolean>;
   data?: {
-    hProperties?: Record<string, string>;
+    hName?: string;
+    hProperties?: Record<string, string | number | boolean>;
+    hChildren?: MarkdownNode[];
   };
   children?: MarkdownNode[];
 };
@@ -26,6 +33,62 @@ export type MarkdownRendererDeps = {
 export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   function applyResponsiveImages({ tree, thumbnailSizes }: { tree: MarkdownNode; thumbnailSizes: readonly number[] }) {
     function visit(node: MarkdownNode) {
+      if (node.type === "paragraph" && node.children && node.children.length === 1 && node.children[0].type === "image") {
+        const imgNode = node.children[0];
+        const imgUrl = imgNode.url || "";
+        const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
+        const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
+        const altText = imgNode.alt || '';
+
+        const imgProperties: Record<string, string> = {
+          src: srcVal,
+        };
+        if (altText) {
+          imgProperties.alt = altText;
+        }
+        if (attributes) {
+          imgProperties.srcset = attributes.srcSet;
+          imgProperties.sizes = attributes.sizes;
+        }
+        imgProperties.loading = "lazy";
+        imgProperties.decoding = "async";
+
+        const children: MarkdownNode[] = [
+          {
+            type: "element",
+            tagName: "img",
+            properties: imgProperties,
+            children: [],
+          }
+        ];
+
+        if (altText) {
+          children.push({
+            type: "element",
+            tagName: "figcaption",
+            properties: {},
+            children: [
+              {
+                type: "text",
+                value: altText,
+              }
+            ],
+          });
+        }
+
+        node.type = "image-figure";
+        node.data = {
+          ...node.data,
+          hName: "figure",
+          hProperties: {
+            class: "wp-block-image",
+          },
+          hChildren: children,
+        };
+        delete node.children;
+        return;
+      }
+
       if (node.type === "image" && node.url) {
         const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes });
         if (attributes) {
@@ -111,7 +174,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
 const defaultMarkdownRenderer = createMarkdownRenderer({
   getResponsiveImageAttributes,
   processMarkdown: async ({ markdown, plugin }) => {
-    const processedContent = await remark().use(plugin).use(html).process(markdown);
+    const processedContent = await remark().use(plugin).use(html, { sanitize: false }).process(markdown);
     return processedContent.toString();
   },
 });
