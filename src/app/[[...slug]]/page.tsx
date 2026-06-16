@@ -1,4 +1,4 @@
-import { resolveVaultRequest } from "@/lib/vault";
+import { resolveVaultRequest, fetchRootIndex } from "@/lib/vault";
 import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
 import { renderMarkdownContent } from "@/lib/markdown";
@@ -68,9 +68,13 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
     // Strip the first H1 from the body if it exists, to avoid double titles
     const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
 
+    const rootIndex = await fetchRootIndex(vaultConfig);
+    const publicFiles = rootIndex?.publicFiles || [];
+
     const contentHtml = await renderMarkdownContent({
       markdown: bodyWithoutTitle,
       thumbnailSizes: result.thumbnailSizes,
+      publicFiles,
     });
     const { metadata } = result;
 

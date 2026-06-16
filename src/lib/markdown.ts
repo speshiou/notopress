@@ -65,16 +65,47 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     renderMarkdownContent({
       markdown,
       thumbnailSizes,
+      publicFiles,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
+      publicFiles?: readonly string[];
     }): Promise<string> {
+      const preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
       return deps.processMarkdown({
-        markdown,
+        markdown: preprocessed,
         plugin: responsiveImagePlugin({ thumbnailSizes }),
       });
     },
   };
+}
+
+export function preprocessWikilinks(markdown: string, publicFiles: readonly string[]): string {
+  const wikilinkRegex = /!\[\[([^\]]+)\]\]/g;
+  return markdown.replace(wikilinkRegex, (match, content) => {
+    const parts = content.split('|');
+    const filename = parts[0].trim();
+
+    let alt = '';
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i].trim();
+      if (!/^\d+$/.test(part)) {
+        alt = part;
+      }
+    }
+
+    const normalizedFilename = filename.toLowerCase();
+    const resolvedPath = publicFiles.find((file) => {
+      const base = file.split('/').pop()?.toLowerCase();
+      return base === normalizedFilename;
+    });
+
+    if (resolvedPath) {
+      return `![${alt}](/${resolvedPath})`;
+    }
+
+    return match;
+  });
 }
 
 const defaultMarkdownRenderer = createMarkdownRenderer({
@@ -88,3 +119,4 @@ const defaultMarkdownRenderer = createMarkdownRenderer({
 export const responsiveImagePlugin = defaultMarkdownRenderer.responsiveImagePlugin;
 export const applyResponsiveImages = defaultMarkdownRenderer.applyResponsiveImages;
 export const renderMarkdownContent = defaultMarkdownRenderer.renderMarkdownContent;
+

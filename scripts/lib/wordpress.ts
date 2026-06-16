@@ -80,14 +80,15 @@ export async function replaceLocalImagesWithThumbnails({
     return html;
   }
 
+  let processedHtml = html;
+
+  // Process HTML <img> tags
   const imgRegex = /<img\s+([^>]*src=["']([^"']+)["'][^>]*?)>/gi;
   const matches: { fullMatch: string; src: string }[] = [];
   let match;
-  while ((match = imgRegex.exec(html)) !== null) {
+  while ((match = imgRegex.exec(processedHtml)) !== null) {
     matches.push({ fullMatch: match[0], src: match[2] });
   }
-
-  let processedHtml = html;
 
   for (const { fullMatch, src } of matches) {
     // Skip external or inline assets
@@ -162,6 +163,16 @@ export async function pushToWordPress({
   }
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
+  // Load public files from root.json if it exists
+  let publicFiles: string[] = [];
+  try {
+    const rootIndexRaw = await readFile(path.join(site.vaultPath, 'root.json'), 'utf-8');
+    const rootIndex = JSON.parse(rootIndexRaw);
+    publicFiles = rootIndex.publicFiles || [];
+  } catch (err) {
+    // If root.json is not found or not yet generated, fallback to empty array
+  }
+
   // Collect all posts from directory indices
   const postsToPublish: { localPath: string; slug: string; title: string; date: string }[] = [];
 
@@ -206,6 +217,7 @@ export async function pushToWordPress({
       let htmlContent = await renderMarkdownContent({
         markdown: bodyWithoutTitle,
         thumbnailSizes: sizes,
+        publicFiles,
       });
 
       // Replace local image paths with imageHost absolute thumbnail URLs

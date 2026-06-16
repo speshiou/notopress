@@ -10,11 +10,12 @@ vi.mock('./files', () => ({
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
+  readdir: vi.fn(),
 }));
 
 // Access mocked functions
 import { exists } from './files';
-import { readFile } from 'fs/promises';
+import { readFile, readdir } from 'fs/promises';
 
 describe('WordPress Deployment Library', () => {
   const mockSite: Site = {

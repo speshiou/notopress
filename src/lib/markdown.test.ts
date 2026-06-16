@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMarkdownRenderer, type MarkdownNode } from "./markdown";
+import { createMarkdownRenderer, type MarkdownNode, preprocessWikilinks } from "./markdown";
 
 describe("createMarkdownRenderer", () => {
   it("injects responsive image attributes into image nodes before processing", async () => {
@@ -33,3 +33,14 @@ describe("createMarkdownRenderer", () => {
     await expect(renderer.renderMarkdownContent({ markdown: "![alt](image.png)", thumbnailSizes: [320] })).resolves.toBe("rendered");
   });
 });
+
+describe("preprocessWikilinks", () => {
+
+  it("converts Obsidian wikilinks to standard markdown image tags using publicFiles", () => {
+    const markdown = "Hello ![[screenshot.png]] and ![[screenshot.png|My Alt Text]]";
+    const publicFiles = ["attachments/screenshot.png"];
+    const result = preprocessWikilinks(markdown, publicFiles);
+    expect(result).toBe("Hello ![](/attachments/screenshot.png) and ![My Alt Text](/attachments/screenshot.png)");
+  });
+});
+
