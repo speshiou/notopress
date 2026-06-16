@@ -1,11 +1,11 @@
 import { readFile } from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
-import { exists } from './files';
+import { getAssetSubDir } from './files';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
-import { getThumbnailPath, normalizeThumbnailSizes } from '../../src/lib/responsive-images';
+import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl } from '../../src/lib/responsive-images';
 
 interface PushToWordPressArgs {
   site: Site;
@@ -108,23 +108,16 @@ export async function replaceLocalImagesWithThumbnails({
     const thumbPath = getThumbnailPath({ imagePath: decodedSrc, width: largestWidth });
 
     // Determine target location in S3 by checking local filesystem existence
-    const contentThumbPath = path.join(site.vaultPath, 'content', thumbPath);
-    const publicThumbPath = path.join(site.vaultPath, 'public', thumbPath);
-
-    let s3SubDir = 'content';
-    if (await exists(publicThumbPath)) {
-      s3SubDir = 'public';
-    } else if (await exists(contentThumbPath)) {
-      s3SubDir = 'content';
-    }
+    const s3SubDir = await getAssetSubDir({ vaultPath: site.vaultPath, filePath: thumbPath });
 
     // Build the absolute URL on the configured imageHost
-    let absoluteUrl: string;
-    if (imageHost) {
-      absoluteUrl = `${imageHost.replace(/\/+$/, '')}/${s3SubDir}/${thumbPath}`;
-    } else {
-      absoluteUrl = `https://${site.domain || 'localhost'}/api/vault-public/${thumbPath}`;
-    }
+    const absoluteUrl = getAssetUrl({
+      imageHost,
+      siteId: site.siteId,
+      s3SubDir,
+      filePath: thumbPath,
+      domain: site.domain,
+    });
 
     // Preserve the alt text attribute if present
     const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);

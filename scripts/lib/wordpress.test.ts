@@ -5,7 +5,7 @@ import { VaultDirectoryIndex } from '../../src/lib/vault';
 
 // Mock dependency modules
 vi.mock('./files', () => ({
-  exists: vi.fn(),
+  getAssetSubDir: vi.fn(),
 }));
 
 vi.mock('fs/promises', () => ({
@@ -14,7 +14,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Access mocked functions
-import { exists } from './files';
+import { getAssetSubDir } from './files';
 import { readFile, readdir } from 'fs/promises';
 
 describe('WordPress Deployment Library', () => {
@@ -39,7 +39,7 @@ describe('WordPress Deployment Library', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default mock implementation
-    vi.mocked(exists).mockResolvedValue(true);
+    vi.mocked(getAssetSubDir).mockResolvedValue('content');
     vi.mocked(readFile).mockResolvedValue('# My Post Title\nThis is content.');
     global.fetch = vi.fn();
   });
@@ -50,9 +50,7 @@ describe('WordPress Deployment Library', () => {
       const sizes = [300, 600, 1200];
 
       // Simulate that the file exists in the "content" directory
-      vi.mocked(exists).mockImplementation(async (filePath) => {
-        return filePath.toString().includes('content/_thumbnails');
-      });
+      vi.mocked(getAssetSubDir).mockResolvedValue('content');
 
       const result = await replaceLocalImagesWithThumbnails({
         html,
@@ -62,7 +60,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://cdn.testsite.com/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
+        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
       );
     });
 

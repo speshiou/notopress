@@ -86,3 +86,24 @@ export const isSupportedResponsiveImage = defaultResponsiveImageHelpers.isSuppor
 export const isGeneratedThumbnailPath = defaultResponsiveImageHelpers.isGeneratedThumbnailPath;
 export const getThumbnailPath = defaultResponsiveImageHelpers.getThumbnailPath;
 export const getResponsiveImageAttributes = defaultResponsiveImageHelpers.getResponsiveImageAttributes;
+
+export function getAssetUrl({
+  imageHost,
+  siteId,
+  s3SubDir,
+  filePath,
+  domain,
+}: {
+  imageHost?: string;
+  siteId: string;
+  s3SubDir: 'public' | 'content';
+  filePath: string;
+  domain?: string;
+}): string {
+  const cleanPath = filePath.replace(/^\//, '');
+  if (imageHost) {
+    return `${imageHost.replace(/\/+$/, '')}/${siteId}/${s3SubDir}/${cleanPath}`;
+  }
+  return `https://${domain || 'localhost'}/api/vault-public/${cleanPath}`;
+}
+

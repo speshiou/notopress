@@ -48,4 +48,38 @@ describe('createFileScanner', () => {
 
     await expect(scanner.scanContentAssetFiles({ dir: 'content' })).resolves.toEqual(['image.png']);
   });
+
+  describe('getAssetSubDir', () => {
+    it('returns public if file exists in public sub-folder', async () => {
+      const scanner = createFileScanner({
+        access: vi.fn(async (filePath: string) => {
+          if (filePath !== 'root/public/images/pic.png') throw new Error('missing');
+        }),
+        readdir: vi.fn(),
+        fileOkMode: 0,
+        joinPath: path.posix.join,
+        relativePath: path.posix.relative,
+      });
+
+      await expect(
+        scanner.getAssetSubDir({ vaultPath: 'root', filePath: 'images/pic.png' })
+      ).resolves.toBe('public');
+    });
+
+    it('returns content if file does not exist in public sub-folder', async () => {
+      const scanner = createFileScanner({
+        access: vi.fn(async () => {
+          throw new Error('missing');
+        }),
+        readdir: vi.fn(),
+        fileOkMode: 0,
+        joinPath: path.posix.join,
+        relativePath: path.posix.relative,
+      });
+
+      await expect(
+        scanner.getAssetSubDir({ vaultPath: 'root', filePath: 'images/pic.png' })
+      ).resolves.toBe('content');
+    });
+  });
 });

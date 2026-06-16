@@ -75,6 +75,19 @@ export function createFileScanner(deps: FileScannerDeps) {
         shouldIncludeFile: (name) => !name.endsWith('.md') && !name.endsWith('.json'),
       });
     },
+    async getAssetSubDir({
+      vaultPath,
+      filePath,
+    }: {
+      vaultPath: string;
+      filePath: string;
+    }): Promise<'public' | 'content'> {
+      const publicPath = deps.joinPath(vaultPath, 'public', filePath);
+      if (await exists(publicPath)) {
+        return 'public';
+      }
+      return 'content';
+    },
   };
 }
 
@@ -89,3 +102,5 @@ const defaultFileScanner = createFileScanner({
 export const exists = defaultFileScanner.exists;
 export const scanPublicFiles = defaultFileScanner.scanPublicFiles;
 export const scanContentAssetFiles = defaultFileScanner.scanContentAssetFiles;
+export const getAssetSubDir = defaultFileScanner.getAssetSubDir;
+
