@@ -137,7 +137,8 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           logger: deps.logger,
         });
 
-        const firstParagraph = content
+        const contentWithoutCodeBlocks = content.replace(/```[\s\S]*?```/g, '');
+        const firstParagraph = contentWithoutCodeBlocks
           .split('\n')
           .map((line) => line.trim())
           .filter((line) => line && !line.startsWith('#') && !line.startsWith('>'))[0];

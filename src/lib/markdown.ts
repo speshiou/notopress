@@ -53,8 +53,12 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       : { class: "image-figure" };
 
     function visit(node: MarkdownNode) {
-      if (node.type === "paragraph" && node.children && node.children.length === 1 && node.children[0].type === "image") {
-        const imgNode = node.children[0];
+      const nonWhitespaceChildren = node.children?.filter(
+        child => !(child.type === "text" && child.value?.trim() === "")
+      ) || [];
+
+      if (node.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
+        const imgNode = nonWhitespaceChildren[0];
         const imgUrl = imgNode.url || "";
         const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
         const srcVal = attributes ? attributes.src : encodeURI(imgUrl);

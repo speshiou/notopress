@@ -58,6 +58,18 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain("<p>Some text after</p>");
   });
+
+  it("renders images with surrounding whitespace or newlines inside paragraphs wrapped in figure", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "  ![My Alt Text](image.png) \n ",
+      thumbnailSizes: [320],
+      publicFiles: ["image.png"],
+    });
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
+  });
 });
 
 describe("preprocessWikilinks", () => {

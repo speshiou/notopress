@@ -21,7 +21,7 @@ interface WpFetchArgs {
   credentials: { username: string; applicationPassword: string };
   path: string;
   method?: string;
-  body?: any;
+  body?: unknown;
 }
 
 /**
@@ -91,7 +91,12 @@ export async function replaceLocalImagesWithThumbnails({
     matches.push({ fullMatch: match[0], src: match[2] });
   }
 
-  for (const { fullMatch, src } of matches) {
+  // Deduplicate matches to avoid redundant checks/replacements
+  const uniqueMatches = Array.from(
+    new Map(matches.map((m) => [m.fullMatch, m])).values()
+  );
+
+  for (const { fullMatch, src } of uniqueMatches) {
     // Skip external or inline assets
     if (
       src.startsWith('http://') ||
@@ -133,19 +138,54 @@ export async function replaceLocalImagesWithThumbnails({
       return `${encodeURI(sizeUrl)} ${size}w`;
     }).join(', ');
 
-    const srcSetAttr = srcSetUrls ? ` srcset="${srcSetUrls}"` : '';
-    const sizesAttr = srcSetUrls ? ` sizes="(max-width: ${largestWidth}px) 100vw, ${largestWidth}px"` : '';
+    let newImgTag = fullMatch;
+    
+    // Replace src in-place
+    newImgTag = newImgTag.replace(/src=["']([^"']*)["']/i, `src="${encodeURI(absoluteUrl)}"`);
 
-    // Preserve the alt text attribute if present
-    const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
-    const altText = altMatch ? altMatch[1] : '';
-    const altAttr = altText ? ` alt="${altText}"` : '';
-    const newImgTag = `<img src="${encodeURI(absoluteUrl)}"${srcSetAttr}${sizesAttr}${altAttr} style="max-width:100%;" loading="lazy" decoding="async" />`;
+    // Inject/replace srcset and sizes in-place
+    if (srcSetUrls) {
+      newImgTag = setAttribute(newImgTag, 'srcset', srcSetUrls);
+      newImgTag = setAttribute(newImgTag, 'sizes', `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`);
+    }
+
+    // Append/merge style style="max-width: 100%;"
+    if (/style=["']/i.test(newImgTag)) {
+      newImgTag = newImgTag.replace(/style=["']([^"']*)["']/i, (m, p1) => {
+        const trimmed = p1.trim();
+        const separator = trimmed.endsWith(';') || trimmed === '' ? '' : ';';
+        return `style="${p1}${separator}max-width:100%;"`;
+      });
+    } else {
+      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 style="max-width:100%;"');
+    }
+
+    // Append loading="lazy" if not present
+    if (!/loading=["']/i.test(newImgTag)) {
+      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 loading="lazy"');
+    }
+
+    // Append decoding="async" if not present
+    if (!/decoding=["']/i.test(newImgTag)) {
+      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 decoding="async"');
+    }
 
     processedHtml = processedHtml.replaceAll(fullMatch, newImgTag);
   }
 
   return processedHtml;
+}
+
+/**
+ * Helper to inject or update an attribute inside an HTML tag.
+ * Inserts the attribute right after '<img' to ensure self-closing tags are not broken.
+ */
+function setAttribute(tag: string, name: string, value: string): string {
+  const regex = new RegExp(`${name}=["']([^"']*)["']`, 'i');
+  if (regex.test(tag)) {
+    return tag.replace(regex, `${name}="${value}"`);
+  }
+  return tag.replace(/(<img\b)/i, `$1 ${name}="${value}"`);
 }
 
 /**
@@ -221,8 +261,29 @@ export async function pushToWordPress({
       const fileContent = await readFile(post.localPath, 'utf-8');
       const { content: markdownBody } = matter(fileContent);
 
-      // Strip first H1 from markdown to avoid duplicated titles
-      const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, '').trim();
+      // Strip first H1 from markdown to avoid duplicated titles, only if it's the first non-empty line of the document and not inside a code block
+      const lines = markdownBody.split('\n');
+      let inCodeBlock = false;
+      let firstH1Index = -1;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+        }
+        if (!inCodeBlock && trimmed.startsWith('# ')) {
+          firstH1Index = i;
+          break;
+        }
+      }
+
+      if (firstH1Index !== -1) {
+        const hasContentBefore = lines.slice(0, firstH1Index).some(line => line.trim() !== '');
+        if (!hasContentBefore) {
+          lines.splice(firstH1Index, 1);
+        }
+      }
+      const bodyWithoutTitle = lines.join('\n').trim();
 
       // Render Markdown content to HTML
       let htmlContent = await renderMarkdownContent({
@@ -245,11 +306,14 @@ export async function pushToWordPress({
         sizes,
       });
 
+      // Replace slashes with hyphens to match WordPress's sanitization behavior
+      const wpSlug = post.slug.replace(/\//g, '-');
+
       // Search WordPress to see if the post already exists by slug
       const existingPosts = await wpFetch({
         endpoint,
         credentials,
-        path: `/wp/v2/posts?slug=${encodeURIComponent(post.slug)}&status=any`,
+        path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any`,
       });
 
       const wpPostExists = existingPosts && existingPosts.length > 0;
@@ -258,7 +322,7 @@ export async function pushToWordPress({
       const payload = {
         title: post.title,
         content: htmlContent,
-        slug: post.slug,
+        slug: wpSlug,
         status: 'publish',
         date: post.date,
       };
@@ -290,8 +354,9 @@ export async function pushToWordPress({
           console.log(`  ✅ Successfully CREATED new WordPress post (ID: ${newPost.id})`);
         }
       }
-    } catch (err: any) {
-      console.error(`  ❌ Failed to sync post "${post.title}":`, err.message);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
       // We don't want to crash the whole sync if one post fails, but if single post targeted, we bubble up
       if (targetPostSlug) {
         throw err;

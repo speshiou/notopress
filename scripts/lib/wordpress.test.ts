@@ -60,7 +60,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Pic" style="max-width:100%;" loading="lazy" decoding="async" />'
+        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
       );
     });
 
@@ -78,8 +78,27 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Direct" style="max-width:100%;" loading="lazy" decoding="async" />'
+        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" alt="Direct" />'
       );
+    });
+
+    it('should preserve original image attributes like class, width, height', async () => {
+      const html = '<img src="/images/pic.png" class="aligncenter custom-class" width="800" height="600" alt="Pic" />';
+      const sizes = [300, 600, 1200];
+
+      vi.mocked(getAssetSubDir).mockResolvedValue('content');
+
+      const result = await replaceLocalImagesWithThumbnails({
+        html,
+        site: mockSite,
+        registry: mockRegistry,
+        sizes,
+      });
+
+      expect(result).toContain('class="aligncenter custom-class"');
+      expect(result).toContain('width="800"');
+      expect(result).toContain('height="600"');
+      expect(result).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp"');
     });
 
     it('should ignore external URLs and data URIs', async () => {
@@ -204,7 +223,7 @@ describe('WordPress Deployment Library', () => {
 
       // Assert lookup and create calls
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=blog%2Fpost-two'),
+        expect.stringContaining('/wp/v2/posts?slug=blog-post-two'),
         expect.objectContaining({ method: 'GET' })
       );
       expect(mockFetch).toHaveBeenCalledWith(
@@ -241,6 +260,43 @@ describe('WordPress Deployment Library', () => {
       // Verify no POST methods were called
       const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
       expect(postCalls.length).toBe(0);
+    });
+
+    it('should strip only the first H1 when it is the first non-empty line and outside code blocks', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      // Mock markdown content with a code comment at the top, and a real title later
+      vi.mocked(readFile).mockResolvedValue('```bash\n# This is a comment\necho "hello"\n```\n# Real Title\nThis is actual content.');
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      // Verify that the comment is kept and the title '# Real Title' is kept (not stripped, because there is content before it)
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body.content).toContain('# This is a comment');
+      expect(body.content).toContain('<h1>Real Title</h1>');
     });
   });
 });

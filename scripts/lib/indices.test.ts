@@ -90,4 +90,44 @@ describe('createIndexGenerator', () => {
       'content'
     );
   });
+
+  it('strips code blocks when generating excerpt', async () => {
+    const tree: Record<string, FileEntry[]> = {
+      'vault/content': [file('page-with-code.md')],
+    };
+    const fileContent: Record<string, string> = {
+      'vault/content/page-with-code.md': 'content',
+    };
+    const writes: Record<string, string> = {};
+
+    const generator = createIndexGenerator({
+      exists: vi.fn(async (filePath: string) => filePath === 'vault/content'),
+      mkdir: vi.fn(async () => undefined),
+      readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
+      readFile: vi.fn(async (filePath: string) => fileContent[filePath] || ''),
+      stat: vi.fn(async () => ({ mtime: new Date('2024-01-03T00:00:00.000Z') })),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+      joinPath: path.posix.join,
+      relativePath: path.posix.relative,
+      parseMatter: () => ({
+        data: { title: 'Code Page', date: '2024-01-02' },
+        content: '# Code Page\n```typescript\nconst a = 1;\n```\nThis is the real first paragraph.',
+      }),
+      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
+      scanPublicFiles: vi.fn(async () => []),
+      scanContentAssetFiles: vi.fn(async () => []),
+      generateImageThumbnails: vi.fn(async () => undefined),
+      logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const result = await generator.generateIndices({
+      vaultPath: 'vault',
+      thumbnailSizes: [],
+      dryRun: false,
+    });
+
+    expect(result.rootContentIndex.pages[0].excerpt).toBe('This is the real first paragraph.');
+  });
 });
