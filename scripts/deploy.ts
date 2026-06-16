@@ -12,6 +12,7 @@ import { normalizeThumbnailSizes } from '../src/lib/responsive-images';
 import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
+import { pushToWordPress } from './lib/wordpress';
 
 type CommandResult = {
   status: number | null;
@@ -416,6 +417,8 @@ async function syncContent({
   if (!isDryRun) {
     await uploadRegistry({ site, registry });
   }
+
+  return { allIndices };
 }
 
 function getRunMode(): RunMode {
@@ -450,7 +453,21 @@ async function main() {
       return;
     }
 
-    await syncContent({ site, registry, isDryRun });
+    const shouldPushWp = hasFlag({ flag: '--wp' });
+    const targetPostSlug = getFlagValue({ flag: '--post' });
+    
+    const { allIndices } = await syncContent({ site, registry, isDryRun });
+
+    if (shouldPushWp) {
+      await pushToWordPress({
+        site,
+        registry,
+        allIndices,
+        targetPostSlug,
+        dryRun: isDryRun,
+      });
+    }
+
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');
       return;

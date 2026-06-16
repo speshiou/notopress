@@ -2,6 +2,7 @@
   "endpoint": "https://your-cloudflare-account-id.r2.cloudflarestorage.com",
   "accessKeyId": "your-r2-access-key-id",
   "secretAccessKey": "your-r2-secret-access-key",
+  "imageHost": "https://img.your-global-domain.com",
   "thumbnailSizes": [320, 640, 960, 1280],
   "sites": [
     {
@@ -11,7 +12,13 @@
       "bucketName": "your-r2-bucket-name",
       "vercelProjectId": "your-vercel-project-id",
       "endpoint": "https://your-custom-s3-endpoint.com",
-      "thumbnailSizes": [400, 800, 1200]
+      "imageHost": "https://img.your-global-domain.com",
+      "thumbnailSizes": [400, 800, 1200],
+      "wordpress": {
+        "username": "your-wp-username",
+        "applicationPassword": "xxxx xxxx xxxx xxxx xxxx xxxx",
+        "endpoint": "https://your-wordpress-site.com/wp-json"
+      }
     }
   ]
 }
