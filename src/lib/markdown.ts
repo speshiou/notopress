@@ -101,7 +101,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
     });
 
     if (resolvedPath) {
-      return `![${alt}](/${resolvedPath})`;
+      return `![${alt}](</${resolvedPath}>)`;
     }
 
     return match;

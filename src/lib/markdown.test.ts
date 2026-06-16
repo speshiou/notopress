@@ -35,12 +35,11 @@ describe("createMarkdownRenderer", () => {
 });
 
 describe("preprocessWikilinks", () => {
-
   it("converts Obsidian wikilinks to standard markdown image tags using publicFiles", () => {
     const markdown = "Hello ![[screenshot.png]] and ![[screenshot.png|My Alt Text]]";
     const publicFiles = ["attachments/screenshot.png"];
     const result = preprocessWikilinks(markdown, publicFiles);
-    expect(result).toBe("Hello ![](/attachments/screenshot.png) and ![My Alt Text](/attachments/screenshot.png)");
+    expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
   });
 });
 
