@@ -22,7 +22,7 @@ You can use the following snippet to validate your registry file:
 
 ```typescript
 // scripts/validate-registry.ts
-import { getRegistry } from '../src/lib/registry';
+import { getRegistry } from './lib/registry';
 
 async function main() {
   try {

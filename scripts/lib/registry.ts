@@ -1,7 +1,7 @@
 import { readFile, access } from 'fs/promises';
 import path from 'path';
-import { RegistrySchema, type Registry } from '../domain/registry';
-import { DEFAULT_REGISTRY_FILENAME } from './constants';
+import { RegistrySchema, type Registry } from '../../src/domain/registry';
+import { DEFAULT_REGISTRY_FILENAME } from '../../src/lib/constants';
 
 /**
  * Loads and validates the registry configuration.

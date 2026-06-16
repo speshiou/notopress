@@ -4,7 +4,7 @@ import { spawn, SpawnOptions } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
-import { getRegistry } from '../src/lib/registry';
+import { getRegistry } from './lib/registry';
 import { env, ENV_KEYS, ENV_METADATA } from '../src/lib/env';
 import { hasFlag, getFlagValue } from '../src/lib/cli';
 import { Registry, Site } from '../src/domain/registry';
