@@ -3,7 +3,7 @@ import { env } from "./env";
 
 let s3Client: S3Client | null = null;
 
-export async function getS3Client() {
+export function getS3Client() {
   if (s3Client) return s3Client;
 
   const endpoint = env.S3_ENDPOINT;
@@ -33,7 +33,7 @@ export async function getS3Client() {
  * Fetches the content of a file from S3 as a string.
  */
 export async function getFileFromS3(bucket: string, key: string): Promise<string> {
-  const client = await getS3Client();
+  const client = getS3Client();
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,

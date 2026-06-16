@@ -38,7 +38,7 @@ export async function GET(
   }
 
   try {
-    const client = await getS3Client();
+    const client = getS3Client();
     const candidateKeys = [`${vaultRoot}/public/${filePath}`, `${vaultRoot}/content/${filePath}`];
     let response: GetObjectCommandOutput | null = null;
 
