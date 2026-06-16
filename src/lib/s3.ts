@@ -1,19 +1,17 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getRegistry } from "./registry";
 import { env } from "./env";
 
 let s3Client: S3Client | null = null;
 
-async function getS3Client() {
+export function getS3Client() {
   if (s3Client) return s3Client;
 
-  const registry = await getRegistry();
-  const endpoint = registry.endpoint || env.S3_ENDPOINT;
-  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
+  const endpoint = env.S3_ENDPOINT;
+  const accessKeyId = env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
-    throw new Error("Missing S3 credentials in registry or environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).");
+    throw new Error("Missing S3 credentials in environment variables (S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY).");
   }
 
   s3Client = new S3Client({
@@ -35,7 +33,7 @@ async function getS3Client() {
  * Fetches the content of a file from S3 as a string.
  */
 export async function getFileFromS3(bucket: string, key: string): Promise<string> {
-  const client = await getS3Client();
+  const client = getS3Client();
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,

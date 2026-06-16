@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, GetObjectCommand, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
-import { getRegistry } from "@/lib/registry";
+import { GetObjectCommand, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
+import { getS3Client } from "@/lib/s3";
 import { env } from "@/lib/env";
 
 /**
@@ -24,33 +24,6 @@ function getContentType(path: string): string {
   }
 }
 
-let s3Client: S3Client | null = null;
-
-async function getS3Client() {
-  if (s3Client) return s3Client;
-
-  const registry = await getRegistry();
-  const endpoint = registry.endpoint || env.S3_ENDPOINT;
-  const accessKeyId = registry.accessKeyId || env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = registry.secretAccessKey || env.S3_SECRET_ACCESS_KEY;
-
-  if (!endpoint || !accessKeyId || !secretAccessKey) {
-    throw new Error("Missing S3 credentials.");
-  }
-
-  s3Client = new S3Client({
-    endpoint,
-    region: "auto",
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-    forcePathStyle: true,
-  });
-
-  return s3Client;
-}
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -65,7 +38,7 @@ export async function GET(
   }
 
   try {
-    const client = await getS3Client();
+    const client = getS3Client();
     const candidateKeys = [`${vaultRoot}/public/${filePath}`, `${vaultRoot}/content/${filePath}`];
     let response: GetObjectCommandOutput | null = null;
 
