@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import { getRegistry } from "@/lib/registry";
 import { env } from "@/lib/env";
 
@@ -66,16 +66,19 @@ export async function GET(
 
   try {
     const client = await getS3Client();
-    const key = `${vaultRoot}/public/${filePath}`;
+    const candidateKeys = [`${vaultRoot}/public/${filePath}`, `${vaultRoot}/content/${filePath}`];
+    let response: GetObjectCommandOutput | null = null;
 
-    const command = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: key,
-    });
+    for (const key of candidateKeys) {
+      try {
+        response = await client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
+        break;
+      } catch {
+        response = null;
+      }
+    }
 
-    const response = await client.send(command);
-
-    if (!response.Body) {
+    if (!response || !response.Body) {
       return new NextResponse("Not Found", { status: 404 });
     }
 
@@ -87,7 +90,7 @@ export async function GET(
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Fallback logic for critical system files like favicon.ico
     if (filePath === "favicon.ico") {
       const url = new URL(_request.url);
@@ -96,7 +99,8 @@ export async function GET(
       return NextResponse.redirect(url);
     }
 
-    console.error(`Error serving vault public file [${filePath}]:`, error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error serving vault public file [${filePath}]:`, message);
     return new NextResponse("Not Found", { status: 404 });
   }
 }

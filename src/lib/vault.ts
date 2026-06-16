@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getFileFromS3 } from "./s3";
-import { INDEX_SLUG, INDEX_JSON, ROOT_JSON } from "./constants";
+import { DEFAULT_THUMBNAIL_SIZES, INDEX_SLUG, INDEX_JSON, ROOT_JSON } from "./constants";
 import { createCache } from "./cache";
 
 export const PageMetadataSchema = z.object({
@@ -19,6 +19,7 @@ export const VaultDirectoryIndexSchema = z.object({
 export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
   directories: z.array(z.string()),
   publicFiles: z.array(z.string()),
+  thumbnailSizes: z.array(z.number().int().positive()).optional(),
 });
 
 export type PageMetadata = z.infer<typeof PageMetadataSchema>;
@@ -27,7 +28,7 @@ export type VaultRootIndex = z.infer<typeof VaultRootIndexSchema>;
 export type VaultIndex = VaultDirectoryIndex | VaultRootIndex;
 
 export type VaultContent =
-  | { type: "markdown"; content: string; matchedSlug: string; metadata: PageMetadata }
+  | { type: "markdown"; content: string; matchedSlug: string; metadata: PageMetadata; thumbnailSizes: readonly number[] }
   | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
   | { type: "asset"; filePath: string };
 
@@ -95,6 +96,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
   // 1. Fetch root index (The Master Map)
   const rootIndex = await fetchRootIndex(config);
   if (!rootIndex) return null;
+  const thumbnailSizes = rootIndex.thumbnailSizes || DEFAULT_THUMBNAIL_SIZES;
 
   // 2. Check for public asset match (only in root.json)
   if (segments.length > 0 && rootIndex.publicFiles.includes(requestedSlug)) {
@@ -107,7 +109,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
   const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
   if (rootPageMatch) {
     const markdown = await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${rootPageMatch.slug}.md`);
-    return { type: "markdown", content: markdown, matchedSlug: rootPageMatch.slug, metadata: rootPageMatch };
+    return { type: "markdown", content: markdown, matchedSlug: rootPageMatch.slug, metadata: rootPageMatch, thumbnailSizes };
   }
 
   // 3b. Is it a page in a nested directory? (Direct Jump)
@@ -120,7 +122,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
     if (nestedMatch) {
       // requestedSlug is the full path required for S3
       const markdown = await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${requestedSlug}.md`);
-      return { type: "markdown", content: markdown, matchedSlug: requestedSlug, metadata: nestedMatch };
+      return { type: "markdown", content: markdown, matchedSlug: requestedSlug, metadata: nestedMatch, thumbnailSizes };
     }
   }
 
@@ -136,7 +138,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
       if (indexMatch) {
         const fullPath = targetDir ? `${targetDir}/${INDEX_SLUG}` : INDEX_SLUG;
         const markdown = await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullPath}.md`);
-        return { type: "markdown", content: markdown, matchedSlug: fullPath, metadata: indexMatch };
+        return { type: "markdown", content: markdown, matchedSlug: fullPath, metadata: indexMatch, thumbnailSizes };
       }
 
       // Priority 2: Return collection view

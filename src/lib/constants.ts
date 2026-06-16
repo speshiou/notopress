@@ -31,3 +31,13 @@ export const SITEMAP_PAGES_XML = 'sitemap_pages.xml';
  * The default filename for the registry configuration.
  */
 export const DEFAULT_REGISTRY_FILENAME = 'registry.json';
+
+/**
+ * Generated responsive image thumbnail directory.
+ */
+export const THUMBNAILS_DIR = '_thumbnails';
+
+/**
+ * Default responsive image widths, in pixels.
+ */
+export const DEFAULT_THUMBNAIL_SIZES = [320, 640, 960, 1280] as const;
