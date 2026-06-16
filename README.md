@@ -63,6 +63,7 @@ The registry manages global defaults and site-specific overrides.
 | `endpoint` | `string` | Your S3-compatible API endpoint (e.g., Cloudflare R2). |
 | `accessKeyId` | `string` | Your S3 access key ID. |
 | `secretAccessKey` | `string` | Your S3 secret access key. |
+| `thumbnailSizes` | `number[]` | (Optional) Default responsive image thumbnail widths. Defaults to `[320, 640, 960, 1280]`. |
 | `sites` | `array` | List of site configurations. |
 
 **Site-Specific Settings**
@@ -73,6 +74,21 @@ The registry manages global defaults and site-specific overrides.
 | `vaultPath` | `string` | Absolute path to your local markdown vault. |
 | `bucketName` | `string` | (Optional) The S3 bucket name. |
 | `endpoint` | `string` | (Optional) Override the global endpoint for this site. |
+| `thumbnailSizes` | `number[]` | (Optional) Override the global responsive image thumbnail widths for this site. |
+
+### Responsive Images
+
+When you run `npm run sync`, Notopress creates WebP thumbnails for supported images in `content/` and `public/`, then includes them in generated responsive `srcset` attributes at render time.
+
+Generated thumbnails live under `_thumbnails/` beside the source tree that owns the image. For example, an image referenced as `/attachments/photo.png` gets thumbnail candidates like `/_thumbnails/attachments/photo-640.webp`.
+
+### Serving Thumbnails from Cloudflare
+
+If your bucket is Cloudflare R2, the default deployment already stores thumbnails in R2 and serves them through the app's asset route with long-lived cache headers. To serve them directly from Cloudflare instead:
+
+1. Add a public or custom domain to the R2 bucket in Cloudflare.
+2. Keep the same uploaded key layout, including `{siteId}/content/_thumbnails/...` and `{siteId}/public/_thumbnails/...`.
+3. Point image URLs at that R2 domain with a future CDN URL setting, or add a rewrite in your edge/CDN layer from `/_thumbnails/...` to the matching R2 key.
 
 ### Environment Overrides
 

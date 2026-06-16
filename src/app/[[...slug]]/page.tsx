@@ -1,8 +1,7 @@
 import { resolveVaultRequest } from "@/lib/vault";
 import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
-import { remark } from "remark";
-import html from "remark-html";
+import { renderMarkdownContent } from "@/lib/markdown";
 import matter from "gray-matter";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -69,8 +68,10 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
     // Strip the first H1 from the body if it exists, to avoid double titles
     const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
 
-    const processedContent = await remark().use(html).process(bodyWithoutTitle);
-    const contentHtml = processedContent.toString();
+    const contentHtml = await renderMarkdownContent({
+      markdown: bodyWithoutTitle,
+      thumbnailSizes: result.thumbnailSizes,
+    });
     const { metadata } = result;
 
     const publishedDate = new Date(metadata.date);

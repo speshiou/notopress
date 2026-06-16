@@ -2,6 +2,7 @@
   "endpoint": "https://your-cloudflare-account-id.r2.cloudflarestorage.com",
   "accessKeyId": "your-r2-access-key-id",
   "secretAccessKey": "your-r2-secret-access-key",
+  "thumbnailSizes": [320, 640, 960, 1280],
   "sites": [
     {
       "domain": "example.com",
@@ -9,7 +10,8 @@
       "vaultPath": "/absolute/path/to/your/obsidian/vault",
       "bucketName": "your-r2-bucket-name",
       "vercelProjectId": "your-vercel-project-id",
-      "endpoint": "https://your-custom-s3-endpoint.com"
+      "endpoint": "https://your-custom-s3-endpoint.com",
+      "thumbnailSizes": [400, 800, 1200]
     }
   ]
 }
