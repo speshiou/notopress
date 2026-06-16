@@ -60,7 +60,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Pic" loading="lazy" decoding="async" />'
+        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Pic" style="max-width:100%;" loading="lazy" decoding="async" />'
       );
     });
 
@@ -78,7 +78,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(result).toContain(
-        '<img src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Direct" loading="lazy" decoding="async" />'
+        '<img src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" sizes="(max-width: 1200px) 100vw, 1200px" alt="Direct" style="max-width:100%;" loading="lazy" decoding="async" />'
       );
     });
 

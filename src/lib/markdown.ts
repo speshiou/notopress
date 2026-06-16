@@ -62,6 +62,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
 
         const imgProperties: Record<string, string> = {
           src: srcVal,
+          style: "max-width: 100%;",
         };
         if (altText) {
           imgProperties.alt = altText;
@@ -119,6 +120,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
               src: attributes.src,
               srcset: attributes.srcSet,
               sizes: attributes.sizes,
+              style: "max-width: 100%;",
               loading: "lazy",
               decoding: "async",
             },

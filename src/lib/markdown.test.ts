@@ -27,6 +27,7 @@ describe("createMarkdownRenderer", () => {
       src: "/image.png",
       srcset: "/_thumbnails/image-320.webp 320w",
       sizes: "100vw",
+      style: "max-width: 100%;",
       loading: "lazy",
       decoding: "async",
     });
@@ -41,7 +42,7 @@ describe("createMarkdownRenderer", () => {
       publicFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" alt="My Alt Text"');
+    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
@@ -54,7 +55,7 @@ describe("createMarkdownRenderer", () => {
     });
     expect(html).toContain("<p>Some text before</p>");
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" alt="My Alt Text"');
+    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain("<p>Some text after</p>");
   });
 });

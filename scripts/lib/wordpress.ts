@@ -7,15 +7,6 @@ import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
 
-/**
- * Maps a numeric image width to standard WordPress image size classes.
- */
-export function getImageSizeClass(width: number): string {
-  if (width <= 150) return 'size-thumbnail';
-  if (width <= 300) return 'size-medium';
-  if (width <= 1024) return 'size-large';
-  return 'size-full';
-}
 
 interface PushToWordPressArgs {
   site: Site;
@@ -149,7 +140,7 @@ export async function replaceLocalImagesWithThumbnails({
     const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
     const altText = altMatch ? altMatch[1] : '';
     const altAttr = altText ? ` alt="${altText}"` : '';
-    const newImgTag = `<img src="${encodeURI(absoluteUrl)}"${srcSetAttr}${sizesAttr}${altAttr} loading="lazy" decoding="async" />`;
+    const newImgTag = `<img src="${encodeURI(absoluteUrl)}"${srcSetAttr}${sizesAttr}${altAttr} style="max-width:100%;" loading="lazy" decoding="async" />`;
 
     processedHtml = processedHtml.replaceAll(fullMatch, newImgTag);
   }
@@ -239,9 +230,8 @@ export async function pushToWordPress({
         thumbnailSizes: sizes,
         publicFiles,
         getFigureProperties: (largestWidth) => {
-          const sizeClass = getImageSizeClass(largestWidth);
           return {
-            class: `wp-block-image ${sizeClass}`,
+            class: 'wp-block-image',
             style: 'height: auto !important;',
           };
         },
