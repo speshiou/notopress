@@ -37,3 +37,5 @@ describe("createResponsiveImageHelpers", () => {
     expect(helpers.getResponsiveImageAttributes({ src: "/_thumbnails/image-320.webp", thumbnailSizes: [320] })).toBeNull();
   });
 });
+
+

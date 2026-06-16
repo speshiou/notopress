@@ -40,9 +40,22 @@ describe("createMarkdownRenderer", () => {
       thumbnailSizes: [320],
       publicFiles: ["image.png"],
     });
-    expect(html).toContain('<figure class="wp-block-image">');
+    expect(html).toContain('<figure class="image-figure">');
     expect(html).toContain('<img src="/image.png" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
+  });
+
+  it("separates block-level images from adjacent text blocks", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "Some text before\n![My Alt Text](image.png)\nSome text after",
+      thumbnailSizes: [320],
+      publicFiles: ["image.png"],
+    });
+    expect(html).toContain("<p>Some text before</p>");
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<img src="/image.png" alt="My Alt Text"');
+    expect(html).toContain("<p>Some text after</p>");
   });
 });
 

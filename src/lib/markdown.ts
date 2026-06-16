@@ -1,7 +1,7 @@
 import { remark } from "remark";
 import html from "remark-html";
 import type { Plugin } from "unified";
-import { getResponsiveImageAttributes } from "./responsive-images";
+import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
 
 export type MarkdownNode = {
   type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
@@ -30,8 +30,28 @@ export type MarkdownRendererDeps = {
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
 
+export function ensureImageBlockSeparation(markdown: string): string {
+  // Matches markdown images that occupy a single line on their own (with optional spaces/tabs)
+  // E.g., `![alt](url)` or standard markdown links
+  return markdown.replace(/(?:^|\n)([ \t]*!\[[^\]]*\]\([^)]+\)[ \t]*)(?=\n|$)/g, '\n\n$1\n\n');
+}
+
 export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
-  function applyResponsiveImages({ tree, thumbnailSizes }: { tree: MarkdownNode; thumbnailSizes: readonly number[] }) {
+  function applyResponsiveImages({
+    tree,
+    thumbnailSizes,
+    getFigureProperties,
+  }: {
+    tree: MarkdownNode;
+    thumbnailSizes: readonly number[];
+    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+  }) {
+    const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
+    const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
+    const figureProps = getFigureProperties
+      ? getFigureProperties(largestWidth)
+      : { class: "image-figure" };
+
     function visit(node: MarkdownNode) {
       if (node.type === "paragraph" && node.children && node.children.length === 1 && node.children[0].type === "image") {
         const imgNode = node.children[0];
@@ -48,7 +68,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
         }
         if (attributes) {
           imgProperties.srcset = attributes.srcSet;
-          imgProperties.sizes = attributes.sizes;
+          imgProperties.sizes = `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`;
         }
         imgProperties.loading = "lazy";
         imgProperties.decoding = "async";
@@ -81,7 +101,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
           ...node.data,
           hName: "figure",
           hProperties: {
-            class: "wp-block-image",
+            ...figureProps,
           },
           hChildren: children,
         };
@@ -114,10 +134,16 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     visit(tree);
   }
 
-  function responsiveImagePlugin({ thumbnailSizes }: { thumbnailSizes: readonly number[] }): Plugin<[], MarkdownNode> {
+  function responsiveImagePlugin({
+    thumbnailSizes,
+    getFigureProperties,
+  }: {
+    thumbnailSizes: readonly number[];
+    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+  }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
-        applyResponsiveImages({ tree, thumbnailSizes });
+        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties });
       };
     };
   }
@@ -129,15 +155,18 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       markdown,
       thumbnailSizes,
       publicFiles,
+      getFigureProperties,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
       publicFiles?: readonly string[];
+      getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
     }): Promise<string> {
-      const preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
+      let preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
+      preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
-        plugin: responsiveImagePlugin({ thumbnailSizes }),
+        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties }),
       });
     },
   };

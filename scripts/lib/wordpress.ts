@@ -5,7 +5,17 @@ import { getAssetSubDir } from './files';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
-import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl } from '../../src/lib/responsive-images';
+import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
+
+/**
+ * Maps a numeric image width to standard WordPress image size classes.
+ */
+export function getImageSizeClass(width: number): string {
+  if (width <= 150) return 'size-thumbnail';
+  if (width <= 300) return 'size-medium';
+  if (width <= 1024) return 'size-large';
+  return 'size-full';
+}
 
 interface PushToWordPressArgs {
   site: Site;
@@ -119,12 +129,27 @@ export async function replaceLocalImagesWithThumbnails({
       domain: site.domain,
     });
 
-    // Preserve the alt text attribute if present and use it as a caption
+    // Build the srcset attributes for all defined thumbnail sizes
+    const srcSetUrls = sizes.map((size) => {
+      const sizeThumbPath = getThumbnailPath({ imagePath: decodedSrc, width: size });
+      const sizeUrl = getAssetUrl({
+        imageHost,
+        siteId: site.siteId,
+        s3SubDir,
+        filePath: sizeThumbPath,
+        domain: site.domain,
+      });
+      return `${encodeURI(sizeUrl)} ${size}w`;
+    }).join(', ');
+
+    const srcSetAttr = srcSetUrls ? ` srcset="${srcSetUrls}"` : '';
+    const sizesAttr = srcSetUrls ? ` sizes="(max-width: ${largestWidth}px) 100vw, ${largestWidth}px"` : '';
+
+    // Preserve the alt text attribute if present
     const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
     const altText = altMatch ? altMatch[1] : '';
     const altAttr = altText ? ` alt="${altText}"` : '';
-    const figcaption = altText ? `<figcaption>${altText}</figcaption>` : '';
-    const newImgTag = `<figure class="wp-block-image"><img src="${encodeURI(absoluteUrl)}"${altAttr} />${figcaption}</figure>`;
+    const newImgTag = `<img src="${encodeURI(absoluteUrl)}"${srcSetAttr}${sizesAttr}${altAttr} loading="lazy" decoding="async" />`;
 
     processedHtml = processedHtml.replaceAll(fullMatch, newImgTag);
   }
@@ -213,6 +238,13 @@ export async function pushToWordPress({
         markdown: bodyWithoutTitle,
         thumbnailSizes: sizes,
         publicFiles,
+        getFigureProperties: (largestWidth) => {
+          const sizeClass = getImageSizeClass(largestWidth);
+          return {
+            class: `wp-block-image ${sizeClass}`,
+            style: 'height: auto !important;',
+          };
+        },
       });
 
       // Replace local image paths with imageHost absolute thumbnail URLs
