@@ -384,6 +384,7 @@ export function resolveAndCollectImagePath(
   src: string,
   site: Site,
   registry: Registry,
+  slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
   // If it's a relative path already, just return it
@@ -447,6 +448,9 @@ export function resolveAndCollectImagePath(
   // Check if the file already exists locally
   const dir = path.dirname(tempPath);
   const candidateFolders = ['attachments', 'images', dir !== '.' ? dir : '', ''];
+  if (slug) {
+    candidateFolders.unshift(slug);
+  }
   const extensions = [ext, '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'];
 
   for (const folder of candidateFolders) {
@@ -486,7 +490,7 @@ export function resolveAndCollectImagePath(
   }
 
   // If not found locally, we queue it for download
-  const targetLocalPath = `attachments/${finalFilename}`;
+  const targetLocalPath = slug ? `${slug}/${finalFilename}` : `attachments/${finalFilename}`;
   const targetFullPath = path.join(site.vaultPath, 'content', targetLocalPath);
 
   if (collectedImages) {
@@ -512,6 +516,7 @@ export function htmlToMarkdown(
   html: string,
   site: Site,
   registry: Registry,
+  slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
   // Tokenize the HTML
@@ -673,7 +678,7 @@ export function htmlToMarkdown(
       case 'img': {
         const src = node.attributes['src'] || '';
         const alt = node.attributes['alt'] || '';
-        const localSrc = resolveAndCollectImagePath(src, site, registry, collectedImages);
+        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
         return `![${alt}](${localSrc})`;
       }
       case 'figure': {
@@ -684,7 +689,7 @@ export function htmlToMarkdown(
         const figcaption = findNodeByType(node, 'figcaption');
         const captionText = figcaption ? getPlainText(figcaption).trim() : '';
         const finalAlt = alt || captionText;
-        const localSrc = resolveAndCollectImagePath(src, site, registry, collectedImages);
+        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
         return `\n\n![${finalAlt}](${localSrc})\n\n`;
       }
       case 'figcaption':
@@ -784,7 +789,7 @@ export async function pullFromWordPress({
 
   // Convert HTML to Markdown (and collect any remote image urls to download)
   const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
-  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry, collectedImages);
+  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry, wpPost.slug, collectedImages);
 
   // Prepend frontmatter and title heading
   const frontmatter = [
