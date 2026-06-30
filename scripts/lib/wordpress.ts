@@ -447,10 +447,9 @@ export function resolveAndCollectImagePath(
 
   // Check if the file already exists locally
   const dir = path.dirname(tempPath);
-  const candidateFolders = ['attachments', 'images', dir !== '.' ? dir : '', ''];
-  if (slug) {
-    candidateFolders.unshift(slug);
-  }
+  const candidateFolders = slug 
+    ? [slug] 
+    : ['attachments', 'images', dir !== '.' ? dir : '', ''];
   const extensions = [ext, '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'];
 
   for (const folder of candidateFolders) {
