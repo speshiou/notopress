@@ -69,12 +69,12 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
     const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
 
     const rootIndex = await fetchRootIndex(vaultConfig);
-    const publicFiles = rootIndex?.publicFiles || [];
+    const assetFiles = rootIndex?.assetFiles || rootIndex?.publicFiles || [];
 
     const contentHtml = await renderMarkdownContent({
       markdown: bodyWithoutTitle,
       thumbnailSizes: result.thumbnailSizes,
-      publicFiles,
+      assetFiles,
     });
     const { metadata } = result;
 

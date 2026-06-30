@@ -5,7 +5,7 @@ import { type Stats } from 'fs';
 import path from 'path';
 import { INDEX_JSON, ROOT_JSON } from '../../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
-import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
+import { isGeneratedThumbnailPath, normalizeThumbnailSizes } from '../../src/lib/responsive-images';
 import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from './files';
 import { generateImageThumbnails } from './thumbnails';
 
@@ -71,6 +71,10 @@ function parseSafeDate({
   }
 
   return date.toISOString();
+}
+
+function excludeGeneratedFiles(files: readonly string[]): string[] {
+  return files.filter((file) => !isGeneratedThumbnailPath(file));
 }
 
 export function createIndexGenerator(deps: IndexGeneratorDeps) {
@@ -218,15 +222,18 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         label: 'public',
       });
 
-      const publicFiles = (await deps.exists(publicBaseDir)) ? await deps.scanPublicFiles({ dir: publicBaseDir }) : [];
-      const contentAssetFiles = await deps.scanContentAssetFiles({ dir: contentDir });
+      const publicFiles = excludeGeneratedFiles(
+        (await deps.exists(publicBaseDir)) ? await deps.scanPublicFiles({ dir: publicBaseDir }) : []
+      ).sort();
+      const contentAssetFiles = excludeGeneratedFiles(await deps.scanContentAssetFiles({ dir: contentDir }));
       const assetFiles = [...new Set([...publicFiles, ...contentAssetFiles])].sort();
 
       const rootPath = deps.joinPath(vaultPath, ROOT_JSON);
       const vaultRootIndex: VaultRootIndex = {
         ...rootContentIndex,
         directories: allDirs,
-        publicFiles: assetFiles,
+        publicFiles,
+        assetFiles,
         thumbnailSizes: deps.normalizeThumbnailSizes(thumbnailSizes),
       };
 

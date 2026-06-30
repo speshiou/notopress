@@ -1,5 +1,6 @@
 import { remark } from "remark";
 import html from "remark-html";
+import gfm from "remark-gfm";
 import type { Plugin } from "unified";
 import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
 import { resolveMarkdownImagePaths } from "./local-images";
@@ -217,16 +218,19 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     renderMarkdownContent({
       markdown,
       thumbnailSizes,
+      assetFiles,
       publicFiles,
       getFigureProperties,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
+      assetFiles?: readonly string[];
       publicFiles?: readonly string[];
       getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
     }): Promise<string> {
-      let preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
-      preprocessed = publicFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles: publicFiles }) : preprocessed;
+      const availableFiles = assetFiles || publicFiles;
+      let preprocessed = availableFiles ? preprocessWikilinks(markdown, availableFiles) : markdown;
+      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
@@ -236,7 +240,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   };
 }
 
-export function preprocessWikilinks(markdown: string, publicFiles: readonly string[]): string {
+export function preprocessWikilinks(markdown: string, availableFiles: readonly string[]): string {
   const wikilinkRegex = /!\[\[([^\]]+)\]\]/g;
   return markdown.replace(wikilinkRegex, (match, content) => {
     const parts = content.split('|');
@@ -251,7 +255,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
     }
 
     const normalizedFilename = filename.toLowerCase();
-    const resolvedPath = publicFiles.find((file) => {
+    const resolvedPath = availableFiles.find((file) => {
       const base = file.split('/').pop()?.toLowerCase();
       return base === normalizedFilename;
     });
@@ -267,7 +271,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
 const defaultMarkdownRenderer = createMarkdownRenderer({
   getResponsiveImageAttributes,
   processMarkdown: async ({ markdown, plugin }) => {
-    const processedContent = await remark().use(plugin).use(html, { sanitize: false }).process(markdown);
+    const processedContent = await remark().use(gfm).use(plugin).use(html, { sanitize: false }).process(markdown);
     return processedContent.toString();
   },
 });

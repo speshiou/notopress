@@ -39,7 +39,7 @@ describe("createMarkdownRenderer", () => {
     const html = await renderMarkdownContent({
       markdown: "![My Alt Text](image.png)",
       thumbnailSizes: [320],
-      publicFiles: ["image.png"],
+      assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
     expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
@@ -51,11 +51,28 @@ describe("createMarkdownRenderer", () => {
     const html = await renderMarkdownContent({
       markdown: "![Cable status](/Pasted%20image%2020260630150256.png)",
       thumbnailSizes: [320],
-      publicFiles: ["attachments/Pasted image 20260630150256.png"],
+      assetFiles: ["attachments/Pasted image 20260630150256.png"],
     });
 
     expect(html).toContain('src="/attachments/Pasted%20image%2020260630150256.png"');
     expect(html).toContain('srcset="/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+  });
+
+  it("renders GitHub-Flavored Markdown tables as HTML tables", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "| VPN 品牌 | 裝置限制 |",
+        "| :--- | :---: |",
+        "| **[NordVPN](https://example.com/nord)** | 10 台裝置 |",
+      ].join("\n"),
+      thumbnailSizes: [320],
+    });
+
+    expect(html).toContain("<table>");
+    expect(html).toContain("<th align=\"left\">VPN 品牌</th>");
+    expect(html).toContain("<td align=\"center\">10 台裝置</td>");
+    expect(html).toContain("<strong><a href=\"https://example.com/nord\">NordVPN</a></strong>");
   });
 
   it("separates block-level images from adjacent text blocks", async () => {
@@ -63,7 +80,7 @@ describe("createMarkdownRenderer", () => {
     const html = await renderMarkdownContent({
       markdown: "Some text before\n![My Alt Text](image.png)\nSome text after",
       thumbnailSizes: [320],
-      publicFiles: ["image.png"],
+      assetFiles: ["image.png"],
     });
     expect(html).toContain("<p>Some text before</p>");
     expect(html).toContain('<figure class="image-figure">');
@@ -76,7 +93,7 @@ describe("createMarkdownRenderer", () => {
     const html = await renderMarkdownContent({
       markdown: "  ![My Alt Text](image.png) \n ",
       thumbnailSizes: [320],
-      publicFiles: ["image.png"],
+      assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
     expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
@@ -88,7 +105,7 @@ describe("createMarkdownRenderer", () => {
     const html = await renderMarkdownContent({
       markdown: "![My Alt Text](image.png)\n*This is my [caption link](https://example.com) text.*",
       thumbnailSizes: [320],
-      publicFiles: ["image.png"],
+      assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
     expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
@@ -98,10 +115,10 @@ describe("createMarkdownRenderer", () => {
 });
 
 describe("preprocessWikilinks", () => {
-  it("converts Obsidian wikilinks to standard markdown image tags using publicFiles", () => {
+  it("converts Obsidian wikilinks to standard markdown image tags using available asset files", () => {
     const markdown = "Hello ![[screenshot.png]] and ![[screenshot.png|My Alt Text]]";
-    const publicFiles = ["attachments/screenshot.png"];
-    const result = preprocessWikilinks(markdown, publicFiles);
+    const assetFiles = ["attachments/screenshot.png"];
+    const result = preprocessWikilinks(markdown, assetFiles);
     expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
   });
 });

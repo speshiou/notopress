@@ -1,5 +1,3 @@
-const DEFAULT_LOCAL_IMAGE_FOLDERS = ["attachments", "images"] as const;
-
 export function safelyDecodeUriComponent({ value, maxPasses = 3 }: { value: string; maxPasses?: number }): string {
   let decodedValue = value;
   for (let attempt = 0; attempt < maxPasses; attempt += 1) {
@@ -28,11 +26,9 @@ export function isExternalOrInlineAsset({ src }: { src: string }): boolean {
 export function resolveLocalImagePath({
   src,
   availableFiles,
-  lookupFolders = DEFAULT_LOCAL_IMAGE_FOLDERS,
 }: {
   src: string;
   availableFiles?: readonly string[];
-  lookupFolders?: readonly string[];
 }): string {
   const cleanSrc = safelyDecodeUriComponent({ value: src.replace(/^\//, "") });
   if (!availableFiles || availableFiles.length === 0) {
@@ -40,17 +36,18 @@ export function resolveLocalImagePath({
   }
 
   const availableFileSet = new Set(availableFiles);
+  if (availableFileSet.has(cleanSrc)) {
+    return cleanSrc;
+  }
+
   const pathParts = cleanSrc.split("/");
   const basename = pathParts[pathParts.length - 1] || cleanSrc;
-  const candidates = [
-    cleanSrc,
-    ...lookupFolders.map((folder) => `${folder}/${basename}`),
-    basename,
-  ].filter((candidate, index, candidates): candidate is string => {
-    return candidate.length > 0 && candidates.indexOf(candidate) === index;
+  const basenameMatches = availableFiles.filter((file) => {
+    const fileParts = file.split("/");
+    return fileParts[fileParts.length - 1] === basename;
   });
 
-  return candidates.find((candidate) => availableFileSet.has(candidate)) || cleanSrc;
+  return basenameMatches.length === 1 ? basenameMatches[0] : cleanSrc;
 }
 
 export function resolveMarkdownImagePaths({

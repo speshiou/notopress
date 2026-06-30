@@ -213,11 +213,11 @@ export async function pushToWordPress({
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
   // Load public files from root.json if it exists
-  let publicFiles: string[] = [];
+  let assetFiles: string[] = [];
   try {
     const rootIndexRaw = await readFile(path.join(site.vaultPath, 'root.json'), 'utf-8');
     const rootIndex = JSON.parse(rootIndexRaw);
-    publicFiles = rootIndex.publicFiles || [];
+    assetFiles = rootIndex.assetFiles || rootIndex.publicFiles || [];
   } catch (err) {
     // If root.json is not found or not yet generated, fallback to empty array
   }
@@ -287,7 +287,7 @@ export async function pushToWordPress({
       let htmlContent = await renderMarkdownContent({
         markdown: bodyWithoutTitle,
         thumbnailSizes: sizes,
-        publicFiles,
+        assetFiles,
         getFigureProperties: (largestWidth) => {
           return {
             class: 'wp-block-image',
@@ -302,7 +302,7 @@ export async function pushToWordPress({
         site,
         registry,
         sizes,
-        assetFiles: publicFiles,
+        assetFiles,
       });
 
       // Replace slashes with hyphens to match WordPress's sanitization behavior
