@@ -311,7 +311,7 @@ describe('WordPress Deployment Library', () => {
   describe('restoreLocalImagePath', () => {
     it('should return simple relative paths unchanged', () => {
       const result = restoreLocalImagePath('/images/photo.png', mockSite, mockRegistry);
-      expect(result).toBe('/images/photo.png');
+      expect(result).toBe('images/photo.png');
     });
 
     it('should resolve thumbnail CDN url to local relative path with correct original extension from disk', () => {
@@ -364,7 +364,7 @@ describe('WordPress Deployment Library', () => {
     it('should parse links and simple images', () => {
       const html = '<p>Link to <a href="https://google.com">Google</a> and <img src="/images/pic.png" alt="Pic" /></p>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('Link to [Google](https://google.com) and ![Pic](/images/pic.png)');
+      expect(md).toBe('Link to [Google](https://google.com) and ![Pic](images/pic.png)');
     });
 
     it('should parse code blocks and inline code', () => {
@@ -394,7 +394,25 @@ describe('WordPress Deployment Library', () => {
     it('should parse figures and figcaptions', () => {
       const html = '<figure class="wp-block-image"><img src="/images/fig.png" alt="Alt text" /><figcaption>Caption text</figcaption></figure>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('![Alt text](/images/fig.png)');
+      expect(md).toBe('![Alt text](images/fig.png)\n*Caption text*');
+    });
+
+    it('should parse figures with link inside figcaption', () => {
+      const html = '<figure><img src="/images/fig.png" alt="Alt" /><figcaption>Source: <a href="http://google.com">Google</a></figcaption></figure>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('![Alt](images/fig.png)\n*Source: [Google](http://google.com)*');
+    });
+
+    it('should parse HTML tables and captions into markdown tables', () => {
+      const html = '<table><caption>List of codes</caption><thead><tr><th>Region</th><th>Code</th></tr></thead><tbody><tr><td>USA</td><td>+1</td></tr></tbody></table>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('*List of codes*\n\n| Region | Code |\n| --- | --- |\n| USA | +1 |');
+    });
+
+    it('should strip comments and scripts from HTML content', () => {
+      const html = '<!-- wp:paragraph --><p>Hello</p><script>console.log(123);</script>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('Hello');
     });
   });
 

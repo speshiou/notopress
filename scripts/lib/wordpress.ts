@@ -369,7 +369,9 @@ export async function pushToWordPress({
 interface WpPost {
   id: number;
   date: string;
+  date_gmt?: string;
   modified: string;
+  modified_gmt?: string;
   slug: string;
   title: {
     rendered: string;
@@ -380,6 +382,38 @@ interface WpPost {
   status: string;
 }
 
+export function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ndash;/g, '–')
+    .replace(/&mdash;/g, '—')
+    .replace(/&hellip;/g, '…')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try {
+        return String.fromCodePoint(parseInt(dec, 10));
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&#x([a-fA-F0-9]+);/g, (_, hex) => {
+      try {
+        return String.fromCodePoint(parseInt(hex, 16));
+      } catch {
+        return _;
+      }
+    });
+}
+
 export function resolveAndCollectImagePath(
   src: string,
   site: Site,
@@ -387,9 +421,9 @@ export function resolveAndCollectImagePath(
   slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
-  // If it's a relative path already, just return it
+  // If it's a relative path already, just return it without leading slash
   if (src.startsWith('/') && !src.startsWith('//') && !src.includes('/api/vault-public/') && !src.includes('_thumbnails/')) {
-    return src;
+    return src.replace(/^\//, '');
   }
 
   let tempPath = src;
@@ -410,7 +444,7 @@ export function resolveAndCollectImagePath(
       if (!isInternal) {
         isExternal = true;
       }
-      tempPath = urlObj.pathname + urlObj.search + urlObj.hash;
+      tempPath = urlObj.pathname;
     } catch {
       isExternal = true;
     }
@@ -418,6 +452,16 @@ export function resolveAndCollectImagePath(
 
   // Remove leading slash
   tempPath = tempPath.replace(/^\//, '');
+
+  // Strip query parameters and hash from tempPath
+  const questionMarkIndex = tempPath.indexOf('?');
+  if (questionMarkIndex !== -1) {
+    tempPath = tempPath.substring(0, questionMarkIndex);
+  }
+  const hashIndex = tempPath.indexOf('#');
+  if (hashIndex !== -1) {
+    tempPath = tempPath.substring(0, hashIndex);
+  }
 
   // If it goes through api/vault-public
   if (tempPath.startsWith('api/vault-public/')) {
@@ -518,9 +562,14 @@ export function htmlToMarkdown(
   slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
+  // Strip script tags and HTML comments
+  const cleanHtml = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+
   // Tokenize the HTML
   const tagRegex = /(<\/?[a-zA-Z0-9:-]+(?:\s+[a-zA-Z0-9:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*\/?>)/g;
-  const parts = html.split(tagRegex);
+  const parts = cleanHtml.split(tagRegex);
   
   interface Node {
     type: string;
@@ -573,38 +622,6 @@ export function htmlToMarkdown(
     }
   }
 
-  function decodeHtmlEntities(str: string): string {
-    return str
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#039;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&ldquo;/g, '“')
-      .replace(/&rdquo;/g, '”')
-      .replace(/&lsquo;/g, '‘')
-      .replace(/&rsquo;/g, '’')
-      .replace(/&ndash;/g, '–')
-      .replace(/&mdash;/g, '—')
-      .replace(/&hellip;/g, '…')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&#(\d+);/g, (_, dec) => {
-        try {
-          return String.fromCodePoint(parseInt(dec, 10));
-        } catch {
-          return _;
-        }
-      })
-      .replace(/&#x([a-fA-F0-9]+);/g, (_, hex) => {
-        try {
-          return String.fromCodePoint(parseInt(hex, 16));
-        } catch {
-          return _;
-        }
-      });
-  }
-
   function render(node: Node, listDepth = 0): string {
     if (node.type === 'text') {
       return node.text || '';
@@ -648,7 +665,8 @@ export function htmlToMarkdown(
       case 'blockquote':
         return `\n\n> ${childrenContent.trim().replace(/\n/g, '\n> ')}\n\n`;
       case 'ul': {
-        const content = node.children.map(c => render(c, listDepth + 1)).join('');
+        const childrenToRender = node.children.filter(c => c.type !== 'text' || (c.text && c.text.trim() !== ''));
+        const content = childrenToRender.map(c => render(c, listDepth + 1)).join('');
         if (listDepth > 0) {
           return `\n${content.trimEnd()}`;
         }
@@ -656,7 +674,8 @@ export function htmlToMarkdown(
       }
       case 'ol': {
         let index = 1;
-        const content = node.children.map(c => {
+        const childrenToRender = node.children.filter(c => c.type !== 'text' || (c.text && c.text.trim() !== ''));
+        const content = childrenToRender.map(c => {
           if (c.type === 'li') {
             return render(c, listDepth + 1).replace(/^(\s*)-\s+/, `$1${index++}. `);
           }
@@ -685,14 +704,38 @@ export function htmlToMarkdown(
         if (!img) return childrenContent;
         const src = img.attributes['src'] || '';
         const alt = img.attributes['alt'] || '';
+        
         const figcaption = findNodeByType(node, 'figcaption');
-        const captionText = figcaption ? getPlainText(figcaption).trim() : '';
-        const finalAlt = alt || captionText;
+        let captionMarkdown = '';
+        if (figcaption) {
+          captionMarkdown = `\n*${render(figcaption, listDepth).trim()}*\n`;
+        }
+
         const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
-        return `\n\n![${finalAlt}](${localSrc})\n\n`;
+        return `\n\n![${alt}](${localSrc})${captionMarkdown}\n\n`;
       }
+      case 'table':
+        return `\n\n${childrenContent.trim()}\n\n`;
+      case 'caption':
+        return `*${childrenContent.trim()}*\n\n`;
+      case 'thead':
+      case 'tbody':
+        return childrenContent;
+      case 'tr': {
+        const cells = node.children.filter(c => c.type === 'th' || c.type === 'td');
+        const rowText = `| ${cells.map(c => render(c, listDepth)).join(' | ')} |\n`;
+        const isHeader = cells.some(c => c.type === 'th');
+        if (isHeader) {
+          const sepRow = `| ${cells.map(() => '---').join(' | ')} |\n`;
+          return `${rowText}${sepRow}`;
+        }
+        return rowText;
+      }
+      case 'th':
+      case 'td':
+        return childrenContent.trim().replace(/\n/g, ' ');
       case 'figcaption':
-        return '';
+        return childrenContent;
       case 'br':
         return '\n';
       case 'hr':
@@ -764,7 +807,11 @@ export async function pullFromWordPress({
       wpPost = posts[0];
     }
   } catch (err) {
-    console.log(`  (Slug lookup for "${wpSlug}" returned no results or failed, checking ID...)`);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('401') || errMsg.includes('403')) {
+      throw new Error(`⨯ WordPress authentication failed: ${errMsg}`);
+    }
+    console.log(`  (Slug lookup for "${wpSlug}" failed: ${errMsg}. Checking ID...)`);
   }
 
   // 2. Try to fetch by ID if slug lookup didn't yield a post
@@ -776,6 +823,10 @@ export async function pullFromWordPress({
         path: `/wp/v2/posts/${slugOrId}`,
       })) as WpPost;
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes('401') || errMsg.includes('403')) {
+        throw new Error(`⨯ WordPress authentication failed: ${errMsg}`);
+      }
       // Failed to find by ID
     }
   }
@@ -790,15 +841,28 @@ export async function pullFromWordPress({
   const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
   const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry, wpPost.slug, collectedImages);
 
+  // Parse Date GMT to prevent timezone shifting
+  function parseWpDate(dateStr: string, dateGmtStr?: string): string {
+    if (dateGmtStr && dateGmtStr !== '0000-00-00T00:00:00') {
+      const formatted = dateGmtStr.endsWith('Z') ? dateGmtStr : `${dateGmtStr}Z`;
+      return new Date(formatted).toISOString();
+    }
+    return new Date(dateStr).toISOString();
+  }
+
+  const dateIso = parseWpDate(wpPost.date, wpPost.date_gmt);
+  const modifiedIso = parseWpDate(wpPost.modified, wpPost.modified_gmt);
+  const decodedTitle = decodeHtmlEntities(wpPost.title.rendered);
+
   // Prepend frontmatter and title heading
   const frontmatter = [
     `---`,
-    `title: "${wpPost.title.rendered.replace(/"/g, '\\"')}"`,
-    `date: "${new Date(wpPost.date).toISOString()}"`,
-    `updated: "${new Date(wpPost.modified).toISOString()}"`,
+    `title: "${decodedTitle.replace(/"/g, '\\"')}"`,
+    `date: "${dateIso}"`,
+    `updated: "${modifiedIso}"`,
     `---`,
     ``,
-    `# ${wpPost.title.rendered}`,
+    `# ${decodedTitle}`,
     ``,
     markdownBody,
     ``,
@@ -870,5 +934,3 @@ export async function pullFromWordPress({
     console.log(`\n  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
   }
 }
-
-
