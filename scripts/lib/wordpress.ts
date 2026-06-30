@@ -1,4 +1,5 @@
-import { readFile } from 'fs/promises';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
 import { getAssetSubDir } from './files';
@@ -364,3 +365,401 @@ export async function pushToWordPress({
     }
   }
 }
+
+interface WpPost {
+  id: number;
+  date: string;
+  modified: string;
+  slug: string;
+  title: {
+    rendered: string;
+  };
+  content: {
+    rendered: string;
+  };
+  status: string;
+}
+
+export function restoreLocalImagePath(src: string, site: Site, registry: Registry): string {
+  // If it's a relative path already, just return it
+  if (src.startsWith('/') && !src.startsWith('//') && !src.includes('/api/vault-public/') && !src.includes('_thumbnails/')) {
+    return src;
+  }
+
+  let tempPath = src;
+
+  // Remove protocol and host if present
+  if (tempPath.startsWith('http://') || tempPath.startsWith('https://')) {
+    try {
+      const urlObj = new URL(tempPath);
+      tempPath = urlObj.pathname + urlObj.search + urlObj.hash;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Remove leading slash
+  tempPath = tempPath.replace(/^\//, '');
+
+  // If it goes through api/vault-public
+  if (tempPath.startsWith('api/vault-public/')) {
+    tempPath = tempPath.substring('api/vault-public/'.length);
+  }
+
+  // If it has siteId prefix (e.g. test-blog/content/...)
+  const siteIdPrefix = `${site.siteId}/`;
+  if (tempPath.startsWith(siteIdPrefix)) {
+    tempPath = tempPath.substring(siteIdPrefix.length);
+    if (tempPath.startsWith('content/')) {
+      tempPath = tempPath.substring('content/'.length);
+    } else if (tempPath.startsWith('public/')) {
+      tempPath = tempPath.substring('public/'.length);
+    }
+  }
+
+  // Now, check if it contains _thumbnails
+  const thumbIndex = tempPath.indexOf('_thumbnails/');
+  if (thumbIndex !== -1) {
+    tempPath = tempPath.substring(thumbIndex + '_thumbnails/'.length);
+    // Strip width suffix like -1200.webp
+    const match = tempPath.match(/(.+)-\d+\.webp$/);
+    if (match) {
+      tempPath = match[1];
+    } else {
+      tempPath = tempPath.replace(/\.[^/.]+$/, "");
+    }
+
+    // Now look on disk for the original extension
+    const extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif', '.tiff', '.tif'];
+    for (const ext of extensions) {
+      const publicPath = path.join(site.vaultPath, 'public', `${tempPath}${ext}`);
+      const contentPath = path.join(site.vaultPath, 'content', `${tempPath}${ext}`);
+      if (existsSync(publicPath)) {
+        return `/${tempPath}${ext}`;
+      }
+      if (existsSync(contentPath)) {
+        return `/${tempPath}${ext}`;
+      }
+    }
+    // Fallback if not found on disk
+    return `/${tempPath}.webp`;
+  }
+
+  // Even if it didn't contain _thumbnails, let's check if the file with its extension
+  // or other common extensions exists on disk
+  const basePathWithoutExt = tempPath.replace(/\.[^/.]+$/, "");
+  const extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif', '.tiff', '.tif'];
+  for (const ext of extensions) {
+    if (existsSync(path.join(site.vaultPath, 'public', `${basePathWithoutExt}${ext}`))) {
+      return `/${basePathWithoutExt}${ext}`;
+    }
+    if (existsSync(path.join(site.vaultPath, 'content', `${basePathWithoutExt}${ext}`))) {
+      return `/${basePathWithoutExt}${ext}`;
+    }
+  }
+
+  return `/${tempPath}`;
+}
+
+export function htmlToMarkdown(html: string, site: Site, registry: Registry): string {
+  // Tokenize the HTML
+  const tagRegex = /(<\/?[a-zA-Z0-9:-]+(?:\s+[a-zA-Z0-9:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*\/?>)/g;
+  const parts = html.split(tagRegex);
+  
+  interface Node {
+    type: string;
+    attributes: Record<string, string>;
+    children: Node[];
+    text?: string;
+  }
+
+  const root: Node = { type: 'root', attributes: {}, children: [] };
+  const stack: Node[] = [root];
+
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.startsWith('<') && part.endsWith('>')) {
+      const isClosing = part.startsWith('</');
+      const tagContent = part.replace(/^<\/?/, '').replace(/\/?>$/, '').trim();
+      const tagName = tagContent.split(/\s+/)[0].toLowerCase();
+      
+      const isSelfClosing = part.endsWith('/>') || /^(?:img|br|hr|input|meta|link)$/i.test(tagName);
+      
+      if (isClosing) {
+        const openIdx = [...stack].reverse().findIndex(n => n.type === tagName);
+        if (openIdx !== -1) {
+          const actualIdx = stack.length - 1 - openIdx;
+          stack.splice(actualIdx);
+        }
+      } else {
+        const attributes: Record<string, string> = {};
+        const attrRegex = /([a-zA-Z0-9:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+        let match;
+        const attrString = tagContent.substring(tagName.length);
+        while ((match = attrRegex.exec(attrString)) !== null) {
+          const key = match[1].toLowerCase();
+          const value = match[2] ?? match[3] ?? match[4] ?? '';
+          attributes[key] = value;
+        }
+
+        const node: Node = { type: tagName, attributes, children: [] };
+        stack[stack.length - 1].children.push(node);
+
+        if (!isSelfClosing) {
+          stack.push(node);
+        }
+      }
+    } else {
+      const text = decodeHtmlEntities(part);
+      if (text) {
+        stack[stack.length - 1].children.push({ type: 'text', attributes: {}, children: [], text });
+      }
+    }
+  }
+
+  function decodeHtmlEntities(str: string): string {
+    return str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&ldquo;/g, '“')
+      .replace(/&rdquo;/g, '”')
+      .replace(/&lsquo;/g, '‘')
+      .replace(/&rsquo;/g, '’')
+      .replace(/&ndash;/g, '–')
+      .replace(/&mdash;/g, '—')
+      .replace(/&nbsp;/g, ' ');
+  }
+
+  function render(node: Node, listDepth = 0): string {
+    if (node.type === 'text') {
+      return node.text || '';
+    }
+
+    const childrenContent = node.children.map(c => render(c, listDepth)).join('');
+
+    switch (node.type) {
+      case 'root':
+        return childrenContent.trim();
+      case 'p':
+        return `\n\n${childrenContent.trim()}\n\n`;
+      case 'h1':
+        return `\n\n# ${childrenContent.trim()}\n\n`;
+      case 'h2':
+        return `\n\n## ${childrenContent.trim()}\n\n`;
+      case 'h3':
+        return `\n\n### ${childrenContent.trim()}\n\n`;
+      case 'h4':
+        return `\n\n#### ${childrenContent.trim()}\n\n`;
+      case 'h5':
+        return `\n\n##### ${childrenContent.trim()}\n\n`;
+      case 'h6':
+        return `\n\n###### ${childrenContent.trim()}\n\n`;
+      case 'strong':
+      case 'b':
+        return `**${childrenContent}**`;
+      case 'em':
+      case 'i':
+        return `*${childrenContent}*`;
+      case 'code':
+        return `\`${childrenContent}\``;
+      case 'pre': {
+        const codeNode = node.children.find(c => c.type === 'code');
+        const codeText = codeNode ? codeNode.children.map(c => render(c, listDepth)).join('') : childrenContent;
+        const className = codeNode?.attributes['class'] || node.attributes['class'] || '';
+        const langMatch = className.match(/language-([a-zA-Z0-9+-]+)/);
+        const lang = langMatch ? langMatch[1] : '';
+        return `\n\n\`\`\`${lang}\n${codeText.trim()}\n\`\`\`\n\n`;
+      }
+      case 'blockquote':
+        return `\n\n> ${childrenContent.trim().replace(/\n/g, '\n> ')}\n\n`;
+      case 'ul': {
+        const content = node.children.map(c => render(c, listDepth + 1)).join('');
+        if (listDepth > 0) {
+          return `\n${content.trimEnd()}`;
+        }
+        return `\n\n${content.trim()}\n\n`;
+      }
+      case 'ol': {
+        let index = 1;
+        const content = node.children.map(c => {
+          if (c.type === 'li') {
+            return render(c, listDepth + 1).replace(/^(\s*)-\s+/, `$1${index++}. `);
+          }
+          return render(c, listDepth + 1);
+        }).join('');
+        if (listDepth > 0) {
+          return `\n${content.trimEnd()}`;
+        }
+        return `\n\n${content.trim()}\n\n`;
+      }
+      case 'li': {
+        const indent = '  '.repeat(Math.max(0, listDepth - 1));
+        return `${indent}- ${childrenContent.trim()}\n`;
+      }
+      case 'a':
+        const href = node.attributes['href'] || '';
+        return `[${childrenContent}](${href})`;
+      case 'img': {
+        const src = node.attributes['src'] || '';
+        const alt = node.attributes['alt'] || '';
+        const localSrc = restoreLocalImagePath(src, site, registry);
+        return `![${alt}](${localSrc})`;
+      }
+      case 'figure': {
+        const img = findNodeByType(node, 'img');
+        if (!img) return childrenContent;
+        const src = img.attributes['src'] || '';
+        const alt = img.attributes['alt'] || '';
+        const figcaption = findNodeByType(node, 'figcaption');
+        const captionText = figcaption ? getPlainText(figcaption).trim() : '';
+        const finalAlt = alt || captionText;
+        const localSrc = restoreLocalImagePath(src, site, registry);
+        return `\n\n![${finalAlt}](${localSrc})\n\n`;
+      }
+      case 'figcaption':
+        return '';
+      case 'br':
+        return '\n';
+      case 'hr':
+        return '\n\n---\n\n';
+      default:
+        return childrenContent;
+    }
+  }
+
+  function findNodeByType(node: Node, type: string): Node | null {
+    if (node.type === type) return node;
+    for (const child of node.children) {
+      const found = findNodeByType(child, type);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function getPlainText(node: Node): string {
+    if (node.type === 'text') return node.text || '';
+    return node.children.map(getPlainText).join('');
+  }
+
+  const result = render(root);
+  return result
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+interface PullFromWordPressArgs {
+  site: Site;
+  registry: Registry;
+  allIndices: Map<string, VaultDirectoryIndex>;
+  slugOrId: string;
+  dryRun: boolean;
+}
+
+export async function pullFromWordPress({
+  site,
+  registry,
+  allIndices,
+  slugOrId,
+  dryRun,
+}: PullFromWordPressArgs) {
+  const credentials = site.wordpress;
+  if (!credentials) {
+    throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
+  }
+
+  const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
+  console.log(`\n📥 Preparing WordPress Pull...`);
+  console.log(`- Target Endpoint: ${endpoint}`);
+  console.log(`- Authenticated As: ${credentials.username}`);
+  console.log(`- Target Post Slug/ID: ${slugOrId}`);
+  console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Pull\n`);
+
+  let wpPost: WpPost | null = null;
+
+  // 1. Try to fetch by slug first (WordPress uses hyphens instead of slashes)
+  const wpSlug = slugOrId.replace(/\//g, '-');
+  try {
+    const posts = (await wpFetch({
+      endpoint,
+      credentials,
+      path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any`,
+    })) as WpPost[];
+    
+    if (posts && posts.length > 0) {
+      wpPost = posts[0];
+    }
+  } catch (err) {
+    console.log(`  (Slug lookup for "${wpSlug}" returned no results or failed, checking ID...)`);
+  }
+
+  // 2. Try to fetch by ID if slug lookup didn't yield a post
+  if (!wpPost && /^\d+$/.test(slugOrId)) {
+    try {
+      wpPost = (await wpFetch({
+        endpoint,
+        credentials,
+        path: `/wp/v2/posts/${slugOrId}`,
+      })) as WpPost;
+    } catch (err) {
+      // Failed to find by ID
+    }
+  }
+
+  if (!wpPost) {
+    throw new Error(`⨯ Could not find any post in WordPress matching slug or ID: "${slugOrId}"`);
+  }
+
+  console.log(`✅ Found post: "${wpPost.title.rendered}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
+
+  // Convert HTML to Markdown
+  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry);
+
+  // Prepend frontmatter and title heading
+  const frontmatter = [
+    `---`,
+    `title: "${wpPost.title.rendered.replace(/"/g, '\\"')}"`,
+    `date: "${new Date(wpPost.date).toISOString()}"`,
+    `updated: "${new Date(wpPost.modified).toISOString()}"`,
+    `---`,
+    ``,
+    `# ${wpPost.title.rendered}`,
+    ``,
+    markdownBody,
+    ``,
+  ].join('\n');
+
+  // Find local path from indices
+  let targetLocalPath = '';
+  for (const [dirKey, dirIndex] of allIndices.entries()) {
+    for (const page of dirIndex.pages) {
+      const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
+      if (fullSlug.replace(/\//g, '-') === wpPost.slug) {
+        targetLocalPath = path.join(site.vaultPath, 'content', dirKey, `${page.slug}.md`);
+        break;
+      }
+    }
+    if (targetLocalPath) break;
+  }
+
+  if (!targetLocalPath) {
+    targetLocalPath = path.join(site.vaultPath, 'content', `${wpPost.slug}.md`);
+  }
+
+  if (dryRun) {
+    console.log(`  [DRY RUN] Would write Markdown post for "${wpPost.title.rendered}" to:`);
+    console.log(`  📂 ${targetLocalPath}`);
+    console.log(`\n--- PREVIEW START ---`);
+    console.log(frontmatter);
+    console.log(`--- PREVIEW END ---`);
+  } else {
+    // Ensure parent directory exists
+    await mkdir(path.dirname(targetLocalPath), { recursive: true });
+    await writeFile(targetLocalPath, frontmatter, 'utf-8');
+    console.log(`  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
+  }
+}
+

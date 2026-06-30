@@ -12,7 +12,7 @@ import { normalizeThumbnailSizes } from '../src/lib/responsive-images';
 import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
-import { pushToWordPress } from './lib/wordpress';
+import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
 
 type CommandResult = {
   status: number | null;
@@ -450,6 +450,25 @@ async function main() {
 
     if (mode === 'configure') {
       await configureLocalEnvironment({ site, registry });
+      return;
+    }
+
+    const pullSlugOrId = getFlagValue({ flag: '--pull' });
+    if (pullSlugOrId) {
+      const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
+      const { allIndices } = await generateIndices({
+        vaultPath: site.vaultPath,
+        thumbnailSizes,
+        dryRun: true,
+      });
+
+      await pullFromWordPress({
+        site,
+        registry,
+        allIndices,
+        slugOrId: pullSlugOrId,
+        dryRun: isDryRun,
+      });
       return;
     }
 
