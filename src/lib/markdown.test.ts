@@ -70,6 +70,19 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
+
+  it("consumes adjacent italicized paragraph as a custom figcaption and preserves links", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![My Alt Text](image.png)\n*This is my [caption link](https://example.com) text.*",
+      thumbnailSizes: [320],
+      publicFiles: ["image.png"],
+    });
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<figcaption>This is my <a href="https://example.com">caption link</a> text.</figcaption></figure>');
+    expect(html).not.toContain('<p><em>This is my');
+  });
 });
 
 describe("preprocessWikilinks", () => {
