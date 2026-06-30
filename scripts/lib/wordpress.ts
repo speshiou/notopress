@@ -380,21 +380,38 @@ interface WpPost {
   status: string;
 }
 
-export function restoreLocalImagePath(src: string, site: Site, registry: Registry): string {
+export function resolveAndCollectImagePath(
+  src: string,
+  site: Site,
+  registry: Registry,
+  collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
+): string {
   // If it's a relative path already, just return it
   if (src.startsWith('/') && !src.startsWith('//') && !src.includes('/api/vault-public/') && !src.includes('_thumbnails/')) {
     return src;
   }
 
   let tempPath = src;
+  let isExternal = false;
+  const originalUrl = src;
 
-  // Remove protocol and host if present
+  // Check if it is an external URL
   if (tempPath.startsWith('http://') || tempPath.startsWith('https://')) {
     try {
       const urlObj = new URL(tempPath);
+      const isInternal = 
+        tempPath.includes('_thumbnails/') || 
+        tempPath.includes('/api/vault-public/') ||
+        (site.domain && urlObj.hostname === site.domain) ||
+        (site.imageHost && urlObj.hostname === new URL(site.imageHost).hostname) ||
+        (registry.imageHost && urlObj.hostname === new URL(registry.imageHost).hostname);
+
+      if (!isInternal) {
+        isExternal = true;
+      }
       tempPath = urlObj.pathname + urlObj.search + urlObj.hash;
     } catch {
-      // ignore
+      isExternal = true;
     }
   }
 
@@ -417,51 +434,86 @@ export function restoreLocalImagePath(src: string, site: Site, registry: Registr
     }
   }
 
-  // Now, check if it contains _thumbnails
+  // Extract filename
+  const filename = tempPath.split('/').pop() || '';
+  if (!filename) return src;
+
+  // Extract base name and extension to find original files
+  const ext = path.extname(filename);
+  const baseName = path.basename(filename, ext);
+  const cleanBaseName = baseName.replace(/-(\d+x\d+|\d+)$/, '');
+  const finalFilename = `${cleanBaseName}${ext}`;
+
+  // Check if the file already exists locally
+  const dir = path.dirname(tempPath);
+  const candidateFolders = ['attachments', 'images', dir !== '.' ? dir : '', ''];
+  const extensions = [ext, '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'];
+
+  for (const folder of candidateFolders) {
+    for (const curExt of extensions) {
+      const checkFilename = `${cleanBaseName}${curExt}`;
+      const relPath = folder ? `${folder}/${checkFilename}` : checkFilename;
+      
+      const publicPath = path.join(site.vaultPath, 'public', relPath);
+      const contentPath = path.join(site.vaultPath, 'content', relPath);
+      
+      if (existsSync(publicPath)) {
+        return `/${relPath}`;
+      }
+      if (existsSync(contentPath)) {
+        return `/${relPath}`;
+      }
+    }
+  }
+
+  // If it contains _thumbnails, extract path
   const thumbIndex = tempPath.indexOf('_thumbnails/');
   if (thumbIndex !== -1) {
     tempPath = tempPath.substring(thumbIndex + '_thumbnails/'.length);
-    // Strip width suffix like -1200.webp
     const match = tempPath.match(/(.+)-\d+\.webp$/);
-    if (match) {
-      tempPath = match[1];
-    } else {
-      tempPath = tempPath.replace(/\.[^/.]+$/, "");
-    }
+    const pathWithoutThumbExt = match ? match[1] : tempPath.replace(/\.[^/.]+$/, "");
 
-    // Now look on disk for the original extension
-    const extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif', '.tiff', '.tif'];
-    for (const ext of extensions) {
-      const publicPath = path.join(site.vaultPath, 'public', `${tempPath}${ext}`);
-      const contentPath = path.join(site.vaultPath, 'content', `${tempPath}${ext}`);
+    for (const curExt of extensions) {
+      const publicPath = path.join(site.vaultPath, 'public', `${pathWithoutThumbExt}${curExt}`);
+      const contentPath = path.join(site.vaultPath, 'content', `${pathWithoutThumbExt}${curExt}`);
       if (existsSync(publicPath)) {
-        return `/${tempPath}${ext}`;
+        return `/${pathWithoutThumbExt}${curExt}`;
       }
       if (existsSync(contentPath)) {
-        return `/${tempPath}${ext}`;
+        return `/${pathWithoutThumbExt}${curExt}`;
       }
     }
-    // Fallback if not found on disk
-    return `/${tempPath}.webp`;
   }
 
-  // Even if it didn't contain _thumbnails, let's check if the file with its extension
-  // or other common extensions exists on disk
-  const basePathWithoutExt = tempPath.replace(/\.[^/.]+$/, "");
-  const extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif', '.tiff', '.tif'];
-  for (const ext of extensions) {
-    if (existsSync(path.join(site.vaultPath, 'public', `${basePathWithoutExt}${ext}`))) {
-      return `/${basePathWithoutExt}${ext}`;
+  // If not found locally, we queue it for download
+  const targetLocalPath = `attachments/${finalFilename}`;
+  const targetFullPath = path.join(site.vaultPath, 'content', targetLocalPath);
+
+  if (collectedImages) {
+    let tryHighResUrl = originalUrl;
+    if (originalUrl.includes(filename)) {
+      tryHighResUrl = originalUrl.replace(filename, finalFilename);
     }
-    if (existsSync(path.join(site.vaultPath, 'content', `${basePathWithoutExt}${ext}`))) {
-      return `/${basePathWithoutExt}${ext}`;
-    }
+    collectedImages.push({
+      remoteUrl: originalUrl,
+      tryHighResUrl,
+      localPath: targetFullPath,
+    });
   }
 
-  return `/${tempPath}`;
+  return `/${targetLocalPath}`;
 }
 
-export function htmlToMarkdown(html: string, site: Site, registry: Registry): string {
+export function restoreLocalImagePath(src: string, site: Site, registry: Registry): string {
+  return resolveAndCollectImagePath(src, site, registry);
+}
+
+export function htmlToMarkdown(
+  html: string,
+  site: Site,
+  registry: Registry,
+  collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
+): string {
   // Tokenize the HTML
   const tagRegex = /(<\/?[a-zA-Z0-9:-]+(?:\s+[a-zA-Z0-9:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*\/?>)/g;
   const parts = html.split(tagRegex);
@@ -621,7 +673,7 @@ export function htmlToMarkdown(html: string, site: Site, registry: Registry): st
       case 'img': {
         const src = node.attributes['src'] || '';
         const alt = node.attributes['alt'] || '';
-        const localSrc = restoreLocalImagePath(src, site, registry);
+        const localSrc = resolveAndCollectImagePath(src, site, registry, collectedImages);
         return `![${alt}](${localSrc})`;
       }
       case 'figure': {
@@ -632,7 +684,7 @@ export function htmlToMarkdown(html: string, site: Site, registry: Registry): st
         const figcaption = findNodeByType(node, 'figcaption');
         const captionText = figcaption ? getPlainText(figcaption).trim() : '';
         const finalAlt = alt || captionText;
-        const localSrc = restoreLocalImagePath(src, site, registry);
+        const localSrc = resolveAndCollectImagePath(src, site, registry, collectedImages);
         return `\n\n![${finalAlt}](${localSrc})\n\n`;
       }
       case 'figcaption':
@@ -730,8 +782,9 @@ export async function pullFromWordPress({
 
   console.log(`✅ Found post: "${wpPost.title.rendered}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
 
-  // Convert HTML to Markdown
-  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry);
+  // Convert HTML to Markdown (and collect any remote image urls to download)
+  const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
+  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry, collectedImages);
 
   // Prepend frontmatter and title heading
   const frontmatter = [
@@ -767,14 +820,51 @@ export async function pullFromWordPress({
   if (dryRun) {
     console.log(`  [DRY RUN] Would write Markdown post for "${wpPost.title.rendered}" to:`);
     console.log(`  📂 ${targetLocalPath}`);
+    if (collectedImages.length > 0) {
+      console.log(`\n  [DRY RUN] Would download ${collectedImages.length} image(s):`);
+      for (const img of collectedImages) {
+        console.log(`  - ${img.tryHighResUrl} -> ${img.localPath}`);
+      }
+    }
     console.log(`\n--- PREVIEW START ---`);
     console.log(frontmatter);
     console.log(`--- PREVIEW END ---`);
   } else {
     // Ensure parent directory exists
     await mkdir(path.dirname(targetLocalPath), { recursive: true });
+
+    // Download collected images
+    if (collectedImages.length > 0) {
+      console.log(`\n📥 Downloading ${collectedImages.length} image(s) to local vault...`);
+      for (const img of collectedImages) {
+        try {
+          await mkdir(path.dirname(img.localPath), { recursive: true });
+          console.log(`- Fetching image: ${img.tryHighResUrl}`);
+          let imgResponse = await fetch(img.tryHighResUrl);
+          
+          if (!imgResponse.ok) {
+            console.log(`  (High-res URL failed, falling back to original: ${img.remoteUrl})`);
+            imgResponse = await fetch(img.remoteUrl);
+          }
+
+          if (!imgResponse.ok) {
+            console.error(`  ❌ Failed to download image from both URLs: ${imgResponse.statusText}`);
+            continue;
+          }
+
+          const buffer = Buffer.from(await imgResponse.arrayBuffer());
+          await writeFile(img.localPath, buffer);
+          console.log(`  ✅ Saved to: ${img.localPath}`);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`  ❌ Failed to download image "${img.remoteUrl}":`, errMsg);
+        }
+      }
+    }
+
     await writeFile(targetLocalPath, frontmatter, 'utf-8');
-    console.log(`  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
+    console.log(`\n  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
   }
 }
+
 
