@@ -109,6 +109,27 @@ describe('WordPress Deployment Library', () => {
       expect(result).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp"');
     });
 
+    it('should resolve encoded root-level image references to attachment thumbnails without double encoding', async () => {
+      const html = '<img src="/Pasted%2520image%252020260630150256.png" alt="Cable status" />';
+      const sizes = [300, 600, 1200];
+
+      const result = await replaceLocalImagesWithThumbnails({
+        html,
+        site: mockSite,
+        registry: mockRegistry,
+        sizes,
+        assetFiles: ['attachments/Pasted image 20260630150256.png'],
+      });
+
+      expect(result).toContain(
+        'src="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp"'
+      );
+      expect(result).toContain(
+        'srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp 1200w"'
+      );
+      expect(result).not.toContain('%2520');
+    });
+
     it('should ignore external URLs and data URIs', async () => {
       const html = `
         <img src="https://external.com/photo.jpg" alt="Ext" />
@@ -525,4 +546,3 @@ describe('WordPress Deployment Library', () => {
     });
   });
 });
-

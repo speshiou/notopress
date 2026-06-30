@@ -7,6 +7,7 @@ import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
+import { isExternalOrInlineAsset, resolveLocalImagePath } from '../../src/lib/local-images';
 
 
 interface PushToWordPressArgs {
@@ -69,11 +70,13 @@ export async function replaceLocalImagesWithThumbnails({
   site,
   registry,
   sizes,
+  assetFiles,
 }: {
   html: string;
   site: Site;
   registry: Registry;
   sizes: readonly number[];
+  assetFiles?: readonly string[];
 }): Promise<string> {
   const imageHost = site.imageHost || registry.imageHost;
   const largestWidth = sizes[sizes.length - 1];
@@ -99,20 +102,14 @@ export async function replaceLocalImagesWithThumbnails({
 
   for (const { fullMatch, src } of uniqueMatches) {
     // Skip external or inline assets
-    if (
-      src.startsWith('http://') ||
-      src.startsWith('https://') ||
-      src.startsWith('data:') ||
-      src.startsWith('#')
-    ) {
+    if (isExternalOrInlineAsset({ src })) {
       continue;
     }
 
-    const cleanSrc = src.replace(/^\//, '');
-    const decodedSrc = decodeURIComponent(cleanSrc);
+    const imagePath = resolveLocalImagePath({ src, availableFiles: assetFiles });
 
     // Get the thumbnail filename and relative directory path
-    const thumbPath = getThumbnailPath({ imagePath: decodedSrc, width: largestWidth });
+    const thumbPath = getThumbnailPath({ imagePath, width: largestWidth });
 
     // Determine target location in S3 by checking local filesystem existence
     const s3SubDir = await getAssetSubDir({ vaultPath: site.vaultPath, filePath: thumbPath });
@@ -128,7 +125,7 @@ export async function replaceLocalImagesWithThumbnails({
 
     // Build the srcset attributes for all defined thumbnail sizes
     const srcSetUrls = sizes.map((size) => {
-      const sizeThumbPath = getThumbnailPath({ imagePath: decodedSrc, width: size });
+      const sizeThumbPath = getThumbnailPath({ imagePath, width: size });
       const sizeUrl = getAssetUrl({
         imageHost,
         siteId: site.siteId,
@@ -305,6 +302,7 @@ export async function pushToWordPress({
         site,
         registry,
         sizes,
+        assetFiles: publicFiles,
       });
 
       // Replace slashes with hyphens to match WordPress's sanitization behavior

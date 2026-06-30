@@ -2,6 +2,7 @@ import { remark } from "remark";
 import html from "remark-html";
 import type { Plugin } from "unified";
 import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
+import { resolveMarkdownImagePaths } from "./local-images";
 
 export type MarkdownNode = {
   type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
@@ -225,6 +226,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
     }): Promise<string> {
       let preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
+      preprocessed = publicFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles: publicFiles }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
@@ -273,4 +275,3 @@ const defaultMarkdownRenderer = createMarkdownRenderer({
 export const responsiveImagePlugin = defaultMarkdownRenderer.responsiveImagePlugin;
 export const applyResponsiveImages = defaultMarkdownRenderer.applyResponsiveImages;
 export const renderMarkdownContent = defaultMarkdownRenderer.renderMarkdownContent;
-

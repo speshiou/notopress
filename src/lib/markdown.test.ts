@@ -46,6 +46,18 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
+  it("resolves standard markdown image references through known asset files", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![Cable status](/Pasted%20image%2020260630150256.png)",
+      thumbnailSizes: [320],
+      publicFiles: ["attachments/Pasted image 20260630150256.png"],
+    });
+
+    expect(html).toContain('src="/attachments/Pasted%20image%2020260630150256.png"');
+    expect(html).toContain('srcset="/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+  });
+
   it("separates block-level images from adjacent text blocks", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({
@@ -93,4 +105,3 @@ describe("preprocessWikilinks", () => {
     expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
   });
 });
-
