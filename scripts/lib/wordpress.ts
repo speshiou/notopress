@@ -294,6 +294,11 @@ export async function pushToWordPress({
             style: 'height: auto !important;',
           };
         },
+        getTableFigureProperties: () => {
+          return {
+            class: 'wp-block-table is-style-stripes',
+          };
+        },
       });
 
       // Replace local image paths with imageHost absolute thumbnail URLs

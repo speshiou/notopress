@@ -261,6 +261,47 @@ describe('WordPress Deployment Library', () => {
       );
     });
 
+    it('should publish markdown tables as striped WordPress table figures', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockResolvedValue([
+        '# My Post Title',
+        '',
+        '| Name | Value |',
+        '| --- | --- |',
+        '| A | B |',
+      ].join('\n'));
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body.content).toContain('<figure class="wp-block-table is-style-stripes">');
+      expect(body.content).toContain('<table>');
+      expect(body.content).toContain('</table>\n</figure>');
+    });
+
     it('should only query and perform no mutations when dryRun is true', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {

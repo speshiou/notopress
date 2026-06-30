@@ -32,10 +32,44 @@ export type MarkdownRendererDeps = {
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
 
+export type FigureProperties = { class?: string; style?: string };
+
 export function ensureImageBlockSeparation(markdown: string): string {
   // Matches markdown images that occupy a single line on their own (with optional spaces/tabs)
   // E.g., `![alt](url)` or standard markdown links
   return markdown.replace(/(?:^|\n)([ \t]*!\[[^\]]*\]\([^)]+\)[ \t]*)(?=\n|$)/g, '\n\n$1\n\n');
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function serializeFigureProperties(properties: FigureProperties): string {
+  const attributes = Object.entries(properties)
+    .filter((entry): entry is [keyof FigureProperties, string] => typeof entry[1] === "string" && entry[1].length > 0)
+    .map(([key, value]) => `${key}="${escapeHtmlAttribute(value)}"`);
+
+  return attributes.length > 0 ? ` ${attributes.join(" ")}` : "";
+}
+
+export function wrapTablesInFigures(
+  htmlContent: string,
+  getFigureProperties?: () => FigureProperties,
+): string {
+  return htmlContent.replace(/<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g, (tableHtml, offset, fullHtml) => {
+    const precedingHtml = fullHtml.slice(Math.max(0, offset - 80), offset);
+    if (/<figure\b[^>]*>\s*$/i.test(precedingHtml)) {
+      return tableHtml;
+    }
+
+    const properties = getFigureProperties ? getFigureProperties() : {};
+    const attributes = serializeFigureProperties(properties);
+    return `<figure${attributes}>\n${tableHtml}\n</figure>`;
+  });
 }
 
 export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
@@ -46,7 +80,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   }: {
     tree: MarkdownNode;
     thumbnailSizes: readonly number[];
-    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+    getFigureProperties?: (largestWidth: number) => FigureProperties;
   }) {
     const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
     const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
@@ -203,7 +237,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     getFigureProperties,
   }: {
     thumbnailSizes: readonly number[];
-    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+    getFigureProperties?: (largestWidth: number) => FigureProperties;
   }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
@@ -221,12 +255,14 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       assetFiles,
       publicFiles,
       getFigureProperties,
+      getTableFigureProperties,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
       assetFiles?: readonly string[];
       publicFiles?: readonly string[];
-      getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+      getFigureProperties?: (largestWidth: number) => FigureProperties;
+      getTableFigureProperties?: () => FigureProperties;
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
       let preprocessed = availableFiles ? preprocessWikilinks(markdown, availableFiles) : markdown;
@@ -235,7 +271,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       return deps.processMarkdown({
         markdown: preprocessed,
         plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties }),
-      });
+      }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
     },
   };
 }

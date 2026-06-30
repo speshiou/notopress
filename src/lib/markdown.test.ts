@@ -58,7 +58,7 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('srcset="/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
   });
 
-  it("renders GitHub-Flavored Markdown tables as HTML tables", async () => {
+  it("renders GitHub-Flavored Markdown tables inside generic figures", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({
       markdown: [
@@ -69,10 +69,28 @@ describe("createMarkdownRenderer", () => {
       thumbnailSizes: [320],
     });
 
+    expect(html).toContain("<figure>\n<table>");
     expect(html).toContain("<table>");
+    expect(html).toContain("</table>\n</figure>");
+    expect(html).not.toContain("wp-block-table");
     expect(html).toContain("<th align=\"left\">VPN 品牌</th>");
     expect(html).toContain("<td align=\"center\">10 台裝置</td>");
     expect(html).toContain("<strong><a href=\"https://example.com/nord\">NordVPN</a></strong>");
+  });
+
+  it("applies custom table figure properties when provided", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "| Name | Value |",
+        "| --- | --- |",
+        "| A | B |",
+      ].join("\n"),
+      thumbnailSizes: [320],
+      getTableFigureProperties: () => ({ class: 'custom-table', style: 'overflow-x: auto;' }),
+    });
+
+    expect(html).toContain('<figure class="custom-table" style="overflow-x: auto;">');
   });
 
   it("separates block-level images from adjacent text blocks", async () => {
