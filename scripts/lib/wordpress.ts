@@ -531,7 +531,22 @@ export function htmlToMarkdown(html: string, site: Site, registry: Registry): st
       .replace(/&rsquo;/g, '’')
       .replace(/&ndash;/g, '–')
       .replace(/&mdash;/g, '—')
-      .replace(/&nbsp;/g, ' ');
+      .replace(/&hellip;/g, '…')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&#(\d+);/g, (_, dec) => {
+        try {
+          return String.fromCodePoint(parseInt(dec, 10));
+        } catch {
+          return _;
+        }
+      })
+      .replace(/&#x([a-fA-F0-9]+);/g, (_, hex) => {
+        try {
+          return String.fromCodePoint(parseInt(hex, 16));
+        } catch {
+          return _;
+        }
+      });
   }
 
   function render(node: Node, listDepth = 0): string {

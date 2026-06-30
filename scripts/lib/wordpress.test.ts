@@ -349,10 +349,10 @@ describe('WordPress Deployment Library', () => {
   });
 
   describe('htmlToMarkdown', () => {
-    it('should parse basic html elements to markdown', () => {
-      const html = '<p>Hello <strong>world</strong> and <em>everyone</em>!</p>';
+    it('should parse basic html elements to markdown and decode HTML entities', () => {
+      const html = '<p>Hello <strong>world</strong> and <em>everyone</em>! &#8211; &ldquo;Quotes&rdquo; &amp; &hellip;</p>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('Hello **world** and *everyone*!');
+      expect(md).toBe('Hello **world** and *everyone*! – “Quotes” & …');
     });
 
     it('should parse headings', () => {
