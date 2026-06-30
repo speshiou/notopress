@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { replaceLocalImagesWithThumbnails, pushToWordPress } from './wordpress';
+import { replaceLocalImagesWithThumbnails, pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 
@@ -8,14 +8,22 @@ vi.mock('./files', () => ({
   getAssetSubDir: vi.fn(),
 }));
 
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
+}));
+
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
   readdir: vi.fn(),
+  writeFile: vi.fn(),
+  mkdir: vi.fn(),
 }));
 
 // Access mocked functions
 import { getAssetSubDir } from './files';
-import { readFile, readdir } from 'fs/promises';
+import { readFile, readdir, writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+
 
 describe('WordPress Deployment Library', () => {
   const mockSite: Site = {
@@ -299,4 +307,222 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<h1>Real Title</h1>');
     });
   });
+
+  describe('restoreLocalImagePath', () => {
+    it('should return simple relative paths unchanged', () => {
+      const result = restoreLocalImagePath('/images/photo.png', mockSite, mockRegistry);
+      expect(result).toBe('images/photo.png');
+    });
+
+    it('should resolve thumbnail CDN url to local relative path with correct original extension from disk', () => {
+      // Mock existsSync to simulate file existing on disk
+      vi.mocked(existsSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.endsWith('/mock/vault/public/images/avatar.jpg')) {
+          return true;
+        }
+        return false;
+      });
+
+      const result = restoreLocalImagePath(
+        'https://cdn.testsite.com/test-blog/public/_thumbnails/images/avatar-640.webp',
+        mockSite,
+        mockRegistry
+      );
+      expect(result).toBe('images/avatar.jpg');
+    });
+
+    it('should resolve direct non-thumbnail image url and find original path on disk', () => {
+      vi.mocked(existsSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.endsWith('/mock/vault/content/docs/screenshot.png')) {
+          return true;
+        }
+        return false;
+      });
+
+      const result = restoreLocalImagePath(
+        '/api/vault-public/docs/screenshot.webp',
+        mockSite,
+        mockRegistry
+      );
+      expect(result).toBe('docs/screenshot.png');
+    });
+  });
+
+  describe('htmlToMarkdown', () => {
+    it('should parse basic html elements to markdown and decode HTML entities', () => {
+      const html = '<p>Hello <strong>world</strong> and <em>everyone</em>! &#8211; &ldquo;Quotes&rdquo; &amp; &hellip;</p>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('Hello **world** and *everyone*! – “Quotes” & …');
+    });
+
+    it('should parse headings', () => {
+      const html = '<h1>Title 1</h1><h2>Title 2</h2><h3>Title 3</h3>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('# Title 1\n\n## Title 2\n\n### Title 3');
+    });
+
+    it('should parse links and simple images', () => {
+      const html = '<p>Link to <a href="https://google.com">Google</a> and <img src="/images/pic.png" alt="Pic" /></p>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('Link to [Google](https://google.com) and ![Pic](images/pic.png)');
+    });
+
+    it('should parse code blocks and inline code', () => {
+      const html = '<p>Use <code>const x = 5</code></p><pre class="wp-block-code"><code class="language-js">const y = 6;\nconsole.log(y);</code></pre>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('Use `const x = 5`\n\n```js\nconst y = 6;\nconsole.log(y);\n```');
+    });
+
+    it('should parse blockquotes', () => {
+      const html = '<blockquote><p>Quote text here.</p></blockquote>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('> Quote text here.');
+    });
+
+    it('should parse nested unordered lists with correct indent', () => {
+      const html = '<ul><li>Item 1</li><li>Item 2<ul><li>Subitem 1</li><li>Subitem 2</li></ul></li></ul>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('- Item 1\n- Item 2\n  - Subitem 1\n  - Subitem 2');
+    });
+
+    it('should parse nested ordered lists with correct numbers', () => {
+      const html = '<ol><li>One</li><li>Two<ol><li>Sub One</li><li>Sub Two</li></ol></li></ol>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('1. One\n2. Two\n  1. Sub One\n  2. Sub Two');
+    });
+
+    it('should parse figures and figcaptions', () => {
+      const html = '<figure class="wp-block-image"><img src="/images/fig.png" alt="Alt text" /><figcaption>Caption text</figcaption></figure>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('![Alt text](images/fig.png)\n*Caption text*');
+    });
+
+    it('should parse figures with link inside figcaption', () => {
+      const html = '<figure><img src="/images/fig.png" alt="Alt" /><figcaption>Source: <a href="http://google.com">Google</a></figcaption></figure>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('![Alt](images/fig.png)\n*Source: [Google](http://google.com)*');
+    });
+
+    it('should parse HTML tables and captions into markdown tables', () => {
+      const html = '<table><caption>List of codes</caption><thead><tr><th>Region</th><th>Code</th></tr></thead><tbody><tr><td>USA</td><td>+1</td></tr></tbody></table>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('*List of codes*\n\n| Region | Code |\n| --- | --- |\n| USA | +1 |');
+    });
+
+    it('should strip comments and scripts from HTML content', () => {
+      const html = '<!-- wp:paragraph --><p>Hello</p><script>console.log(123);</script>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toBe('Hello');
+    });
+  });
+
+  describe('pullFromWordPress', () => {
+    const mockIndices = new Map<string, VaultDirectoryIndex>([
+      [
+        '',
+        {
+          version: 1,
+          pages: [
+            {
+              title: 'Post One',
+              slug: 'post-one',
+              date: '2026-06-16T12:00:00.000Z',
+              excerpt: 'An excerpt.',
+            },
+          ],
+        },
+      ],
+    ]);
+
+    it('should pull a post by slug from wordpress, convert content, and write markdown file to the correct local path', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts?slug=post-one') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [
+              {
+                id: 123,
+                date: '2026-06-30T10:00:00',
+                modified: '2026-06-30T11:00:00',
+                slug: 'post-one',
+                title: { rendered: 'Post One Title' },
+                content: { rendered: '<p>WordPress body text.</p>' },
+                status: 'publish',
+              },
+            ],
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pullFromWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        slugOrId: 'post-one',
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=post-one'),
+        expect.objectContaining({ method: 'GET' })
+      );
+
+      // Verify that writeFile is called with the compiled markdown and correct path
+      expect(mkdir).toHaveBeenCalledWith('/mock/vault/content', { recursive: true });
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/post-one.md',
+        expect.stringContaining('title: "Post One Title"'),
+        'utf-8'
+      );
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/post-one.md',
+        expect.stringContaining('# Post One Title\n\nWordPress body text.'),
+        'utf-8'
+      );
+    });
+
+    it('should fallback to target ID if slug fails', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts?slug=123') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts/123') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => ({
+              id: 123,
+              date: '2026-06-30T10:00:00',
+              modified: '2026-06-30T11:00:00',
+              slug: 'pulled-post-slug',
+              title: { rendered: 'Pulled Title' },
+              content: { rendered: '<p>Fetched by ID.</p>' },
+              status: 'publish',
+            }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pullFromWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        slugOrId: '123',
+        dryRun: false,
+      });
+
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/pulled-post-slug.md',
+        expect.stringContaining('# Pulled Title\n\nFetched by ID.'),
+        'utf-8'
+      );
+    });
+  });
 });
+

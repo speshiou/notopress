@@ -53,65 +53,125 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       : { class: "image-figure" };
 
     function visit(node: MarkdownNode) {
-      const nonWhitespaceChildren = node.children?.filter(
-        child => !(child.type === "text" && child.value?.trim() === "")
-      ) || [];
+      if (node.children) {
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i];
+          const nonWhitespaceChildren = child.children?.filter(
+            c => !(c.type === "text" && c.value?.trim() === "")
+          ) || [];
 
-      if (node.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
-        const imgNode = nonWhitespaceChildren[0];
-        const imgUrl = imgNode.url || "";
-        const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
-        const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
-        const altText = imgNode.alt || '';
+          if (child.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
+            const imgNode = nonWhitespaceChildren[0];
+            const imgUrl = imgNode.url || "";
+            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
+            const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
+            const altText = imgNode.alt || '';
 
-        const imgProperties: Record<string, string> = {
-          src: srcVal,
-          style: "max-width: 100%;",
-        };
-        if (altText) {
-          imgProperties.alt = altText;
-        }
-        if (attributes) {
-          imgProperties.srcset = attributes.srcSet;
-          imgProperties.sizes = `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`;
-        }
-        imgProperties.loading = "lazy";
-        imgProperties.decoding = "async";
+            const imgProperties: Record<string, string> = {
+              src: srcVal,
+              style: "max-width: 100%;",
+            };
+            if (altText) {
+              imgProperties.alt = altText;
+            }
+            if (attributes) {
+              imgProperties.srcset = attributes.srcSet;
+              imgProperties.sizes = `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`;
+            }
+            imgProperties.loading = "lazy";
+            imgProperties.decoding = "async";
 
-        const children: MarkdownNode[] = [
-          {
-            type: "element",
-            tagName: "img",
-            properties: imgProperties,
-            children: [],
-          }
-        ];
-
-        if (altText) {
-          children.push({
-            type: "element",
-            tagName: "figcaption",
-            properties: {},
-            children: [
+            const hChildren: MarkdownNode[] = [
               {
-                type: "text",
-                value: altText,
+                type: "element",
+                tagName: "img",
+                properties: imgProperties,
+                children: [],
               }
-            ],
-          });
-        }
+            ];
 
-        node.type = "image-figure";
-        node.data = {
-          ...node.data,
-          hName: "figure",
-          hProperties: {
-            ...figureProps,
-          },
-          hChildren: children,
-        };
-        delete node.children;
-        return;
+            let hasCustomCaption = false;
+            let customCaptionNode: MarkdownNode | null = null;
+            if (i + 1 < node.children.length) {
+              const nextSibling = node.children[i + 1];
+              const siblingChildren = nextSibling.children || [];
+              if (nextSibling.type === "paragraph" && siblingChildren.length === 1 && siblingChildren[0].type === "emphasis") {
+                hasCustomCaption = true;
+                customCaptionNode = siblingChildren[0];
+              }
+            }
+
+            if (hasCustomCaption && customCaptionNode) {
+              function mapMdastToHast(n: MarkdownNode): MarkdownNode {
+                if (n.type === 'text') {
+                  return { type: 'text', value: n.value };
+                }
+                if (n.type === 'link') {
+                  return {
+                    type: 'element',
+                    tagName: 'a',
+                    properties: { href: n.url || "" },
+                    children: (n.children || []).map(mapMdastToHast),
+                  };
+                }
+                if (n.type === 'strong') {
+                  return {
+                    type: 'element',
+                    tagName: 'strong',
+                    children: (n.children || []).map(mapMdastToHast),
+                  };
+                }
+                if (n.type === 'emphasis') {
+                  return {
+                    type: 'element',
+                    tagName: 'em',
+                    children: (n.children || []).map(mapMdastToHast),
+                  };
+                }
+                return {
+                  type: 'element',
+                  tagName: 'span',
+                  children: (n.children || []).map(mapMdastToHast),
+                };
+              }
+
+              hChildren.push({
+                type: "element",
+                tagName: "figcaption",
+                properties: {},
+                children: (customCaptionNode.children || []).map(mapMdastToHast),
+              });
+
+              // Remove the consumed caption sibling
+              node.children.splice(i + 1, 1);
+            } else if (altText) {
+              hChildren.push({
+                type: "element",
+                tagName: "figcaption",
+                properties: {},
+                children: [
+                  {
+                    type: "text",
+                    value: altText,
+                  }
+                ],
+              });
+            }
+
+            child.type = "image-figure";
+            child.data = {
+              ...child.data,
+              hName: "figure",
+              hProperties: {
+                ...figureProps,
+              },
+              hChildren,
+            };
+            delete child.children;
+          } else {
+            visit(child);
+          }
+        }
       }
 
       if (node.type === "image" && node.url) {
@@ -130,10 +190,6 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
             },
           };
         }
-      }
-
-      for (const child of node.children || []) {
-        visit(child);
       }
     }
 
