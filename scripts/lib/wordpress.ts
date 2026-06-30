@@ -461,10 +461,10 @@ export function resolveAndCollectImagePath(
       const contentPath = path.join(site.vaultPath, 'content', relPath);
       
       if (existsSync(publicPath)) {
-        return `/${relPath}`;
+        return relPath;
       }
       if (existsSync(contentPath)) {
-        return `/${relPath}`;
+        return relPath;
       }
     }
   }
@@ -480,10 +480,10 @@ export function resolveAndCollectImagePath(
       const publicPath = path.join(site.vaultPath, 'public', `${pathWithoutThumbExt}${curExt}`);
       const contentPath = path.join(site.vaultPath, 'content', `${pathWithoutThumbExt}${curExt}`);
       if (existsSync(publicPath)) {
-        return `/${pathWithoutThumbExt}${curExt}`;
+        return `${pathWithoutThumbExt}${curExt}`;
       }
       if (existsSync(contentPath)) {
-        return `/${pathWithoutThumbExt}${curExt}`;
+        return `${pathWithoutThumbExt}${curExt}`;
       }
     }
   }
@@ -504,7 +504,7 @@ export function resolveAndCollectImagePath(
     });
   }
 
-  return `/${targetLocalPath}`;
+  return targetLocalPath;
 }
 
 export function restoreLocalImagePath(src: string, site: Site, registry: Registry): string {

@@ -328,7 +328,7 @@ describe('WordPress Deployment Library', () => {
         mockSite,
         mockRegistry
       );
-      expect(result).toBe('/images/avatar.jpg');
+      expect(result).toBe('images/avatar.jpg');
     });
 
     it('should resolve direct non-thumbnail image url and find original path on disk', () => {
@@ -344,7 +344,7 @@ describe('WordPress Deployment Library', () => {
         mockSite,
         mockRegistry
       );
-      expect(result).toBe('/docs/screenshot.png');
+      expect(result).toBe('docs/screenshot.png');
     });
   });
 
