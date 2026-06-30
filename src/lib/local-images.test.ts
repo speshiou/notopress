@@ -34,6 +34,11 @@ describe("local image helpers", () => {
     ).toBe("logo.png");
   });
 
+  it("uses an updated index when a different available file list is provided", () => {
+    expect(resolveLocalImagePath({ src: "/logo.png", availableFiles: ["brand/logo.png"] })).toBe("brand/logo.png");
+    expect(resolveLocalImagePath({ src: "/logo.png", availableFiles: ["legacy/logo.png"] })).toBe("legacy/logo.png");
+  });
+
   it("rewrites local markdown image references while leaving external images alone", () => {
     const markdown = "![A](/Pasted%20image%2020260630150256.png)\n![Remote](https://example.com/image.png)";
 

@@ -1,5 +1,22 @@
 type WordPressBlockAttributes = Record<string, string | number | boolean>;
 
+const VOID_HTML_TAGS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
 function serializeAttributes(attributes: WordPressBlockAttributes): string {
   const entries = Object.entries(attributes);
   if (entries.length === 0) {
@@ -27,9 +44,19 @@ function getOpeningTagName(html: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+function getOpeningTag(html: string): string | null {
+  const match = /^<\s*[a-zA-Z][\w:-]*\b[^>]*>/.exec(html.trimStart());
+  return match ? match[0] : null;
+}
+
 function getAttributeValue({ html, name }: { html: string; name: string }): string | null {
+  const openingTag = getOpeningTag(html);
+  if (!openingTag) {
+    return null;
+  }
+
   const pattern = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, "i");
-  const match = pattern.exec(html);
+  const match = pattern.exec(openingTag);
   return match ? match[2] : null;
 }
 
@@ -48,6 +75,15 @@ function getBlockClassName(html: string, baseClassName: string): string | null {
 }
 
 function findElementEnd({ html, startIndex, tagName }: { html: string; startIndex: number; tagName: string }): number {
+  const openingTagMatch = /^<\s*[a-zA-Z][\w:-]*\b[^>]*>/.exec(html.slice(startIndex));
+  if (!openingTagMatch) {
+    return startIndex + 1;
+  }
+
+  if (VOID_HTML_TAGS.has(tagName) || /\/\s*>$/.test(openingTagMatch[0])) {
+    return startIndex + openingTagMatch[0].length;
+  }
+
   const tagPattern = new RegExp(`<\\/?${tagName}\\b[^>]*>`, "gi");
   tagPattern.lastIndex = startIndex;
 

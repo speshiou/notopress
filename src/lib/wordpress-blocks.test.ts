@@ -34,4 +34,20 @@ describe("serializeHtmlToWordPressBlocks", () => {
     expect(result).toContain("<!-- wp:image -->");
     expect(result).toContain('<figure class="wp-block-image"><img src="/image.png" alt="Image"></figure>');
   });
+
+  it("does not let top-level void tags consume following blocks", () => {
+    const result = serializeHtmlToWordPressBlocks('<img src="/image.png"><p>After image</p>');
+
+    expect(result).toContain('<!-- wp:html -->\n<img src="/image.png">\n<!-- /wp:html -->');
+    expect(result).toContain("<!-- wp:paragraph -->\n<p>After image</p>\n<!-- /wp:paragraph -->");
+  });
+
+  it("reads table block classes only from the top-level figure", () => {
+    const result = serializeHtmlToWordPressBlocks(
+      '<figure><table><tbody><tr><td><span class="is-style-stripes">Nested</span></td></tr></tbody></table></figure>'
+    );
+
+    expect(result).toContain("<!-- wp:table -->");
+    expect(result).not.toContain('"className":"is-style-stripes"');
+  });
 });

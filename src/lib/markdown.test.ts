@@ -93,6 +93,14 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<figure class="custom-table" style="overflow-x: auto;">');
   });
 
+  it("does not wrap tables already inside figures with long attributes", async () => {
+    const { wrapTablesInFigures } = await import("./markdown");
+    const figureClass = "wp-block-table is-style-stripes has-fixed-layout alignwide custom-long-class-name";
+    const html = `<figure class="${figureClass}" data-description="this attribute is intentionally long enough to exceed the old lookbehind window"><table><tbody><tr><td>A</td></tr></tbody></table></figure>`;
+
+    expect(wrapTablesInFigures(html, () => ({ class: "wp-block-table" }))).toBe(html);
+  });
+
   it("separates block-level images from adjacent text blocks", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({

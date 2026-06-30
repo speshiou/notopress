@@ -61,8 +61,10 @@ export function wrapTablesInFigures(
   getFigureProperties?: () => FigureProperties,
 ): string {
   return htmlContent.replace(/<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g, (tableHtml, offset, fullHtml) => {
-    const precedingHtml = fullHtml.slice(Math.max(0, offset - 80), offset);
-    if (/<figure\b[^>]*>\s*$/i.test(precedingHtml)) {
+    const precedingHtml = fullHtml.slice(0, offset);
+    const lastFigureOpenIndex = precedingHtml.search(/<figure\b[^>]*>\s*$/i);
+    const lastFigureCloseIndex = precedingHtml.lastIndexOf("</figure>");
+    if (lastFigureOpenIndex > lastFigureCloseIndex) {
       return tableHtml;
     }
 

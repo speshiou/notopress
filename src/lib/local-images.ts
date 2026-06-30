@@ -23,6 +23,36 @@ export function isExternalOrInlineAsset({ src }: { src: string }): boolean {
   );
 }
 
+type LocalImageIndex = {
+  availableFileSet: ReadonlySet<string>;
+  filesByBasename: ReadonlyMap<string, readonly string[]>;
+};
+
+const imageIndexCache = new WeakMap<readonly string[], LocalImageIndex>();
+
+function getLocalImageIndex(availableFiles: readonly string[]): LocalImageIndex {
+  const cachedIndex = imageIndexCache.get(availableFiles);
+  if (cachedIndex) {
+    return cachedIndex;
+  }
+
+  const basenameMap = new Map<string, string[]>();
+  for (const file of availableFiles) {
+    const fileParts = file.split("/");
+    const basename = fileParts[fileParts.length - 1] || file;
+    const matches = basenameMap.get(basename) || [];
+    matches.push(file);
+    basenameMap.set(basename, matches);
+  }
+
+  const index: LocalImageIndex = {
+    availableFileSet: new Set(availableFiles),
+    filesByBasename: basenameMap,
+  };
+  imageIndexCache.set(availableFiles, index);
+  return index;
+}
+
 export function resolveLocalImagePath({
   src,
   availableFiles,
@@ -35,17 +65,14 @@ export function resolveLocalImagePath({
     return cleanSrc;
   }
 
-  const availableFileSet = new Set(availableFiles);
-  if (availableFileSet.has(cleanSrc)) {
+  const imageIndex = getLocalImageIndex(availableFiles);
+  if (imageIndex.availableFileSet.has(cleanSrc)) {
     return cleanSrc;
   }
 
   const pathParts = cleanSrc.split("/");
   const basename = pathParts[pathParts.length - 1] || cleanSrc;
-  const basenameMatches = availableFiles.filter((file) => {
-    const fileParts = file.split("/");
-    return fileParts[fileParts.length - 1] === basename;
-  });
+  const basenameMatches = imageIndex.filesByBasename.get(basename) || [];
 
   return basenameMatches.length === 1 ? basenameMatches[0] : cleanSrc;
 }
