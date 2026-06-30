@@ -6,6 +6,7 @@ import { getAssetSubDir } from './files';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
+import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
 import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
 import { isExternalOrInlineAsset, resolveLocalImagePath } from '../../src/lib/local-images';
 
@@ -309,6 +310,7 @@ export async function pushToWordPress({
         sizes,
         assetFiles,
       });
+      const wordpressBlockContent = serializeHtmlToWordPressBlocks(htmlContent);
 
       // Replace slashes with hyphens to match WordPress's sanitization behavior
       const wpSlug = post.slug.replace(/\//g, '-');
@@ -325,7 +327,7 @@ export async function pushToWordPress({
 
       const payload = {
         title: post.title,
-        content: htmlContent,
+        content: wordpressBlockContent,
         slug: wpSlug,
         status: 'publish',
         date: post.date,

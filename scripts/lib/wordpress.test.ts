@@ -297,9 +297,11 @@ describe('WordPress Deployment Library', () => {
       const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
       expect(postCall).toBeDefined();
       const body = JSON.parse(postCall![1].body);
+      expect(body.content).toContain('<!-- wp:table {"className":"is-style-stripes"} -->');
       expect(body.content).toContain('<figure class="wp-block-table is-style-stripes">');
       expect(body.content).toContain('<table>');
       expect(body.content).toContain('</table>\n</figure>');
+      expect(body.content).toContain('<!-- /wp:table -->');
     });
 
     it('should only query and perform no mutations when dryRun is true', async () => {
