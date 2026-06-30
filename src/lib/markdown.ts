@@ -1,7 +1,9 @@
 import { remark } from "remark";
 import html from "remark-html";
+import gfm from "remark-gfm";
 import type { Plugin } from "unified";
 import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
+import { resolveMarkdownImagePaths } from "./local-images";
 
 export type MarkdownNode = {
   type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
@@ -30,10 +32,46 @@ export type MarkdownRendererDeps = {
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
 
+export type FigureProperties = { class?: string; style?: string };
+
 export function ensureImageBlockSeparation(markdown: string): string {
   // Matches markdown images that occupy a single line on their own (with optional spaces/tabs)
   // E.g., `![alt](url)` or standard markdown links
   return markdown.replace(/(?:^|\n)([ \t]*!\[[^\]]*\]\([^)]+\)[ \t]*)(?=\n|$)/g, '\n\n$1\n\n');
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function serializeFigureProperties(properties: FigureProperties): string {
+  const attributes = Object.entries(properties)
+    .filter((entry): entry is [keyof FigureProperties, string] => typeof entry[1] === "string" && entry[1].length > 0)
+    .map(([key, value]) => `${key}="${escapeHtmlAttribute(value)}"`);
+
+  return attributes.length > 0 ? ` ${attributes.join(" ")}` : "";
+}
+
+export function wrapTablesInFigures(
+  htmlContent: string,
+  getFigureProperties?: () => FigureProperties,
+): string {
+  return htmlContent.replace(/<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g, (tableHtml, offset, fullHtml) => {
+    const precedingHtml = fullHtml.slice(0, offset);
+    const lastFigureOpenIndex = precedingHtml.search(/<figure\b[^>]*>\s*$/i);
+    const lastFigureCloseIndex = precedingHtml.lastIndexOf("</figure>");
+    if (lastFigureOpenIndex > lastFigureCloseIndex) {
+      return tableHtml;
+    }
+
+    const properties = getFigureProperties ? getFigureProperties() : {};
+    const attributes = serializeFigureProperties(properties);
+    return `<figure${attributes}>\n${tableHtml}\n</figure>`;
+  });
 }
 
 export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
@@ -44,7 +82,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   }: {
     tree: MarkdownNode;
     thumbnailSizes: readonly number[];
-    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+    getFigureProperties?: (largestWidth: number) => FigureProperties;
   }) {
     const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
     const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
@@ -201,7 +239,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     getFigureProperties,
   }: {
     thumbnailSizes: readonly number[];
-    getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+    getFigureProperties?: (largestWidth: number) => FigureProperties;
   }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
@@ -216,25 +254,31 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     renderMarkdownContent({
       markdown,
       thumbnailSizes,
+      assetFiles,
       publicFiles,
       getFigureProperties,
+      getTableFigureProperties,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
+      assetFiles?: readonly string[];
       publicFiles?: readonly string[];
-      getFigureProperties?: (largestWidth: number) => { class?: string; style?: string };
+      getFigureProperties?: (largestWidth: number) => FigureProperties;
+      getTableFigureProperties?: () => FigureProperties;
     }): Promise<string> {
-      let preprocessed = publicFiles ? preprocessWikilinks(markdown, publicFiles) : markdown;
+      const availableFiles = assetFiles || publicFiles;
+      let preprocessed = availableFiles ? preprocessWikilinks(markdown, availableFiles) : markdown;
+      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
         plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties }),
-      });
+      }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
     },
   };
 }
 
-export function preprocessWikilinks(markdown: string, publicFiles: readonly string[]): string {
+export function preprocessWikilinks(markdown: string, availableFiles: readonly string[]): string {
   const wikilinkRegex = /!\[\[([^\]]+)\]\]/g;
   return markdown.replace(wikilinkRegex, (match, content) => {
     const parts = content.split('|');
@@ -249,7 +293,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
     }
 
     const normalizedFilename = filename.toLowerCase();
-    const resolvedPath = publicFiles.find((file) => {
+    const resolvedPath = availableFiles.find((file) => {
       const base = file.split('/').pop()?.toLowerCase();
       return base === normalizedFilename;
     });
@@ -265,7 +309,7 @@ export function preprocessWikilinks(markdown: string, publicFiles: readonly stri
 const defaultMarkdownRenderer = createMarkdownRenderer({
   getResponsiveImageAttributes,
   processMarkdown: async ({ markdown, plugin }) => {
-    const processedContent = await remark().use(plugin).use(html, { sanitize: false }).process(markdown);
+    const processedContent = await remark().use(gfm).use(plugin).use(html, { sanitize: false }).process(markdown);
     return processedContent.toString();
   },
 });
@@ -273,4 +317,3 @@ const defaultMarkdownRenderer = createMarkdownRenderer({
 export const responsiveImagePlugin = defaultMarkdownRenderer.responsiveImagePlugin;
 export const applyResponsiveImages = defaultMarkdownRenderer.applyResponsiveImages;
 export const renderMarkdownContent = defaultMarkdownRenderer.renderMarkdownContent;
-

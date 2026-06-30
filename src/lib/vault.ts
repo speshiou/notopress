@@ -19,6 +19,7 @@ export const VaultDirectoryIndexSchema = z.object({
 export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
   directories: z.array(z.string()),
   publicFiles: z.array(z.string()),
+  assetFiles: z.array(z.string()).optional(),
   thumbnailSizes: z.array(z.number().int().positive()).optional(),
 });
 

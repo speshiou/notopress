@@ -41,8 +41,8 @@ describe('createIndexGenerator', () => {
           ? { data: { title: 'Home', date: '2024-01-02' }, content: '# Home\nIntro text' }
           : { data: {}, content: '# Post\nPost excerpt' },
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
-      scanPublicFiles: vi.fn(async () => ['sitemap.xml']),
-      scanContentAssetFiles: vi.fn(async () => ['hero.png']),
+      scanPublicFiles: vi.fn(async () => ['sitemap.xml', '_thumbnails/logo-320.webp']),
+      scanContentAssetFiles: vi.fn(async () => ['hero.png', '_thumbnails/hero-320.webp']),
       generateImageThumbnails,
       logger,
     });
@@ -57,7 +57,8 @@ describe('createIndexGenerator', () => {
     expect(result.allIndices.get('blog')?.pages[0].slug).toBe('post');
     expect(JSON.parse(writes['vault/root.json'])).toMatchObject({
       directories: ['blog'],
-      publicFiles: ['hero.png', 'sitemap.xml'],
+      publicFiles: ['sitemap.xml'],
+      assetFiles: ['hero.png', 'sitemap.xml'],
       thumbnailSizes: [320, 640],
     });
     expect(generateImageThumbnails).toHaveBeenCalledWith({
