@@ -8,6 +8,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Always run `npm run type-check` after making changes to verify basic syntax errors.
 - **Strictly avoid using `any` type** anywhere in the codebase. Always write proper TypeScript types, schemas, or interfaces for safety and clarity.
 
+# Generated Content Indexes
+- Treat vault `root.json` files and generated `index.json` files as build artifacts. Do not edit them during article/content edits.
+- Article agents should update source Markdown and source assets only. Regenerate indexes with the existing sync/deploy tooling when explicitly requested.
+- If generated index files appear in a diff after article edits, leave them unstaged and revert only those generated artifacts after confirming they were not intentionally requested.
 
 # Architecture
 - Keep main entrance files clean as orchestrators. Move feature logic, parsing, file scanning, rendering transforms, and other reusable behavior into focused modules instead of letting scripts or page files grow bloated.
