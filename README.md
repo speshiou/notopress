@@ -29,8 +29,9 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Sitemap generation**: `sitemap.xml` is generated when a site `domain` is configured, with nested sitemap indexes for larger directory trees.
 - **Static asset serving**: Files in `public/` and supported asset files in `content/` are served from S3-compatible storage through the app.
 - **Responsive images**: Supported local images are converted to WebP thumbnails and rendered with `srcset`, lazy loading, and async decoding.
-- **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets.
-- **Private note transclusions**: Reusable notes outside `content/` can be embedded with `![[note-name]]` through configured `noteIncludePaths` without becoming public pages.
+- **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets and render through the same image pipeline as `![](...)`.
+- **Note wikilinks**: Public notes can be linked with `[[note-slug]]` or `[[folder/note-slug]]`, using the target note title as link text.
+- **Note transclusions**: Public notes and configured private snippets can be embedded with `![[note-slug]]`, including nested transclusions.
 - **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
 - **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
 - **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
@@ -109,15 +110,52 @@ Generated thumbnails live under `_thumbnails/` beside the source tree that owns 
 
 Rendered HTML files are generated under `_rendered/content/` during sync. They are cache artifacts like thumbnails and indexes: source Markdown remains the source of truth.
 
-### Private Note Includes
+### Wikilinks and Note Transclusions
 
-Use `noteIncludePaths` for reusable Markdown snippets that should be transcluded into articles but should not have their own public URLs. For example, a vault file at `_includes/vpn-promotion-for-games.md` can be embedded from a public article with:
+Notopress supports a subset of Obsidian-style wikilinks for local images, note links, and note transclusions.
+
+Image embeds resolve against known files in `content/` and `public/`:
 
 ```markdown
-![[vpn-promotion-for-games]]
+![[image.png]]
+![[attachments/image.png|Alt text]]
 ```
 
-Normal links like `[[vpn-promotion-for-games]]` still only resolve to public notes under `content/`.
+These render through the same responsive image pipeline as standard Markdown images:
+
+```markdown
+![Alt text](attachments/image.png)
+```
+
+Public note links resolve against Markdown files under `content/`:
+
+```markdown
+[[guide-note]]
+[[docs/guide-note]]
+[[guide-note|Custom link text]]
+```
+
+When a note link is rendered, Notopress uses the target note's title as the default link text. Nested notes keep their full public URL path, so `[[docs/guide-note]]` links to `/docs/guide-note`.
+
+If a target leaf slug is unique, `[[guide-note]]` can resolve without the folder path. If multiple notes share the same filename, use the nested path form to avoid ambiguity.
+
+Use `![[note-slug]]` to transclude note content:
+
+```markdown
+![[shared-callout]]
+```
+
+Transclusions render only the referenced note body. Frontmatter and the first top-level heading are removed so reusable snippets do not duplicate their own title inside the host article. Transcluded content is processed recursively, so an embedded note can include other note links or transclusions.
+
+Private reusable snippets can live outside `content/` by configuring `noteIncludePaths`. For example:
+
+```json
+{
+  "noteIncludePaths": ["_includes"]
+}
+```
+
+A vault file at `_includes/shared-callout.md` can then be embedded with `![[shared-callout]]` without becoming a public page. Private include notes are embed-only: normal links such as `[[shared-callout]]` resolve only when the target is a public note under `content/`.
 
 ### Serving Thumbnails from Cloudflare
 
