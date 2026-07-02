@@ -4,6 +4,7 @@ import gfm from "remark-gfm";
 import type { Plugin } from "unified";
 import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
 import { resolveMarkdownImagePaths } from "./local-images";
+import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
 
 export type MarkdownNode = {
   type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
@@ -265,6 +266,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       publicFiles,
       getFigureProperties,
       getTableFigureProperties,
+      noteReferences,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
@@ -272,9 +274,10 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       publicFiles?: readonly string[];
       getFigureProperties?: (largestWidth: number) => FigureProperties;
       getTableFigureProperties?: () => FigureProperties;
+      noteReferences?: readonly NoteReference[];
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
-      let preprocessed = availableFiles ? preprocessWikilinks(markdown, availableFiles) : markdown;
+      let preprocessed = preprocessWikilinks(markdown, availableFiles || [], noteReferences);
       preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
@@ -285,32 +288,73 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   };
 }
 
-export function preprocessWikilinks(markdown: string, availableFiles: readonly string[]): string {
-  const wikilinkRegex = /!\[\[([^\]]+)\]\]/g;
-  return markdown.replace(wikilinkRegex, (match, content) => {
-    const parts = content.split('|');
-    const filename = parts[0].trim();
-
-    let alt = '';
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i].trim();
-      if (!/^\d+$/.test(part)) {
-        alt = part;
-      }
+export function preprocessWikilinks(
+  markdown: string,
+  availableFiles: readonly string[],
+  noteReferences: readonly NoteReference[] = []
+): string {
+  let preprocessed = markdown;
+  for (let pass = 0; pass < 10; pass += 1) {
+    const next = preprocessWikilinksOnce(preprocessed, availableFiles, noteReferences);
+    if (next === preprocessed) {
+      return next;
     }
+    preprocessed = next;
+  }
+  return preprocessed;
+}
 
-    const normalizedFilename = filename.toLowerCase();
+function preprocessWikilinksOnce(
+  markdown: string,
+  availableFiles: readonly string[],
+  noteReferences: readonly NoteReference[]
+): string {
+  const noteResolver = createNoteReferenceResolver({ notes: noteReferences });
+  const embedRegex = /!\[\[([^\]]+)\]\]/g;
+  const linkRegex = /(^|[^!])\[\[([^\]]+)\]\]/g;
+
+  const withEmbeds = markdown.replace(embedRegex, (match, content) => {
+    const { target } = parseWikilinkContent({ content });
+    const normalizedFilename = target.toLowerCase();
     const resolvedPath = availableFiles.find((file) => {
       const base = file.split('/').pop()?.toLowerCase();
       return base === normalizedFilename;
     });
 
     if (resolvedPath) {
+      const alt = getImageAltFromWikilinkContent({ content });
       return `![${alt}](</${resolvedPath}>)`;
+    }
+
+    const noteReference = noteResolver.resolve({ target });
+    if (noteReference?.content) {
+      return `\n\n${noteReference.content.trim()}\n\n`;
     }
 
     return match;
   });
+
+  return withEmbeds.replace(linkRegex, (match, prefix, content) => {
+    const { target, label } = parseWikilinkContent({ content });
+    const noteReference = noteResolver.resolve({ target });
+    if (!noteReference || noteReference.linkable === false) {
+      return match;
+    }
+
+    return `${prefix}[${label || noteReference.title}](${noteReference.href})`;
+  });
+}
+
+function getImageAltFromWikilinkContent({ content }: { content: string }): string {
+  const parts = content.split("|").slice(1);
+  let alt = "";
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      alt = trimmed;
+    }
+  }
+  return alt;
 }
 
 const defaultMarkdownRenderer = createMarkdownRenderer({

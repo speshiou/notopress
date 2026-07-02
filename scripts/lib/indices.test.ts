@@ -16,17 +16,21 @@ describe('createIndexGenerator', () => {
     const tree: Record<string, FileEntry[]> = {
       'vault/content': [file('page.md'), directory('blog'), file('hero.png')],
       'vault/content/blog': [file('post.md')],
+      'vault/_includes': [file('vpn-promotion-for-games.md')],
     };
     const fileContent: Record<string, string> = {
       'vault/content/page.md': 'home',
       'vault/content/blog/post.md': 'post',
+      'vault/_includes/vpn-promotion-for-games.md': 'include',
     };
     const writes: Record<string, string> = {};
     const generateImageThumbnails = vi.fn(async () => undefined);
     const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const generator = createIndexGenerator({
-      exists: vi.fn(async (filePath: string) => filePath === 'vault/content' || filePath === 'vault/public'),
+      exists: vi.fn(async (filePath: string) =>
+        filePath === 'vault/content' || filePath === 'vault/public' || filePath === 'vault/_includes'
+      ),
       mkdir: vi.fn(async () => undefined),
       readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
       readFile: vi.fn(async (filePath: string) => fileContent[filePath] || ''),
@@ -39,6 +43,8 @@ describe('createIndexGenerator', () => {
       parseMatter: (content) =>
         content === 'home'
           ? { data: { title: 'Home', date: '2024-01-02' }, content: '# Home\nIntro text' }
+          : content === 'include'
+          ? { data: { title: 'VPN Promotion' }, content: '# VPN Promotion\nPrivate body' }
           : { data: {}, content: '# Post\nPost excerpt' },
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => ['sitemap.xml', '_thumbnails/logo-320.webp']),
@@ -50,6 +56,7 @@ describe('createIndexGenerator', () => {
     const result = await generator.generateIndices({
       vaultPath: 'vault',
       thumbnailSizes: [320, 640],
+      noteIncludePaths: ['_includes'],
       dryRun: false,
     });
 
@@ -59,6 +66,14 @@ describe('createIndexGenerator', () => {
       directories: ['blog'],
       publicFiles: ['sitemap.xml'],
       assetFiles: ['hero.png', 'sitemap.xml'],
+      noteIncludes: [
+        {
+          fullSlug: 'vpn-promotion-for-games',
+          title: 'VPN Promotion',
+          filePath: '_includes/vpn-promotion-for-games.md',
+          linkable: false,
+        },
+      ],
       thumbnailSizes: [320, 640],
     });
     expect(generateImageThumbnails).toHaveBeenCalledWith({

@@ -185,4 +185,88 @@ describe("preprocessWikilinks", () => {
     const result = preprocessWikilinks(markdown, assetFiles);
     expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
   });
+
+  it("converts note wikilinks to Markdown links using note titles", () => {
+    const result = preprocessWikilinks("Read [[vpn-promotion-for-games]].", [], [
+      {
+        fullSlug: "vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/vpn-promotion-for-games",
+      },
+    ]);
+
+    expect(result).toBe("Read [Best VPN Promotions for Games](/vpn-promotion-for-games).");
+  });
+
+  it("keeps nested note paths when rendering wikilink URLs", () => {
+    const result = preprocessWikilinks("Read [[gaming/vpn-promotion-for-games]].", [], [
+      {
+        fullSlug: "gaming/vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/gaming/vpn-promotion-for-games",
+      },
+    ]);
+
+    expect(result).toBe("Read [Best VPN Promotions for Games](/gaming/vpn-promotion-for-games).");
+  });
+
+  it("renders note embeds as content without adding the embedded note title", () => {
+    const result = preprocessWikilinks("Before\n![[vpn-promotion-for-games]]\nAfter", [], [
+      {
+        fullSlug: "vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/vpn-promotion-for-games",
+        content: "This is the promotion body.",
+      },
+    ]);
+
+    expect(result).toBe("Before\n\n\nThis is the promotion body.\n\n\nAfter");
+  });
+
+  it("recursively renders note embeds and note links inside embedded note content", () => {
+    const result = preprocessWikilinks("Before\n![[first-embed]]\nAfter", [], [
+      {
+        fullSlug: "first-embed",
+        title: "First Embed",
+        href: "/first-embed",
+        content: "First body.\n\n![[second-embed]]\n\n[[linked-note]]",
+      },
+      {
+        fullSlug: "second-embed",
+        title: "Second Embed",
+        href: "/second-embed",
+        content: "Second body.",
+      },
+      {
+        fullSlug: "linked-note",
+        title: "Linked Note",
+        href: "/linked-note",
+      },
+    ]);
+
+    expect(result).toContain("Before");
+    expect(result).toContain("First body.");
+    expect(result).toContain("Second body.");
+    expect(result).toContain("[Linked Note](/linked-note)");
+    expect(result).toContain("After");
+    expect(result).not.toContain("[[");
+    expect(result.indexOf("First body.")).toBeLessThan(result.indexOf("Second body."));
+    expect(result.indexOf("Second body.")).toBeLessThan(result.indexOf("[Linked Note](/linked-note)"));
+  });
+
+  it("does not render private include notes as normal links", () => {
+    const result = preprocessWikilinks("Embed ![[promo-note]] but keep [[promo-note]].", [], [
+      {
+        fullSlug: "promo-note",
+        title: "Promo Note",
+        href: "/promo-note",
+        content: "Private promo body.",
+        linkable: false,
+      },
+    ]);
+
+    expect(result).toContain("Private promo body.");
+    expect(result).toContain("[[promo-note]]");
+    expect(result).not.toContain("[Promo Note](/promo-note)");
+  });
 });

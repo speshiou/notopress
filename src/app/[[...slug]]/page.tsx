@@ -1,4 +1,4 @@
-import { resolveVaultRequest, fetchRootIndex } from "@/lib/vault";
+import { resolveVaultRequest, fetchRootIndex, fetchNoteReferencesForMarkdown } from "@/lib/vault";
 import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
 import { renderMarkdownContent } from "@/lib/markdown";
@@ -63,19 +63,30 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
 
   // 1. Render matched Markdown file
   if (result.type === "markdown") {
-    const { content: markdownBody } = matter(result.content);
+    const { content: markdownBody } = result.renderedHtml ? { content: "" } : matter(result.content);
 
     // Strip the first H1 from the body if it exists, to avoid double titles
-    const bodyWithoutTitle = markdownBody.replace(/^#\s+.+$/m, "").trim();
+    const bodyWithoutTitle = result.renderedHtml ? "" : markdownBody.replace(/^#\s+.+$/m, "").trim();
 
-    const rootIndex = await fetchRootIndex(vaultConfig);
+    const rootIndex = result.renderedHtml ? null : await fetchRootIndex(vaultConfig);
     const assetFiles = rootIndex?.assetFiles || rootIndex?.publicFiles || [];
+    const noteReferences =
+      !result.renderedHtml && rootIndex
+        ? await fetchNoteReferencesForMarkdown({
+            config: vaultConfig,
+            markdown: bodyWithoutTitle,
+            rootIndex,
+          })
+        : [];
 
-    const contentHtml = await renderMarkdownContent({
-      markdown: bodyWithoutTitle,
-      thumbnailSizes: result.thumbnailSizes,
-      assetFiles,
-    });
+    const contentHtml =
+      result.renderedHtml ||
+      (await renderMarkdownContent({
+        markdown: bodyWithoutTitle,
+        thumbnailSizes: result.thumbnailSizes,
+        assetFiles,
+        noteReferences,
+      }));
     const { metadata } = result;
 
     const publishedDate = new Date(metadata.date);

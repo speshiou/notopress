@@ -14,6 +14,7 @@ import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
 import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
+import { generateRenderedContent } from './lib/rendered-content';
 
 type CommandResult = {
   status: number | null;
@@ -401,9 +402,19 @@ async function syncContent({
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   await ensureVaultAgentRules({ vaultPath: site.vaultPath, dryRun: isDryRun });
 
-  const { rootContentIndex, allIndices } = await generateIndices({
+  const { rootContentIndex, vaultRootIndex, allIndices } = await generateIndices({
     vaultPath: site.vaultPath,
     thumbnailSizes,
+    noteIncludePaths: site.noteIncludePaths,
+    dryRun: isDryRun,
+  });
+
+  await generateRenderedContent({
+    vaultPath: site.vaultPath,
+    allIndices,
+    rootIndex: vaultRootIndex,
+    thumbnailSizes,
+    noteIncludePaths: site.noteIncludePaths,
     dryRun: isDryRun,
   });
 
@@ -462,6 +473,7 @@ async function main() {
       const { allIndices } = await generateIndices({
         vaultPath: site.vaultPath,
         thumbnailSizes,
+        noteIncludePaths: site.noteIncludePaths,
         dryRun: true,
       });
 

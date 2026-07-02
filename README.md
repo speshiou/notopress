@@ -30,8 +30,9 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Static asset serving**: Files in `public/` and supported asset files in `content/` are served from S3-compatible storage through the app.
 - **Responsive images**: Supported local images are converted to WebP thumbnails and rendered with `srcset`, lazy loading, and async decoding.
 - **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets.
+- **Private note transclusions**: Reusable notes outside `content/` can be embedded with `![[note-name]]` through configured `noteIncludePaths` without becoming public pages.
 - **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
-- **Content sync**: Generate indices, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
+- **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
 - **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
@@ -92,6 +93,7 @@ The registry manages global defaults and site-specific overrides.
 | `domain` | `string` | (Optional) Your site's domain. Used to generate absolute URLs for the sitemap. If omitted, sitemap generation will be skipped. |
 | `siteId` | `string` | A unique ID for the site, used as its root folder in S3. |
 | `vaultPath` | `string` | Path to the local Markdown folder that acts as the source of truth for this site. |
+| `noteIncludePaths` | `string[]` | (Optional) Vault-relative folders for private Markdown snippets that can be embedded with `![[note-name]]` but are not routed as public pages. |
 | `bucketName` | `string` | (Optional) The S3 bucket name. |
 | `endpoint` | `string` | (Optional) Override the global endpoint for this site. |
 | `vercelProjectId` | `string` | (Optional) Vercel project ID to deploy. Falls back to `siteId` when omitted. |
@@ -104,6 +106,18 @@ The registry manages global defaults and site-specific overrides.
 When you run `npm run sync`, Notopress creates WebP thumbnails for supported images in `content/` and `public/`, then includes them in generated responsive `srcset` attributes at render time.
 
 Generated thumbnails live under `_thumbnails/` beside the source tree that owns the image. For example, an image referenced as `/attachments/photo.png` gets thumbnail candidates like `/_thumbnails/attachments/photo-640.webp`.
+
+Rendered HTML files are generated under `_rendered/content/` during sync. They are cache artifacts like thumbnails and indexes: source Markdown remains the source of truth.
+
+### Private Note Includes
+
+Use `noteIncludePaths` for reusable Markdown snippets that should be transcluded into articles but should not have their own public URLs. For example, a vault file at `_includes/vpn-promotion-for-games.md` can be embedded from a public article with:
+
+```markdown
+![[vpn-promotion-for-games]]
+```
+
+Normal links like `[[vpn-promotion-for-games]]` still only resolve to public notes under `content/`.
 
 ### Serving Thumbnails from Cloudflare
 
@@ -156,7 +170,7 @@ To generate content metadata, generate sitemaps, upload the local content folder
 npm run sync
 ```
 
-The sync command writes generated files such as `root.json`, nested content indices, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
+The sync command writes generated files such as `root.json`, nested content indices, rendered HTML, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
 
 ### Safety First: Dry Run
 Before making any changes, you can preview what will happen:

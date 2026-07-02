@@ -8,7 +8,9 @@ import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
 import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
-import { isExternalOrInlineAsset, resolveLocalImagePath } from '../../src/lib/local-images';
+import { isExternalOrInlineAsset, resolveLocalImagePath, safelyDecodeUriComponent } from '../../src/lib/local-images';
+import { type NoteReferenceInput } from '../../src/lib/note-links';
+import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 
 
 interface PushToWordPressArgs {
@@ -25,6 +27,41 @@ interface WpFetchArgs {
   path: string;
   method?: string;
   body?: unknown;
+}
+
+function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
+  const noteReferences: NoteReferenceInput[] = [];
+  for (const [dirKey, dirIndex] of allIndices.entries()) {
+    for (const page of dirIndex.pages) {
+      noteReferences.push({
+        fullSlug: dirKey ? `${dirKey}/${page.slug}` : page.slug,
+        title: page.title,
+      });
+    }
+  }
+  return noteReferences;
+}
+
+async function collectLocalNoteReferences({
+  site,
+  allIndices,
+  markdown,
+}: {
+  site: Site;
+  allIndices: Map<string, VaultDirectoryIndex>;
+  markdown: string;
+}) {
+  const privateNoteReferences = await collectPrivateNoteIncludes({
+    vaultPath: site.vaultPath,
+    includePaths: site.noteIncludePaths,
+  });
+
+  return collectNoteReferencesForLocalMarkdown({
+    publicNoteReferences: buildNoteReferenceInputs({ allIndices }),
+    privateNoteReferences,
+    markdown,
+    readPublicNote: ({ fullSlug }) => readFile(path.join(site.vaultPath, 'content', `${fullSlug}.md`), 'utf-8'),
+  });
 }
 
 /**
@@ -283,12 +320,18 @@ export async function pushToWordPress({
         }
       }
       const bodyWithoutTitle = lines.join('\n').trim();
+      const noteReferences = await collectLocalNoteReferences({
+        site,
+        allIndices,
+        markdown: bodyWithoutTitle,
+      });
 
       // Render Markdown content to HTML
       let htmlContent = await renderMarkdownContent({
         markdown: bodyWithoutTitle,
         thumbnailSizes: sizes,
         assetFiles,
+        noteReferences,
         getFigureProperties: (largestWidth) => {
           return {
             class: 'wp-block-image',
@@ -492,7 +535,7 @@ export function resolveAndCollectImagePath(
   const ext = path.extname(filename);
   const baseName = path.basename(filename, ext);
   const cleanBaseName = baseName.replace(/-(\d+x\d+|\d+)$/, '');
-  const finalFilename = `${cleanBaseName}${ext}`;
+  const finalFilename = safelyDecodeUriComponent({ value: `${cleanBaseName}${ext}` });
 
   // Check if the file already exists locally
   const dir = path.dirname(tempPath);
@@ -866,7 +909,6 @@ export async function pullFromWordPress({
     `date: "${dateIso}"`,
     `updated: "${modifiedIso}"`,
     `---`,
-    ``,
     `# ${decodedTitle}`,
     ``,
     markdownBody,
