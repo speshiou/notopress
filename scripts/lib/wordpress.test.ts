@@ -222,6 +222,62 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<!-- /wp:table -->');
     });
 
+    it('should publish markdown images as valid WordPress image blocks', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockImplementation(async (filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath.endsWith('root.json')) {
+          return JSON.stringify({
+            publicFiles: [],
+            contentFiles: ['hero.png'],
+          });
+        }
+        return [
+          '# My Post Title',
+          '',
+          '![Hero caption](hero.png)',
+        ].join('\n');
+      });
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
+      expect(body.content).toContain('<figure class="size-large wp-block-image">');
+      expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
+      expect(body.content).toContain('srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp 1200w"');
+      expect(body.content).toContain('sizes="(max-width: 1200px) 100vw, 1200px"');
+      expect(body.content).toContain('style="max-width: 100%;"');
+      expect(body.content).toContain('loading="lazy"');
+      expect(body.content).toContain('decoding="async"');
+      expect(body.content).toContain('<figcaption class="wp-element-caption">Hero caption</figcaption>');
+      expect(body.content).toContain('<!-- /wp:image -->');
+      expect(body.content).not.toContain('className":"wp-block-image');
+    });
+
     it('should transclude private note includes before publishing to WordPress', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
@@ -302,8 +358,11 @@ describe('WordPress Deployment Library', () => {
       const body = JSON.parse(postCall![1].body);
 
       expect(body.content).toContain('Embedded promotion body.');
+      expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
+      expect(body.content).toContain('<figure class="size-large wp-block-image">');
       expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
       expect(body.content).toContain('srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp 1200w"');
+      expect(body.content).toContain('sizes="(max-width: 1200px) 100vw, 1200px"');
       expect(body.content).not.toContain('![[promo-note]]');
       expect(body.content).not.toContain('Promo Note');
     });

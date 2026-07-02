@@ -32,7 +32,7 @@ describe("serializeHtmlToWordPressBlocks", () => {
     expect(result).toContain('<!-- wp:list {"ordered":true} -->');
     expect(result).toContain("<ol><li>One</li><li>Two</li></ol>");
     expect(result).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
-    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/image.png" alt="Image"></figure>');
+    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/image.png" alt="Image" /></figure>');
   });
 
   it("normalizes image blocks to Gutenberg-compatible markup", () => {
@@ -43,7 +43,7 @@ describe("serializeHtmlToWordPressBlocks", () => {
     expect(result).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none","className":"image-figure"} -->');
     expect(result).toContain('<figure class="size-large wp-block-image image-figure">');
     expect(result).toContain(
-      '<img src="/image.png" style="max-width: 100%;" srcset="/image-320.png 320w" sizes="100vw" loading="lazy" decoding="async" alt="Image">'
+      '<img src="/image.png" style="max-width: 100%;" srcset="/image-320.png 320w" sizes="100vw" loading="lazy" decoding="async" alt="Image" />'
     );
     expect(result).toContain('<figcaption class="wp-element-caption">Image caption</figcaption>');
     expect(result).not.toContain('style="height: auto !important;"');
@@ -91,6 +91,15 @@ describe("serializeHtmlToWordPressBlocks", () => {
 
     expect(result).toContain('<!-- wp:html -->\n<img src="/image.png">\n<!-- /wp:html -->');
     expect(result).toContain("<!-- wp:paragraph -->\n<p>After image</p>\n<!-- /wp:paragraph -->");
+  });
+
+  it("adds empty alt text and self-closes image tags for WordPress validation", () => {
+    const result = serializeHtmlToWordPressBlocks(
+      '<figure class="wp-block-image"><img src="/zelda-map.webp"><figcaption>Map caption</figcaption></figure>'
+    );
+
+    expect(result).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
+    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/zelda-map.webp" alt="" /><figcaption class="wp-element-caption">Map caption</figcaption></figure>');
   });
 
   it("reads table block classes only from the top-level figure", () => {

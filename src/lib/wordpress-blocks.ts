@@ -155,6 +155,26 @@ function stripAttributeFromElements({
   });
 }
 
+function ensureImageAltAttribute(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (openingTag: string) => {
+    if (/\salt\s*=/i.test(openingTag)) {
+      return openingTag;
+    }
+
+    return openingTag.replace(/\s*\/?>$/, ' alt="">');
+  });
+}
+
+function selfCloseImageTags(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (openingTag: string) => {
+    if (/\/\s*>$/.test(openingTag)) {
+      return openingTag;
+    }
+
+    return openingTag.replace(/\s*>$/, " />");
+  });
+}
+
 function normalizeTableHtml(html: string): string {
   return stripAttributeFromElements({
     html: addClassToElements({ html, tagName: "table", className: "has-fixed-layout" }),
@@ -293,11 +313,15 @@ function serializeTableBlock(html: string): string {
 }
 
 function serializeImageBlock(html: string): string {
-  const normalizedHtml = addClassToElements({
+  const withCaptionClass = addClassToElements({
     html: normalizeImageHtml(html),
     tagName: "figcaption",
     className: WORDPRESS_CAPTION_CLASS,
   });
+
+  // Keep the existing class order and responsive img attributes; WordPress block
+  // validation only requires the missing empty alt plus self-closed img structure.
+  const normalizedHtml = selfCloseImageTags(ensureImageAltAttribute(withCaptionClass));
 
   return wrapWordPressBlock({
     blockName: "image",
