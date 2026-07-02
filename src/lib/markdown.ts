@@ -325,8 +325,9 @@ function preprocessWikilinksOnce(
     const { target } = parseWikilinkContent({ content });
     const normalizedFilename = target.toLowerCase();
     const resolvedPath = availableFiles.find((file) => {
+      const normalizedFile = file.toLowerCase();
       const base = file.split('/').pop()?.toLowerCase();
-      return base === normalizedFilename;
+      return normalizedFile === normalizedFilename || normalizedFile.endsWith(`/${normalizedFilename}`) || base === normalizedFilename;
     });
 
     if (resolvedPath) {

@@ -209,6 +209,12 @@ describe("preprocessWikilinks", () => {
     expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
   });
 
+  it("converts path-prefixed image wikilinks using available asset files", () => {
+    const result = preprocessWikilinks("Map ![[attachments/map.png|Map Alt]]", ["attachments/map.png"]);
+
+    expect(result).toBe("Map ![Map Alt](</attachments/map.png>)");
+  });
+
   it("converts note wikilinks to Markdown links using note titles", () => {
     const result = preprocessWikilinks("Read [[vpn-promotion-for-games]].", [], [
       {

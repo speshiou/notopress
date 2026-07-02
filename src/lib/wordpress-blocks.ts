@@ -182,11 +182,7 @@ function ensureImageAltAttribute(html: string): string {
 
 function selfCloseImageTags(html: string): string {
   return html.replace(/<img\b[^>]*>/gi, (openingTag: string) => {
-    if (/\/\s*>$/.test(openingTag)) {
-      return openingTag;
-    }
-
-    return openingTag.replace(/\s*>$/, " />");
+    return openingTag.replace(/\s*\/?>$/, " />");
   });
 }
 

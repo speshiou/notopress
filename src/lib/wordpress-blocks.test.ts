@@ -105,6 +105,15 @@ describe("serializeHtmlToWordPressBlocks", () => {
     expect(result).toContain('<figure class="size-large wp-block-image"><img src="/zelda-map.webp" alt="" /><figcaption class="wp-element-caption">Map caption</figcaption></figure>');
   });
 
+  it("normalizes existing self-closed image tags to WordPress spacing", () => {
+    const result = serializeHtmlToWordPressBlocks(
+      '<figure class="wp-block-image"><img src="/image.png" alt="Image"/></figure>'
+    );
+
+    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/image.png" alt="Image" /></figure>');
+    expect(result).not.toContain('alt="Image"/>');
+  });
+
   it("reads table block classes only from the top-level figure", () => {
     const result = serializeHtmlToWordPressBlocks(
       '<figure><table><tbody><tr><td><span class="is-style-stripes">Nested</span></td></tr></tbody></table></figure>'
