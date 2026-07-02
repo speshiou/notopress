@@ -32,6 +32,8 @@ export function getRenderedContentPath({ fullSlug }: { fullSlug: string }): stri
 
 export async function generateRenderedContent({
   vaultPath,
+  siteId,
+  imageHost,
   allIndices,
   rootIndex,
   thumbnailSizes,
@@ -40,6 +42,8 @@ export async function generateRenderedContent({
   logger = console,
 }: {
   vaultPath: string;
+  siteId: string;
+  imageHost?: string;
   allIndices: Map<string, VaultDirectoryIndex>;
   rootIndex: VaultRootIndex;
   thumbnailSizes: readonly number[];
@@ -71,6 +75,12 @@ export async function generateRenderedContent({
         thumbnailSizes,
         assetFiles,
         noteReferences,
+        assetUrlConfig: {
+          imageHost,
+          siteId,
+          s3SubDir: 'content',
+          mode: imageHost ? 'absolute' : 'app-relative',
+        },
       });
 
       if (dryRun) {

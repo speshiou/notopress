@@ -2,13 +2,12 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
-import { getAssetSubDir } from './files';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
-import { getThumbnailPath, normalizeThumbnailSizes, getAssetUrl, RESPONSIVE_IMAGE_SIZES } from '../../src/lib/responsive-images';
-import { isExternalOrInlineAsset, resolveLocalImagePath, safelyDecodeUriComponent } from '../../src/lib/local-images';
+import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
+import { safelyDecodeUriComponent } from '../../src/lib/local-images';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 
@@ -100,131 +99,6 @@ async function wpFetch({
 }
 
 /**
- * Parses HTML and replaces all local image source references with their absolute 
- * URL on the designated image host, utilizing the largest generated thumbnail size.
- */
-export async function replaceLocalImagesWithThumbnails({
-  html,
-  site,
-  registry,
-  sizes,
-  assetFiles,
-}: {
-  html: string;
-  site: Site;
-  registry: Registry;
-  sizes: readonly number[];
-  assetFiles?: readonly string[];
-}): Promise<string> {
-  const imageHost = site.imageHost || registry.imageHost;
-  const largestWidth = sizes[sizes.length - 1];
-
-  if (!largestWidth) {
-    return html;
-  }
-
-  let processedHtml = html;
-
-  // Process HTML <img> tags
-  const imgRegex = /<img\s+([^>]*src=["']([^"']+)["'][^>]*?)>/gi;
-  const matches: { fullMatch: string; src: string }[] = [];
-  let match;
-  while ((match = imgRegex.exec(processedHtml)) !== null) {
-    matches.push({ fullMatch: match[0], src: match[2] });
-  }
-
-  // Deduplicate matches to avoid redundant checks/replacements
-  const uniqueMatches = Array.from(
-    new Map(matches.map((m) => [m.fullMatch, m])).values()
-  );
-
-  for (const { fullMatch, src } of uniqueMatches) {
-    // Skip external or inline assets
-    if (isExternalOrInlineAsset({ src })) {
-      continue;
-    }
-
-    const imagePath = resolveLocalImagePath({ src, availableFiles: assetFiles });
-
-    // Get the thumbnail filename and relative directory path
-    const thumbPath = getThumbnailPath({ imagePath, width: largestWidth });
-
-    // Determine target location in S3 by checking local filesystem existence
-    const s3SubDir = await getAssetSubDir({ vaultPath: site.vaultPath, filePath: thumbPath });
-
-    // Build the absolute URL on the configured imageHost
-    const absoluteUrl = getAssetUrl({
-      imageHost,
-      siteId: site.siteId,
-      s3SubDir,
-      filePath: thumbPath,
-      domain: site.domain,
-    });
-
-    // Build the srcset attributes for all defined thumbnail sizes
-    const srcSetUrls = sizes.map((size) => {
-      const sizeThumbPath = getThumbnailPath({ imagePath, width: size });
-      const sizeUrl = getAssetUrl({
-        imageHost,
-        siteId: site.siteId,
-        s3SubDir,
-        filePath: sizeThumbPath,
-        domain: site.domain,
-      });
-      return `${encodeURI(sizeUrl)} ${size}w`;
-    }).join(', ');
-
-    let newImgTag = fullMatch;
-    
-    // Replace src in-place
-    newImgTag = newImgTag.replace(/src=["']([^"']*)["']/i, `src="${encodeURI(absoluteUrl)}"`);
-
-    // Inject/replace srcset and sizes in-place
-    if (srcSetUrls) {
-      newImgTag = setAttribute(newImgTag, 'srcset', srcSetUrls);
-      newImgTag = setAttribute(newImgTag, 'sizes', `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`);
-    }
-
-    // Append/merge style style="max-width: 100%;"
-    if (/style=["']/i.test(newImgTag)) {
-      newImgTag = newImgTag.replace(/style=["']([^"']*)["']/i, (m, p1) => {
-        const trimmed = p1.trim();
-        const separator = trimmed.endsWith(';') || trimmed === '' ? '' : ';';
-        return `style="${p1}${separator}max-width:100%;"`;
-      });
-    } else {
-      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 style="max-width:100%;"');
-    }
-
-    // Append loading="lazy" if not present
-    if (!/loading=["']/i.test(newImgTag)) {
-      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 loading="lazy"');
-    }
-
-    // Append decoding="async" if not present
-    if (!/decoding=["']/i.test(newImgTag)) {
-      newImgTag = newImgTag.replace(/(<img\b)/i, '$1 decoding="async"');
-    }
-
-    processedHtml = processedHtml.replaceAll(fullMatch, newImgTag);
-  }
-
-  return processedHtml;
-}
-
-/**
- * Helper to inject or update an attribute inside an HTML tag.
- * Inserts the attribute right after '<img' to ensure self-closing tags are not broken.
- */
-function setAttribute(tag: string, name: string, value: string): string {
-  const regex = new RegExp(`${name}=["']([^"']*)["']`, 'i');
-  if (regex.test(tag)) {
-    return tag.replace(regex, `${name}="${value}"`);
-  }
-  return tag.replace(/(<img\b)/i, `$1 ${name}="${value}"`);
-}
-
-/**
  * Iterates through the Markdown posts in the vault and publishes them to WordPress.
  */
 export async function pushToWordPress({
@@ -241,6 +115,11 @@ export async function pushToWordPress({
 
   const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
   const sizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
+  const imageHost = site.imageHost || registry.imageHost;
+
+  if (!imageHost) {
+    throw new Error(`⨯ WordPress publishing requires "imageHost" for externally reachable thumbnail URLs.`);
+  }
 
   console.log(`\n📝 Preparing WordPress Publishing...`);
   console.log(`- Target Endpoint: ${endpoint}`);
@@ -332,6 +211,12 @@ export async function pushToWordPress({
         thumbnailSizes: sizes,
         assetFiles,
         noteReferences,
+        assetUrlConfig: {
+          imageHost,
+          siteId: site.siteId,
+          s3SubDir: 'content',
+          mode: 'absolute',
+        },
         getFigureProperties: (largestWidth) => {
           return {
             class: 'wp-block-image',
@@ -345,14 +230,6 @@ export async function pushToWordPress({
         },
       });
 
-      // Replace local image paths with imageHost absolute thumbnail URLs
-      htmlContent = await replaceLocalImagesWithThumbnails({
-        html: htmlContent,
-        site,
-        registry,
-        sizes,
-        assetFiles,
-      });
       const wordpressBlockContent = serializeHtmlToWordPressBlocks(htmlContent);
 
       // Replace slashes with hyphens to match WordPress's sanitization behavior

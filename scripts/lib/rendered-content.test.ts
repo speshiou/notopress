@@ -13,7 +13,18 @@ describe('rendered content generator', () => {
       await mkdir(path.join(vaultPath, 'templates'), { recursive: true });
       await writeFile(
         path.join(vaultPath, 'content', 'post-one.md'),
-        ['---', 'title: "Post One"', '---', '# Post One', '', 'Before.', '', '![[promo-note]]'].join('\n')
+        [
+          '---',
+          'title: "Post One"',
+          '---',
+          '# Post One',
+          '',
+          'Before.',
+          '',
+          '![Hero](hero.png)',
+          '',
+          '![[promo-note]]',
+        ].join('\n')
       );
       await writeFile(
         path.join(vaultPath, 'templates', 'promo-note.md'),
@@ -47,6 +58,7 @@ describe('rendered content generator', () => {
 
       await generateRenderedContent({
         vaultPath,
+        siteId: 'test-blog',
         allIndices,
         rootIndex,
         thumbnailSizes: [320],
@@ -59,6 +71,7 @@ describe('rendered content generator', () => {
 
       expect(rendered).toContain('Before.');
       expect(rendered).toContain('Private promotion body.');
+      expect(rendered).toContain('src="/api/vault-public/_thumbnails/hero-320.webp"');
       expect(rendered).not.toContain('![[promo-note]]');
       expect(rendered).not.toContain('<h1>Post One</h1>');
     } finally {

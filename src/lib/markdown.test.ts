@@ -42,7 +42,7 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
@@ -54,8 +54,8 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["attachments/Pasted image 20260630150256.png"],
     });
 
-    expect(html).toContain('src="/attachments/Pasted%20image%2020260630150256.png"');
-    expect(html).toContain('srcset="/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+    expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp"');
+    expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
   });
 
   it("renders GitHub-Flavored Markdown tables inside generic figures", async () => {
@@ -148,7 +148,7 @@ describe("createMarkdownRenderer", () => {
     });
     expect(html).toContain("<p>Some text before</p>");
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain("<p>Some text after</p>");
   });
 
@@ -160,7 +160,7 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
@@ -172,7 +172,7 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>This is my <a href="https://example.com">caption link</a> text.</figcaption></figure>');
     expect(html).not.toContain('<p><em>This is my');
   });

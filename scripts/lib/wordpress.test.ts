@@ -1,12 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { replaceLocalImagesWithThumbnails, pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
+import { pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
-
-// Mock dependency modules
-vi.mock('./files', () => ({
-  getAssetSubDir: vi.fn(),
-}));
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -19,8 +14,6 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(),
 }));
 
-// Access mocked functions
-import { getAssetSubDir } from './files';
 import { readFile, readdir, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 
@@ -51,109 +44,8 @@ describe('WordPress Deployment Library', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock implementation
-    vi.mocked(getAssetSubDir).mockResolvedValue('content');
     vi.mocked(readFile).mockResolvedValue('# My Post Title\nThis is content.');
     global.fetch = vi.fn();
-  });
-
-  describe('replaceLocalImagesWithThumbnails', () => {
-    it('should replace local image sources with absolute CDN URLs pointing to the largest thumbnail', async () => {
-      const html = '<p>Hello world</p><img src="/images/pic.png" alt="Pic" />';
-      const sizes = [300, 600, 1200];
-
-      // Simulate that the file exists in the "content" directory
-      vi.mocked(getAssetSubDir).mockResolvedValue('content');
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain(
-        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
-      );
-    });
-
-    it('should fallback to site domain if imageHost is not provided', async () => {
-      const html = '<img src="/pic.png" alt="Direct" />';
-      const sizes = [300, 600, 1200];
-
-      const siteWithoutImageHost = { ...mockSite, imageHost: undefined };
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: siteWithoutImageHost,
-        registry: { ...mockRegistry, imageHost: undefined },
-        sizes,
-      });
-
-      expect(result).toContain(
-        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" alt="Direct" />'
-      );
-    });
-
-    it('should preserve original image attributes like class, width, height', async () => {
-      const html = '<img src="/images/pic.png" class="aligncenter custom-class" width="800" height="600" alt="Pic" />';
-      const sizes = [300, 600, 1200];
-
-      vi.mocked(getAssetSubDir).mockResolvedValue('content');
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain('class="aligncenter custom-class"');
-      expect(result).toContain('width="800"');
-      expect(result).toContain('height="600"');
-      expect(result).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp"');
-    });
-
-    it('should resolve encoded root-level image references to attachment thumbnails without double encoding', async () => {
-      const html = '<img src="/Pasted%2520image%252020260630150256.png" alt="Cable status" />';
-      const sizes = [300, 600, 1200];
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-        assetFiles: ['attachments/Pasted image 20260630150256.png'],
-      });
-
-      expect(result).toContain(
-        'src="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp"'
-      );
-      expect(result).toContain(
-        'srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp 1200w"'
-      );
-      expect(result).not.toContain('%2520');
-    });
-
-    it('should ignore external URLs and data URIs', async () => {
-      const html = `
-        <img src="https://external.com/photo.jpg" alt="Ext" />
-        <img src="data:image/png;base64,abc" alt="Data" />
-        <img src="#hash" alt="Hash" />
-      `;
-      const sizes = [300, 600, 1200];
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain('src="https://external.com/photo.jpg"');
-      expect(result).toContain('src="data:image/png;base64,abc"');
-      expect(result).toContain('src="#hash"');
-    });
   });
 
   describe('htmlToMarkdown', () => {
@@ -367,6 +259,8 @@ describe('WordPress Deployment Library', () => {
             '',
             'Before embed.',
             '',
+            '![Hero](hero.png)',
+            '',
             '![[promo-note]]',
           ].join('\n');
         }
@@ -408,8 +302,22 @@ describe('WordPress Deployment Library', () => {
       const body = JSON.parse(postCall![1].body);
 
       expect(body.content).toContain('Embedded promotion body.');
+      expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
+      expect(body.content).toContain('srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp 1200w"');
       expect(body.content).not.toContain('![[promo-note]]');
       expect(body.content).not.toContain('Promo Note');
+    });
+
+    it('should require imageHost for WordPress publishing', async () => {
+      await expect(
+        pushToWordPress({
+          site: { ...mockSite, imageHost: undefined },
+          registry: { ...mockRegistry, imageHost: undefined },
+          allIndices: mockIndices,
+          targetPostSlug: 'post-one',
+          dryRun: false,
+        })
+      ).rejects.toThrow('imageHost');
     });
 
     it('should only query and perform no mutations when dryRun is true', async () => {

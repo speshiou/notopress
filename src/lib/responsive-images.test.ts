@@ -25,11 +25,41 @@ describe("createResponsiveImageHelpers", () => {
         thumbnailSizes: [320, 640],
       })
     ).toEqual({
-      src: "/attachments/%E6%88%AA%E5%9C%96%202026.png",
+      src: "/api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-640.webp",
       srcSet:
-        "/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-320.webp 320w, /_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-640.webp 640w",
+        "/api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-320.webp 320w, /api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-640.webp 640w",
       sizes: "100vw",
     });
+  });
+
+  it("builds absolute CDN thumbnail URLs when imageHost is configured", () => {
+    expect(
+      helpers.getResponsiveImageAttributes({
+        src: "/attachments/pic.png",
+        thumbnailSizes: [320, 640],
+        assetUrlConfig: {
+          imageHost: "https://cdn.example.com",
+          siteId: "site-a",
+          s3SubDir: "content",
+          mode: "absolute",
+        },
+      })
+    ).toEqual({
+      src: "https://cdn.example.com/site-a/content/_thumbnails/attachments/pic-640.webp",
+      srcSet:
+        "https://cdn.example.com/site-a/content/_thumbnails/attachments/pic-320.webp 320w, https://cdn.example.com/site-a/content/_thumbnails/attachments/pic-640.webp 640w",
+      sizes: "100vw",
+    });
+  });
+
+  it("does not generate absolute thumbnail URLs without imageHost", () => {
+    expect(
+      helpers.getResponsiveImageAttributes({
+        src: "/attachments/pic.png",
+        thumbnailSizes: [320],
+        assetUrlConfig: { mode: "absolute", siteId: "site-a", s3SubDir: "content" },
+      })
+    ).toBeNull();
   });
 
   it("skips remote and generated thumbnail sources", () => {
@@ -37,5 +67,4 @@ describe("createResponsiveImageHelpers", () => {
     expect(helpers.getResponsiveImageAttributes({ src: "/_thumbnails/image-320.webp", thumbnailSizes: [320] })).toBeNull();
   });
 });
-
 

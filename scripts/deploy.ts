@@ -411,6 +411,8 @@ async function syncContent({
 
   await generateRenderedContent({
     vaultPath: site.vaultPath,
+    siteId: site.siteId,
+    imageHost: site.imageHost || registry.imageHost,
     allIndices,
     rootIndex: vaultRootIndex,
     thumbnailSizes,

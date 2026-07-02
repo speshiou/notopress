@@ -2,7 +2,7 @@ import { remark } from "remark";
 import html from "remark-html";
 import gfm from "remark-gfm";
 import type { Plugin } from "unified";
-import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
+import { getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
 import { resolveMarkdownImagePaths } from "./local-images";
 import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
 
@@ -26,9 +26,11 @@ export type MarkdownRendererDeps = {
   getResponsiveImageAttributes: ({
     src,
     thumbnailSizes,
+    assetUrlConfig,
   }: {
     src: string;
     thumbnailSizes: readonly number[];
+    assetUrlConfig?: AssetUrlConfig;
   }) => { src: string; srcSet: string; sizes: string } | null;
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
@@ -87,10 +89,12 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     tree,
     thumbnailSizes,
     getFigureProperties,
+    assetUrlConfig,
   }: {
     tree: MarkdownNode;
     thumbnailSizes: readonly number[];
     getFigureProperties?: (largestWidth: number) => FigureProperties;
+    assetUrlConfig?: AssetUrlConfig;
   }) {
     const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
     const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
@@ -109,7 +113,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
           if (child.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
             const imgNode = nonWhitespaceChildren[0];
             const imgUrl = imgNode.url || "";
-            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
+            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes, assetUrlConfig });
             const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
             const altText = imgNode.alt || '';
 
@@ -221,7 +225,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       }
 
       if (node.type === "image" && node.url) {
-        const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes });
+        const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes, assetUrlConfig });
         if (attributes) {
           node.data = {
             ...node.data,
@@ -245,13 +249,15 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   function responsiveImagePlugin({
     thumbnailSizes,
     getFigureProperties,
+    assetUrlConfig,
   }: {
     thumbnailSizes: readonly number[];
     getFigureProperties?: (largestWidth: number) => FigureProperties;
+    assetUrlConfig?: AssetUrlConfig;
   }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
-        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties });
+        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties, assetUrlConfig });
       };
     };
   }
@@ -267,6 +273,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       getFigureProperties,
       getTableFigureProperties,
       noteReferences,
+      assetUrlConfig,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
@@ -275,6 +282,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       getFigureProperties?: (largestWidth: number) => FigureProperties;
       getTableFigureProperties?: () => FigureProperties;
       noteReferences?: readonly NoteReference[];
+      assetUrlConfig?: AssetUrlConfig;
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
       let preprocessed = preprocessWikilinks(markdown, availableFiles || [], noteReferences);
@@ -282,7 +290,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
-        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties }),
+        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties, assetUrlConfig }),
       }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
     },
   };
