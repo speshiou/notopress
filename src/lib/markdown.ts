@@ -77,7 +77,7 @@ export function wrapTablesInFigures(
   });
 
   return wrappedTables.replace(
-    /(<figure(?:\s[^>]*)?>\s*<table(?:\s[^>]*)?>[\s\S]*?<\/table>\s*)<\/figure>\s*<p><em>([\s\S]*?)<\/em><\/p>/g,
+    /(<figure(?:\s[^>]*)?>\s*<table(?:\s[^>]*)?>[\s\S]*?<\/table>\s*)<\/figure>\s*<p><em>((?:(?!<\/?em\b|<\/?p\b|<table\b|<\/?figure\b)[\s\S])*?)<\/em><\/p>/g,
     (_match: string, figureWithTable: string, captionHtml: string) => {
       return `${figureWithTable}<figcaption>${captionHtml}</figcaption>\n</figure>`;
     }

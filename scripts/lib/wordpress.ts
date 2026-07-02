@@ -28,6 +28,14 @@ interface WpFetchArgs {
   body?: unknown;
 }
 
+interface WordPressPostPayload {
+  title: string;
+  content: string;
+  slug: string;
+  status: 'publish';
+  date?: string;
+}
+
 function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
   const noteReferences: NoteReferenceInput[] = [];
   for (const [dirKey, dirIndex] of allIndices.entries()) {
@@ -245,12 +253,11 @@ export async function pushToWordPress({
       const wpPostExists = existingPosts && existingPosts.length > 0;
       const wpPostId = wpPostExists ? existingPosts[0].id : null;
 
-      const payload = {
+      const payload: WordPressPostPayload = {
         title: post.title,
         content: wordpressBlockContent,
         slug: wpSlug,
         status: 'publish',
-        date: post.date,
       };
 
       if (wpPostExists) {
@@ -275,7 +282,10 @@ export async function pushToWordPress({
             credentials,
             path: `/wp/v2/posts`,
             method: 'POST',
-            body: payload,
+            body: {
+              ...payload,
+              date: post.date,
+            },
           });
           console.log(`  ✅ Successfully CREATED new WordPress post (ID: ${newPost.id})`);
         }

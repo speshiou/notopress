@@ -138,6 +138,11 @@ describe('WordPress Deployment Library', () => {
         expect.stringContaining('/wp/v2/posts/456'),
         expect.objectContaining({ method: 'POST' })
       );
+
+      const updateCall = mockFetch.mock.calls.find((call) => call[0].includes('/wp/v2/posts/456'));
+      expect(updateCall).toBeDefined();
+      const body = JSON.parse(updateCall![1].body);
+      expect(body).not.toHaveProperty('date');
     });
 
     it('should perform GET queries and POST to create a new post when it does not exist', async () => {
@@ -177,6 +182,11 @@ describe('WordPress Deployment Library', () => {
         expect.stringContaining('/wp/v2/posts'),
         expect.objectContaining({ method: 'POST' })
       );
+
+      const createCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(createCall).toBeDefined();
+      const body = JSON.parse(createCall![1].body);
+      expect(body.date).toBe('2026-06-16T13:00:00.000Z');
     });
 
     it('should publish markdown tables as striped WordPress table figures', async () => {

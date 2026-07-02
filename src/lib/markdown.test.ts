@@ -132,6 +132,66 @@ describe("createMarkdownRenderer", () => {
     expect(html).not.toContain('<figcaption>Feature comparison table.</figcaption>');
   });
 
+  it("does not consume complex content after a table as a caption", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "| Country | Code |",
+        "| --- | --- |",
+        "| Jamaica | +1-876 |",
+        "",
+        "*Reminder:* prepare an eSIM before leaving.",
+        "",
+        "| eSIM service | Link |",
+        "| --- | --- |",
+        "| Airalo | [Deal](https://example.com) |",
+        "",
+        "*Traveler eSIM recommendations.*",
+      ].join("\n"),
+      thumbnailSizes: [320],
+      getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
+    });
+
+    expect(html).toContain('<p><em>Reminder:</em> prepare an eSIM before leaving.</p>');
+    expect(html).toContain('<figcaption>Traveler eSIM recommendations.</figcaption>');
+    expect(html).not.toContain('<figcaption>Reminder:');
+  });
+
+  it("does not consume transcluded wikilink content after a table as a caption", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "| Country | Code |",
+        "| --- | --- |",
+        "| Jamaica | +1-876 |",
+        "",
+        "![[traveler-esim-promotion]]",
+      ].join("\n"),
+      thumbnailSizes: [320],
+      noteReferences: [
+        {
+          fullSlug: "traveler-esim-promotion",
+          title: "Traveler eSIM Promotion",
+          href: "/traveler-esim-promotion",
+          content: [
+            "*Reminder:* prepare an eSIM before leaving.",
+            "",
+            "| eSIM service | Link |",
+            "| --- | --- |",
+            "| Airalo | [Deal](https://example.com) |",
+            "",
+            "*Traveler eSIM recommendations.*",
+          ].join("\n"),
+        },
+      ],
+      getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
+    });
+
+    expect(html).toContain('<p><em>Reminder:</em> prepare an eSIM before leaving.</p>');
+    expect(html).toContain('<figcaption>Traveler eSIM recommendations.</figcaption>');
+    expect(html).not.toContain('<figcaption>Reminder:');
+  });
+
   it("does not wrap tables already inside figures with long attributes", async () => {
     const { wrapTablesInFigures } = await import("./markdown");
     const figureClass = "wp-block-table is-style-stripes has-fixed-layout alignwide custom-long-class-name";
