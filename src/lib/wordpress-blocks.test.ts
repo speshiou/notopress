@@ -42,14 +42,11 @@ describe("serializeHtmlToWordPressBlocks", () => {
 
     expect(result).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none","className":"image-figure"} -->');
     expect(result).toContain('<figure class="size-large wp-block-image image-figure">');
-    expect(result).toContain('<img src="/image.png" alt="Image">');
+    expect(result).toContain(
+      '<img src="/image.png" style="max-width: 100%;" srcset="/image-320.png 320w" sizes="100vw" loading="lazy" decoding="async" alt="Image">'
+    );
     expect(result).toContain('<figcaption class="wp-element-caption">Image caption</figcaption>');
-    expect(result).not.toContain('style="max-width: 100%;"');
     expect(result).not.toContain('style="height: auto !important;"');
-    expect(result).not.toContain("srcset=");
-    expect(result).not.toContain("sizes=");
-    expect(result).not.toContain("loading=");
-    expect(result).not.toContain("decoding=");
   });
 
   it("normalizes quote blocks to Gutenberg-compatible markup", () => {

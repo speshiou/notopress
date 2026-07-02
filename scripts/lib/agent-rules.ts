@@ -30,13 +30,36 @@ function ensureTrailingNewline(content: string): string {
   return content.endsWith('\n') ? content : `${content}\n`;
 }
 
+function appendManagedBlock({ content, block }: { content: string; block: string }): string {
+  const trimmedContent = content.trimEnd();
+  return trimmedContent ? `${trimmedContent}\n\n${block}\n` : `${block}\n`;
+}
+
+function removeMarker(content: string, marker: string): string {
+  return content.replace(marker, '').replace(/\n{3,}/g, '\n\n');
+}
+
 function replaceManagedBlock({ content, block }: { content: string; block: string }): string {
   const startIndex = content.indexOf(BEGIN_MARKER);
   const endIndex = content.indexOf(END_MARKER);
 
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    const trimmedContent = content.trimEnd();
-    return trimmedContent ? `${trimmedContent}\n\n${block}\n` : `${block}\n`;
+  if (startIndex === -1 && endIndex === -1) {
+    return appendManagedBlock({ content, block });
+  }
+
+  if (startIndex === -1) {
+    return appendManagedBlock({ content: removeMarker(content, END_MARKER), block });
+  }
+
+  if (endIndex === -1) {
+    return appendManagedBlock({ content: removeMarker(content, BEGIN_MARKER), block });
+  }
+
+  if (endIndex < startIndex) {
+    return appendManagedBlock({
+      content: removeMarker(removeMarker(content, BEGIN_MARKER), END_MARKER),
+      block,
+    });
   }
 
   const before = content.slice(0, startIndex).trimEnd();

@@ -6,8 +6,6 @@ type RootElementBlock = {
   rootTagName: string;
   baseClassName: string;
   captionClassName?: string;
-  stripRootStyles?: boolean;
-  stripImageStyles?: boolean;
 };
 
 const VOID_HTML_TAGS = new Set([
@@ -168,15 +166,11 @@ function normalizeTableHtml(html: string): string {
 function normalizeImageHtml(html: string): string {
   const imageBlockHtml = addClassToOpeningTag({ html, tagName: "figure", className: WORDPRESS_IMAGE_CLASS });
   const largeImageHtml = addClassToOpeningTag({ html: imageBlockHtml, tagName: "figure", className: "size-large" });
-  const withoutFigureStyle = stripAttributeFromElements({
+  return stripAttributeFromElements({
     html: largeImageHtml,
     tagNames: ["figure"],
     attributeName: "style",
   });
-
-  return ["style", "srcset", "sizes", "loading", "decoding", "fetchpriority"].reduce((content, attributeName) => {
-    return stripAttributeFromElements({ html: content, tagNames: ["img"], attributeName });
-  }, withoutFigureStyle);
 }
 
 function getBlockAttributesFromClasses({
@@ -198,19 +192,11 @@ function normalizeRootElementBlock({
   rootTagName,
   baseClassName,
   captionClassName,
-  stripRootStyles = false,
-  stripImageStyles = false,
 }: RootElementBlock): string {
   const rootHtml = addClassToOpeningTag({ html, tagName: rootTagName, className: baseClassName });
-  const rootStyleHtml = stripRootStyles
-    ? stripAttributeFromElements({ html: rootHtml, tagNames: [rootTagName], attributeName: "style" })
-    : rootHtml;
-  const contentHtml = stripImageStyles
-    ? stripAttributeFromElements({ html: rootStyleHtml, tagNames: ["img"], attributeName: "style" })
-    : rootStyleHtml;
   const normalizedHtml = captionClassName
-    ? addClassToElements({ html: contentHtml, tagName: "figcaption", className: captionClassName })
-    : contentHtml;
+    ? addClassToElements({ html: rootHtml, tagName: "figcaption", className: captionClassName })
+    : rootHtml;
 
   return wrapWordPressBlock({
     blockName,

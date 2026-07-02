@@ -74,6 +74,91 @@ describe('createAgentRulesWriter', () => {
     expect(writes['vault/AGENTS.md']).toContain('<!-- END:notopress-vault-agent-rules -->');
   });
 
+  it('repairs an orphaned begin marker without dropping user notes', async () => {
+    const writes: Record<string, string> = {};
+    const writer = createAgentRulesWriter({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async () =>
+        [
+          '# User rules',
+          '',
+          '<!-- BEGIN:notopress-vault-agent-rules -->',
+          'Keep this custom note.',
+          '',
+        ].join('\n')
+      ),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+      joinPath: path.posix.join,
+      logger: { log: vi.fn() },
+    });
+
+    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
+
+    expect(writes['vault/AGENTS.md']).toContain('# User rules');
+    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
+    expect(writes['vault/AGENTS.md'].match(/<!-- BEGIN:notopress-vault-agent-rules -->/g)).toHaveLength(1);
+    expect(writes['vault/AGENTS.md']).toContain('<!-- END:notopress-vault-agent-rules -->');
+  });
+
+  it('repairs an orphaned end marker without dropping user notes', async () => {
+    const writes: Record<string, string> = {};
+    const writer = createAgentRulesWriter({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async () =>
+        [
+          '# User rules',
+          '',
+          'Keep this custom note.',
+          '<!-- END:notopress-vault-agent-rules -->',
+          '',
+        ].join('\n')
+      ),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+      joinPath: path.posix.join,
+      logger: { log: vi.fn() },
+    });
+
+    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
+
+    expect(writes['vault/AGENTS.md']).toContain('# User rules');
+    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
+    expect(writes['vault/AGENTS.md']).toContain('<!-- BEGIN:notopress-vault-agent-rules -->');
+    expect(writes['vault/AGENTS.md'].match(/<!-- END:notopress-vault-agent-rules -->/g)).toHaveLength(1);
+  });
+
+  it('repairs reversed markers without dropping user notes', async () => {
+    const writes: Record<string, string> = {};
+    const writer = createAgentRulesWriter({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async () =>
+        [
+          '# User rules',
+          '',
+          '<!-- END:notopress-vault-agent-rules -->',
+          'Keep this custom note.',
+          '<!-- BEGIN:notopress-vault-agent-rules -->',
+          '',
+        ].join('\n')
+      ),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+      joinPath: path.posix.join,
+      logger: { log: vi.fn() },
+    });
+
+    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
+
+    expect(writes['vault/AGENTS.md']).toContain('# User rules');
+    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
+    expect(writes['vault/AGENTS.md'].match(/<!-- BEGIN:notopress-vault-agent-rules -->/g)).toHaveLength(1);
+    expect(writes['vault/AGENTS.md'].match(/<!-- END:notopress-vault-agent-rules -->/g)).toHaveLength(1);
+  });
+
   it('does not write during dry run', async () => {
     const writeFile = vi.fn(async () => undefined);
     const logger = { log: vi.fn() };
