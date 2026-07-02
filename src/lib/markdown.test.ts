@@ -93,6 +93,44 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<figure class="custom-table" style="overflow-x: auto;">');
   });
 
+  it("consumes adjacent italicized paragraph as a table figcaption", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "| Feature | Basic | Pro |",
+        "| --- | --- | --- |",
+        "| Export | Yes | Yes |",
+        "",
+        "*Feature comparison table.*",
+      ].join("\n"),
+      thumbnailSizes: [320],
+      getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
+    });
+
+    expect(html).toContain('<figure class="wp-block-table is-style-stripes">');
+    expect(html).toContain('<figcaption>Feature comparison table.</figcaption>');
+    expect(html).not.toContain('<p><em>Feature comparison table.</em></p>');
+  });
+
+  it("leaves preceding italicized paragraphs as normal text before tables", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: [
+        "*Feature comparison table.*",
+        "",
+        "| Feature | Basic | Pro |",
+        "| --- | --- | --- |",
+        "| Export | Yes | Yes |",
+      ].join("\n"),
+      thumbnailSizes: [320],
+      getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
+    });
+
+    expect(html).toContain('<figure class="wp-block-table is-style-stripes">');
+    expect(html).toContain('<p><em>Feature comparison table.</em></p>');
+    expect(html).not.toContain('<figcaption>Feature comparison table.</figcaption>');
+  });
+
   it("does not wrap tables already inside figures with long attributes", async () => {
     const { wrapTablesInFigures } = await import("./markdown");
     const figureClass = "wp-block-table is-style-stripes has-fixed-layout alignwide custom-long-class-name";

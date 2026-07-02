@@ -13,6 +13,7 @@ import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
 import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
+import { ensureVaultAgentRules } from './lib/agent-rules';
 
 type CommandResult = {
   status: number | null;
@@ -398,6 +399,8 @@ async function syncContent({
   isDryRun: boolean;
 }) {
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
+  await ensureVaultAgentRules({ vaultPath: site.vaultPath, dryRun: isDryRun });
+
   const { rootContentIndex, allIndices } = await generateIndices({
     vaultPath: site.vaultPath,
     thumbnailSizes,
