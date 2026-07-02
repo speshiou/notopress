@@ -1,4 +1,14 @@
 type WordPressBlockAttributes = Record<string, string | number | boolean>;
+type WordPressBlockName = "code" | "heading" | "html" | "image" | "list" | "paragraph" | "quote" | "table";
+type RootElementBlock = {
+  blockName: WordPressBlockName;
+  html: string;
+  rootTagName: string;
+  baseClassName: string;
+  captionClassName?: string;
+  stripRootStyles?: boolean;
+  stripImageStyles?: boolean;
+};
 
 const VOID_HTML_TAGS = new Set([
   "area",
@@ -31,7 +41,7 @@ function wrapWordPressBlock({
   html,
   attributes = {},
 }: {
-  blockName: string;
+  blockName: WordPressBlockName;
   html: string;
   attributes?: WordPressBlockAttributes;
 }): string {
@@ -60,18 +70,153 @@ function getAttributeValue({ html, name }: { html: string; name: string }): stri
   return match ? match[2] : null;
 }
 
-function getBlockClassName(html: string, baseClassName: string): string | null {
+function getBlockClassName({
+  html,
+  baseClassName,
+  ignoredClassNames = [],
+}: {
+  html: string;
+  baseClassName: string;
+  ignoredClassNames?: readonly string[];
+}): string | null {
   const classValue = getAttributeValue({ html, name: "class" });
   if (!classValue) {
     return null;
   }
 
+  const ignoredClassNameSet = new Set([baseClassName, ...ignoredClassNames]);
   const blockClasses = classValue
     .split(/\s+/)
     .map((className) => className.trim())
-    .filter((className) => className.length > 0 && className !== baseClassName);
+    .filter((className) => className.length > 0 && !ignoredClassNameSet.has(className));
 
   return blockClasses.length > 0 ? blockClasses.join(" ") : null;
+}
+
+const WORDPRESS_CAPTION_CLASS = "wp-element-caption";
+const WORDPRESS_IMAGE_CLASS = "wp-block-image";
+const WORDPRESS_QUOTE_CLASS = "wp-block-quote";
+const WORDPRESS_TABLE_CLASS = "wp-block-table";
+
+function mergeClassNames({ existingClassName, classNames }: { existingClassName: string | null; classNames: readonly string[] }): string {
+  const allClassNames = [
+    ...classNames,
+    ...(existingClassName || "").split(/\s+/),
+  ]
+    .map((className) => className.trim())
+    .filter((className) => className.length > 0);
+
+  return [...new Set(allClassNames)].join(" ");
+}
+
+function addClassToOpeningTag({ html, tagName, className }: { html: string; tagName: string; className: string }): string {
+  const pattern = new RegExp(`^<${tagName}\\b([^>]*)>`, "i");
+  const match = pattern.exec(html.trimStart());
+  if (!match) {
+    return html;
+  }
+
+  const openingTag = match[0];
+  const existingClassName = getAttributeValue({ html, name: "class" });
+  const mergedClassName = mergeClassNames({ existingClassName, classNames: [className] });
+  const nextOpeningTag = existingClassName
+    ? openingTag.replace(/\bclass\s*=\s*(["']).*?\1/i, `class="${mergedClassName}"`)
+    : openingTag.replace(new RegExp(`^<${tagName}\\b`, "i"), `<${tagName} class="${mergedClassName}"`);
+
+  return html.replace(openingTag, nextOpeningTag);
+}
+
+function addClassToElements({ html, tagName, className }: { html: string; tagName: string; className: string }): string {
+  const pattern = new RegExp(`<${tagName}\\b([^>]*)>`, "gi");
+  return html.replace(pattern, (openingTag: string) => {
+    const classMatch = /\bclass\s*=\s*(["'])(.*?)\1/i.exec(openingTag);
+    const mergedClassName = mergeClassNames({ existingClassName: classMatch ? classMatch[2] : null, classNames: [className] });
+    if (classMatch) {
+      return openingTag.replace(/\bclass\s*=\s*(["']).*?\1/i, `class="${mergedClassName}"`);
+    }
+
+    return openingTag.replace(new RegExp(`^<${tagName}\\b`, "i"), `<${tagName} class="${mergedClassName}"`);
+  });
+}
+
+function stripAttributeFromElements({
+  html,
+  tagNames,
+  attributeName,
+}: {
+  html: string;
+  tagNames: readonly string[];
+  attributeName: string;
+}): string {
+  const tagPattern = tagNames.join("|");
+  const elementPattern = new RegExp(`<(${tagPattern})\\b[^>]*>`, "gi");
+  const attributePattern = new RegExp(`\\s${attributeName}\\s*=\\s*(["']).*?\\1`, "i");
+
+  return html.replace(elementPattern, (openingTag: string) => {
+    return openingTag.replace(attributePattern, "");
+  });
+}
+
+function normalizeTableHtml(html: string): string {
+  return stripAttributeFromElements({
+    html: addClassToElements({ html, tagName: "table", className: "has-fixed-layout" }),
+    tagNames: ["th", "td"],
+    attributeName: "align",
+  });
+}
+
+function normalizeImageHtml(html: string): string {
+  const imageBlockHtml = addClassToOpeningTag({ html, tagName: "figure", className: WORDPRESS_IMAGE_CLASS });
+  const largeImageHtml = addClassToOpeningTag({ html: imageBlockHtml, tagName: "figure", className: "size-large" });
+  const withoutFigureStyle = stripAttributeFromElements({
+    html: largeImageHtml,
+    tagNames: ["figure"],
+    attributeName: "style",
+  });
+
+  return ["style", "srcset", "sizes", "loading", "decoding", "fetchpriority"].reduce((content, attributeName) => {
+    return stripAttributeFromElements({ html: content, tagNames: ["img"], attributeName });
+  }, withoutFigureStyle);
+}
+
+function getBlockAttributesFromClasses({
+  html,
+  baseClassName,
+  ignoredClassNames,
+}: {
+  html: string;
+  baseClassName: string;
+  ignoredClassNames?: readonly string[];
+}): WordPressBlockAttributes {
+  const className = getBlockClassName({ html, baseClassName, ignoredClassNames });
+  return className ? { className } : {};
+}
+
+function normalizeRootElementBlock({
+  blockName,
+  html,
+  rootTagName,
+  baseClassName,
+  captionClassName,
+  stripRootStyles = false,
+  stripImageStyles = false,
+}: RootElementBlock): string {
+  const rootHtml = addClassToOpeningTag({ html, tagName: rootTagName, className: baseClassName });
+  const rootStyleHtml = stripRootStyles
+    ? stripAttributeFromElements({ html: rootHtml, tagNames: [rootTagName], attributeName: "style" })
+    : rootHtml;
+  const contentHtml = stripImageStyles
+    ? stripAttributeFromElements({ html: rootStyleHtml, tagNames: ["img"], attributeName: "style" })
+    : rootStyleHtml;
+  const normalizedHtml = captionClassName
+    ? addClassToElements({ html: contentHtml, tagName: "figcaption", className: captionClassName })
+    : contentHtml;
+
+  return wrapWordPressBlock({
+    blockName,
+    html: normalizedHtml,
+    attributes: getBlockAttributesFromClasses({ html: normalizedHtml, baseClassName }),
+  });
 }
 
 function findElementEnd({ html, startIndex, tagName }: { html: string; startIndex: number; tagName: string }): number {
@@ -152,9 +297,44 @@ function splitTopLevelHtml(html: string): string[] {
 }
 
 function serializeTableBlock(html: string): string {
-  const className = getBlockClassName(html, "wp-block-table");
-  const attributes: WordPressBlockAttributes = className ? { className } : {};
-  return wrapWordPressBlock({ blockName: "table", html, attributes });
+  return normalizeRootElementBlock({
+    blockName: "table",
+    html: normalizeTableHtml(html),
+    rootTagName: "figure",
+    baseClassName: WORDPRESS_TABLE_CLASS,
+    captionClassName: WORDPRESS_CAPTION_CLASS,
+  });
+}
+
+function serializeImageBlock(html: string): string {
+  const normalizedHtml = addClassToElements({
+    html: normalizeImageHtml(html),
+    tagName: "figcaption",
+    className: WORDPRESS_CAPTION_CLASS,
+  });
+
+  return wrapWordPressBlock({
+    blockName: "image",
+    html: normalizedHtml,
+    attributes: {
+      sizeSlug: "large",
+      linkDestination: "none",
+      ...getBlockAttributesFromClasses({
+        html: normalizedHtml,
+        baseClassName: WORDPRESS_IMAGE_CLASS,
+        ignoredClassNames: ["size-large"],
+      }),
+    },
+  });
+}
+
+function serializeQuoteBlock(html: string): string {
+  return normalizeRootElementBlock({
+    blockName: "quote",
+    html,
+    rootTagName: "blockquote",
+    baseClassName: WORDPRESS_QUOTE_CLASS,
+  });
 }
 
 function serializeHeadingBlock({ html, tagName }: { html: string; tagName: string }): string {
@@ -180,7 +360,7 @@ function serializeKnownBlock(html: string): string {
   }
 
   if (tagName === "figure" && /<img\b/i.test(html)) {
-    return wrapWordPressBlock({ blockName: "image", html });
+    return serializeImageBlock(html);
   }
 
   if (tagName === "p") {
@@ -196,7 +376,7 @@ function serializeKnownBlock(html: string): string {
   }
 
   if (tagName === "blockquote") {
-    return wrapWordPressBlock({ blockName: "quote", html });
+    return serializeQuoteBlock(html);
   }
 
   if (tagName === "pre") {

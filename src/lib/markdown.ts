@@ -60,7 +60,7 @@ export function wrapTablesInFigures(
   htmlContent: string,
   getFigureProperties?: () => FigureProperties,
 ): string {
-  return htmlContent.replace(/<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g, (tableHtml, offset, fullHtml) => {
+  const wrappedTables = htmlContent.replace(/<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g, (tableHtml, offset, fullHtml) => {
     const precedingHtml = fullHtml.slice(0, offset);
     const lastFigureOpenIndex = precedingHtml.search(/<figure\b[^>]*>\s*$/i);
     const lastFigureCloseIndex = precedingHtml.lastIndexOf("</figure>");
@@ -72,6 +72,13 @@ export function wrapTablesInFigures(
     const attributes = serializeFigureProperties(properties);
     return `<figure${attributes}>\n${tableHtml}\n</figure>`;
   });
+
+  return wrappedTables.replace(
+    /(<figure(?:\s[^>]*)?>\s*<table(?:\s[^>]*)?>[\s\S]*?<\/table>\s*)<\/figure>\s*<p><em>([\s\S]*?)<\/em><\/p>/g,
+    (_match: string, figureWithTable: string, captionHtml: string) => {
+      return `${figureWithTable}<figcaption>${captionHtml}</figcaption>\n</figure>`;
+    }
+  );
 }
 
 export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
