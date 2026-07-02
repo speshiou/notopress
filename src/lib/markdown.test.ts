@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMarkdownRenderer, type MarkdownNode, preprocessWikilinks } from "./markdown";
+import { serializeHtmlToWordPressBlocks } from "./wordpress-blocks";
 
 describe("createMarkdownRenderer", () => {
   it("injects responsive image attributes into image nodes before processing", async () => {
@@ -175,6 +176,28 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>This is my <a href="https://example.com">caption link</a> text.</figcaption></figure>');
     expect(html).not.toContain('<p><em>This is my');
+  });
+
+  it("renders markdown images and image wikilinks to the same cached HTML and WordPress image block", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const render = (markdown: string) => renderMarkdownContent({
+      markdown,
+      thumbnailSizes: [320],
+      assetFiles: ["attachments/map.png"],
+      getFigureProperties: () => ({ class: "wp-block-image", style: "height: auto !important;" }),
+    });
+
+    const markdownImageHtml = await render("![](attachments/map.png)\n*Map caption.*");
+    const wikilinkImageHtml = await render("![[map.png]]\n*Map caption.*");
+
+    expect(wikilinkImageHtml).toBe(markdownImageHtml);
+    expect(markdownImageHtml).toContain('srcset="/api/vault-public/_thumbnails/attachments/map-320.webp 320w"');
+
+    const markdownImageBlock = serializeHtmlToWordPressBlocks(markdownImageHtml);
+    const wikilinkImageBlock = serializeHtmlToWordPressBlocks(wikilinkImageHtml);
+    expect(wikilinkImageBlock).toBe(markdownImageBlock);
+    expect(markdownImageBlock).toContain('<img src="/api/vault-public/_thumbnails/attachments/map-320.webp" alt="" />');
+    expect(markdownImageBlock).not.toContain("srcset=");
   });
 });
 

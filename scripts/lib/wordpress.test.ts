@@ -268,11 +268,11 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
       expect(body.content).toContain('<figure class="size-large wp-block-image">');
       expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
-      expect(body.content).toContain('srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp 1200w"');
-      expect(body.content).toContain('sizes="(max-width: 1200px) 100vw, 1200px"');
-      expect(body.content).toContain('style="max-width: 100%;"');
-      expect(body.content).toContain('loading="lazy"');
-      expect(body.content).toContain('decoding="async"');
+      expect(body.content).not.toContain('srcset=');
+      expect(body.content).not.toContain('sizes=');
+      expect(body.content).not.toContain('style="max-width: 100%;"');
+      expect(body.content).not.toContain('loading=');
+      expect(body.content).not.toContain('decoding=');
       expect(body.content).toContain('<figcaption class="wp-element-caption">Hero caption</figcaption>');
       expect(body.content).toContain('<!-- /wp:image -->');
       expect(body.content).not.toContain('className":"wp-block-image');
@@ -361,8 +361,8 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
       expect(body.content).toContain('<figure class="size-large wp-block-image">');
       expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
-      expect(body.content).toContain('srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp 1200w"');
-      expect(body.content).toContain('sizes="(max-width: 1200px) 100vw, 1200px"');
+      expect(body.content).not.toContain('srcset=');
+      expect(body.content).not.toContain('sizes=');
       expect(body.content).not.toContain('![[promo-note]]');
       expect(body.content).not.toContain('Promo Note');
     });
