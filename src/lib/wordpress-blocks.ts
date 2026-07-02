@@ -155,6 +155,37 @@ function stripAttributeFromElements({
   });
 }
 
+function stripAttributesFromElements({
+  html,
+  tagNames,
+  attributeNames,
+}: {
+  html: string;
+  tagNames: readonly string[];
+  attributeNames: readonly string[];
+}): string {
+  return attributeNames.reduce(
+    (currentHtml, attributeName) => stripAttributeFromElements({ html: currentHtml, tagNames, attributeName }),
+    html
+  );
+}
+
+function ensureImageAltAttribute(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (openingTag: string) => {
+    if (/\salt\s*=/i.test(openingTag)) {
+      return openingTag;
+    }
+
+    return openingTag.replace(/\s*\/?>$/, ' alt="">');
+  });
+}
+
+function selfCloseImageTags(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (openingTag: string) => {
+    return openingTag.replace(/\s*\/?>$/, " />");
+  });
+}
+
 function normalizeTableHtml(html: string): string {
   return stripAttributeFromElements({
     html: addClassToElements({ html, tagName: "table", className: "has-fixed-layout" }),
@@ -166,10 +197,18 @@ function normalizeTableHtml(html: string): string {
 function normalizeImageHtml(html: string): string {
   const imageBlockHtml = addClassToOpeningTag({ html, tagName: "figure", className: WORDPRESS_IMAGE_CLASS });
   const largeImageHtml = addClassToOpeningTag({ html: imageBlockHtml, tagName: "figure", className: "size-large" });
-  return stripAttributeFromElements({
+  const withoutFigureStyle = stripAttributeFromElements({
     html: largeImageHtml,
     tagNames: ["figure"],
     attributeName: "style",
+  });
+  // The markdown/cache renderer may add runtime responsive attributes. Core
+  // image block validation compares against saved block markup, so do not carry
+  // those runtime-only img attributes into the WordPress post body.
+  return stripAttributesFromElements({
+    html: withoutFigureStyle,
+    tagNames: ["img"],
+    attributeNames: ["style", "srcset", "sizes", "loading", "decoding"],
   });
 }
 
@@ -293,11 +332,16 @@ function serializeTableBlock(html: string): string {
 }
 
 function serializeImageBlock(html: string): string {
-  const normalizedHtml = addClassToElements({
+  const withCaptionClass = addClassToElements({
     html: normalizeImageHtml(html),
     tagName: "figcaption",
     className: WORDPRESS_CAPTION_CLASS,
   });
+
+  // After runtime attrs are removed, keep WordPress's expected img structure:
+  // explicit empty alt for decorative/caption-only images and XHTML-style
+  // self-closing syntax. Source markdown image syntax must not affect this shape.
+  const normalizedHtml = selfCloseImageTags(ensureImageAltAttribute(withCaptionClass));
 
   return wrapWordPressBlock({
     blockName: "image",

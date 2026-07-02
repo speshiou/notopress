@@ -29,9 +29,11 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Sitemap generation**: `sitemap.xml` is generated when a site `domain` is configured, with nested sitemap indexes for larger directory trees.
 - **Static asset serving**: Files in `public/` and supported asset files in `content/` are served from S3-compatible storage through the app.
 - **Responsive images**: Supported local images are converted to WebP thumbnails and rendered with `srcset`, lazy loading, and async decoding.
-- **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets.
+- **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets and render through the same image pipeline as `![](...)`.
+- **Note wikilinks**: Public notes can be linked with `[[note-slug]]` or `[[folder/note-slug]]`, using the target note title as link text.
+- **Note transclusions**: Public notes and configured private snippets can be embedded with `![[note-slug]]`, including nested transclusions.
 - **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
-- **Content sync**: Generate indices, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
+- **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
 - **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
@@ -92,6 +94,7 @@ The registry manages global defaults and site-specific overrides.
 | `domain` | `string` | (Optional) Your site's domain. Used to generate absolute URLs for the sitemap. If omitted, sitemap generation will be skipped. |
 | `siteId` | `string` | A unique ID for the site, used as its root folder in S3. |
 | `vaultPath` | `string` | Path to the local Markdown folder that acts as the source of truth for this site. |
+| `noteIncludePaths` | `string[]` | (Optional) Vault-relative folders for private Markdown snippets that can be embedded with `![[note-name]]` but are not routed as public pages. |
 | `bucketName` | `string` | (Optional) The S3 bucket name. |
 | `endpoint` | `string` | (Optional) Override the global endpoint for this site. |
 | `vercelProjectId` | `string` | (Optional) Vercel project ID to deploy. Falls back to `siteId` when omitted. |
@@ -104,6 +107,55 @@ The registry manages global defaults and site-specific overrides.
 When you run `npm run sync`, Notopress creates WebP thumbnails for supported images in `content/` and `public/`, then includes them in generated responsive `srcset` attributes at render time.
 
 Generated thumbnails live under `_thumbnails/` beside the source tree that owns the image. For example, an image referenced as `/attachments/photo.png` gets thumbnail candidates like `/_thumbnails/attachments/photo-640.webp`.
+
+Rendered HTML files are generated under `_rendered/content/` during sync. They are cache artifacts like thumbnails and indexes: source Markdown remains the source of truth.
+
+### Wikilinks and Note Transclusions
+
+Notopress supports a subset of Obsidian-style wikilinks for local images, note links, and note transclusions.
+
+Image embeds resolve against known files in `content/` and `public/`:
+
+```markdown
+![[image.png]]
+![[attachments/image.png|Alt text]]
+```
+
+These render through the same responsive image pipeline as standard Markdown images:
+
+```markdown
+![Alt text](attachments/image.png)
+```
+
+Public note links resolve against Markdown files under `content/`:
+
+```markdown
+[[guide-note]]
+[[docs/guide-note]]
+[[guide-note|Custom link text]]
+```
+
+When a note link is rendered, Notopress uses the target note's title as the default link text. Nested notes keep their full public URL path, so `[[docs/guide-note]]` links to `/docs/guide-note`.
+
+If a target leaf slug is unique, `[[guide-note]]` can resolve without the folder path. If multiple notes share the same filename, use the nested path form to avoid ambiguity.
+
+Use `![[note-slug]]` to transclude note content:
+
+```markdown
+![[shared-callout]]
+```
+
+Transclusions render only the referenced note body. Frontmatter and the first top-level heading are removed so reusable snippets do not duplicate their own title inside the host article. Transcluded content is processed recursively, so an embedded note can include other note links or transclusions.
+
+Private reusable snippets can live outside `content/` by configuring `noteIncludePaths`. For example:
+
+```json
+{
+  "noteIncludePaths": ["_includes"]
+}
+```
+
+A vault file at `_includes/shared-callout.md` can then be embedded with `![[shared-callout]]` without becoming a public page. Private include notes are embed-only: normal links such as `[[shared-callout]]` resolve only when the target is a public note under `content/`.
 
 ### Serving Thumbnails from Cloudflare
 
@@ -156,7 +208,7 @@ To generate content metadata, generate sitemaps, upload the local content folder
 npm run sync
 ```
 
-The sync command writes generated files such as `root.json`, nested content indices, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
+The sync command writes generated files such as `root.json`, nested content indices, rendered HTML, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
 
 ### Safety First: Dry Run
 Before making any changes, you can preview what will happen:

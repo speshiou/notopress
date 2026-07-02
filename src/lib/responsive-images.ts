@@ -15,6 +15,21 @@ export type ResponsiveImageDeps = {
   encodeUri: (uri: string) => string;
 };
 
+export type AssetUrlMode = "app-relative" | "absolute";
+
+export type AssetUrlConfig = {
+  imageHost?: string;
+  siteId?: string;
+  s3SubDir?: 'public' | 'content';
+  mode?: AssetUrlMode;
+};
+
+export type ResponsiveImageAttributes = {
+  src: string;
+  srcSet: string;
+  sizes: string;
+};
+
 export function createResponsiveImageHelpers(deps: ResponsiveImageDeps) {
   function normalizeThumbnailSizes(sizes: readonly number[] | undefined): number[] {
     const sourceSizes = sizes && sizes.length > 0 ? sizes : deps.defaultThumbnailSizes;
@@ -38,10 +53,12 @@ export function createResponsiveImageHelpers(deps: ResponsiveImageDeps) {
   function getResponsiveImageAttributes({
     src,
     thumbnailSizes,
+    assetUrlConfig,
   }: {
     src: string;
     thumbnailSizes: readonly number[];
-  }): { src: string; srcSet: string; sizes: string } | null {
+    assetUrlConfig?: AssetUrlConfig;
+  }): ResponsiveImageAttributes | null {
     if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:') || src.startsWith('#')) {
       return null;
     }
@@ -56,10 +73,28 @@ export function createResponsiveImageHelpers(deps: ResponsiveImageDeps) {
       return null;
     }
 
+    const mode = assetUrlConfig?.mode || 'app-relative';
+    const largestWidth = sizes[sizes.length - 1];
+    const toUrl = (filePath: string) => getAssetUrl({
+      filePath,
+      imageHost: assetUrlConfig?.imageHost,
+      siteId: assetUrlConfig?.siteId,
+      s3SubDir: assetUrlConfig?.s3SubDir || 'content',
+      mode,
+    });
+
+    if (mode === 'absolute' && !assetUrlConfig?.imageHost) {
+      return null;
+    }
+
     const srcSet = sizes
-      .map((size) => `${deps.encodeUri(`/${getThumbnailPath({ imagePath: cleanSrc, width: size })}`)} ${size}w`)
+      .map((size) => `${deps.encodeUri(toUrl(getThumbnailPath({ imagePath: cleanSrc, width: size })))} ${size}w`)
       .join(', ');
-    return { src: deps.encodeUri(`/${cleanSrc}`), srcSet, sizes: deps.responsiveImageSizes };
+    return {
+      src: deps.encodeUri(toUrl(getThumbnailPath({ imagePath: cleanSrc, width: largestWidth }))),
+      srcSet,
+      sizes: deps.responsiveImageSizes,
+    };
   }
 
   return {
@@ -92,18 +127,23 @@ export function getAssetUrl({
   siteId,
   s3SubDir,
   filePath,
-  domain,
+  mode = 'app-relative',
 }: {
   imageHost?: string;
-  siteId: string;
-  s3SubDir: 'public' | 'content';
+  siteId?: string;
+  s3SubDir?: 'public' | 'content';
   filePath: string;
-  domain?: string;
+  mode?: AssetUrlMode;
 }): string {
   const cleanPath = filePath.replace(/^\//, '');
   if (imageHost) {
+    if (!siteId || !s3SubDir) {
+      throw new Error('siteId and s3SubDir are required when imageHost is configured.');
+    }
     return `${imageHost.replace(/\/+$/, '')}/${siteId}/${s3SubDir}/${cleanPath}`;
   }
-  return `https://${domain || 'localhost'}/api/vault-public/${cleanPath}`;
+  if (mode === 'absolute') {
+    throw new Error('imageHost is required for absolute asset URLs.');
+  }
+  return `/api/vault-public/${cleanPath}`;
 }
-

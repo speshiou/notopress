@@ -15,6 +15,13 @@ type MatterResult = {
   content: string;
 };
 
+type NoteIncludeMetadata = {
+  fullSlug: string;
+  title: string;
+  filePath: string;
+  linkable: false;
+};
+
 export type IndexGeneratorDeps = {
   exists: (path: string) => Promise<boolean>;
   mkdir: (path: string, options: { recursive: true }) => Promise<string | undefined>;
@@ -77,7 +84,68 @@ function excludeGeneratedFiles(files: readonly string[]): string[] {
   return files.filter((file) => !isGeneratedThumbnailPath(file));
 }
 
+function normalizeIncludePath(includePath: string): string {
+  return includePath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
 export function createIndexGenerator(deps: IndexGeneratorDeps) {
+  async function scanNoteIncludes({
+    vaultPath,
+    noteIncludePaths,
+  }: {
+    vaultPath: string;
+    noteIncludePaths?: readonly string[];
+  }): Promise<NoteIncludeMetadata[]> {
+    const noteIncludes: NoteIncludeMetadata[] = [];
+    if (!noteIncludePaths || noteIncludePaths.length === 0) {
+      return noteIncludes;
+    }
+
+    for (const includePath of noteIncludePaths) {
+      const normalizedIncludePath = normalizeIncludePath(includePath);
+      if (!normalizedIncludePath || normalizedIncludePath === 'content' || normalizedIncludePath.startsWith('content/')) {
+        continue;
+      }
+
+      const includeDir = deps.joinPath(vaultPath, normalizedIncludePath);
+      async function walk(currentDir: string): Promise<void> {
+        if (!(await deps.exists(currentDir))) {
+          return;
+        }
+
+        const entries = await deps.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = deps.joinPath(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name !== '.git' && entry.name !== 'node_modules') {
+              await walk(fullPath);
+            }
+          } else if (entry.isFile() && entry.name.endsWith('.md')) {
+            const relIncludePath = deps.relativePath(includeDir, fullPath).replace(/\\/g, '/');
+            const fullSlug = relIncludePath.replace(/\.md$/i, '');
+            const fileContent = await deps.readFile(fullPath, 'utf-8');
+            const { data, content } = deps.parseMatter(fileContent);
+            const titleMatch = content.match(/^#\s+(.+)$/m);
+            const title =
+              typeof data.title === 'string' && data.title.trim()
+                ? data.title.trim()
+                : titleMatch?.[1]?.trim() || fullSlug.split('/').pop() || fullSlug;
+            noteIncludes.push({
+              fullSlug,
+              title,
+              filePath: `${normalizedIncludePath}/${relIncludePath}`,
+              linkable: false,
+            });
+          }
+        }
+      }
+
+      await walk(includeDir);
+    }
+
+    return noteIncludes.sort((a, b) => a.fullSlug.localeCompare(b.fullSlug));
+  }
+
   async function scanAndGenerate({
     dir,
     baseDir,
@@ -184,12 +252,18 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
     async generateIndices({
       vaultPath,
       thumbnailSizes,
+      noteIncludePaths,
       dryRun = false,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
+      noteIncludePaths?: readonly string[];
       dryRun?: boolean;
-    }): Promise<{ rootContentIndex: VaultDirectoryIndex; allIndices: Map<string, VaultDirectoryIndex> }> {
+    }): Promise<{
+      rootContentIndex: VaultDirectoryIndex;
+      vaultRootIndex: VaultRootIndex;
+      allIndices: Map<string, VaultDirectoryIndex>;
+    }> {
       const contentDir = deps.joinPath(vaultPath, 'content');
       if (!(await deps.exists(contentDir))) {
         throw new Error(`The required "content" directory is missing in the vault: ${vaultPath}`);
@@ -227,6 +301,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       ).sort();
       const contentAssetFiles = excludeGeneratedFiles(await deps.scanContentAssetFiles({ dir: contentDir }));
       const assetFiles = [...new Set([...publicFiles, ...contentAssetFiles])].sort();
+      const noteIncludes = await scanNoteIncludes({ vaultPath, noteIncludePaths });
 
       const rootPath = deps.joinPath(vaultPath, ROOT_JSON);
       const vaultRootIndex: VaultRootIndex = {
@@ -234,6 +309,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         directories: allDirs,
         publicFiles,
         assetFiles,
+        noteIncludes,
         thumbnailSizes: deps.normalizeThumbnailSizes(thumbnailSizes),
       };
 
@@ -244,7 +320,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         deps.logger.log(`✨ Generated master root index with ${allDirs.length} directories at: ${rootPath}`);
       }
 
-      return { rootContentIndex, allIndices };
+      return { rootContentIndex, vaultRootIndex, allIndices };
     },
   };
 }

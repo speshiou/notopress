@@ -2,8 +2,9 @@ import { remark } from "remark";
 import html from "remark-html";
 import gfm from "remark-gfm";
 import type { Plugin } from "unified";
-import { getResponsiveImageAttributes, normalizeThumbnailSizes } from "./responsive-images";
+import { getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
 import { resolveMarkdownImagePaths } from "./local-images";
+import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
 
 export type MarkdownNode = {
   type: "root" | "paragraph" | "image" | "image-figure" | "element" | "text" | "html" | (string & {});
@@ -25,9 +26,11 @@ export type MarkdownRendererDeps = {
   getResponsiveImageAttributes: ({
     src,
     thumbnailSizes,
+    assetUrlConfig,
   }: {
     src: string;
     thumbnailSizes: readonly number[];
+    assetUrlConfig?: AssetUrlConfig;
   }) => { src: string; srcSet: string; sizes: string } | null;
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
@@ -86,10 +89,12 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     tree,
     thumbnailSizes,
     getFigureProperties,
+    assetUrlConfig,
   }: {
     tree: MarkdownNode;
     thumbnailSizes: readonly number[];
     getFigureProperties?: (largestWidth: number) => FigureProperties;
+    assetUrlConfig?: AssetUrlConfig;
   }) {
     const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
     const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
@@ -108,7 +113,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
           if (child.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
             const imgNode = nonWhitespaceChildren[0];
             const imgUrl = imgNode.url || "";
-            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes });
+            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes, assetUrlConfig });
             const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
             const altText = imgNode.alt || '';
 
@@ -220,7 +225,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       }
 
       if (node.type === "image" && node.url) {
-        const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes });
+        const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes, assetUrlConfig });
         if (attributes) {
           node.data = {
             ...node.data,
@@ -244,13 +249,15 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   function responsiveImagePlugin({
     thumbnailSizes,
     getFigureProperties,
+    assetUrlConfig,
   }: {
     thumbnailSizes: readonly number[];
     getFigureProperties?: (largestWidth: number) => FigureProperties;
+    assetUrlConfig?: AssetUrlConfig;
   }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
-        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties });
+        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties, assetUrlConfig });
       };
     };
   }
@@ -265,6 +272,8 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       publicFiles,
       getFigureProperties,
       getTableFigureProperties,
+      noteReferences,
+      assetUrlConfig,
     }: {
       markdown: string;
       thumbnailSizes: readonly number[];
@@ -272,45 +281,89 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       publicFiles?: readonly string[];
       getFigureProperties?: (largestWidth: number) => FigureProperties;
       getTableFigureProperties?: () => FigureProperties;
+      noteReferences?: readonly NoteReference[];
+      assetUrlConfig?: AssetUrlConfig;
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
-      let preprocessed = availableFiles ? preprocessWikilinks(markdown, availableFiles) : markdown;
+      let preprocessed = preprocessWikilinks(markdown, availableFiles || [], noteReferences);
       preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
-        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties }),
+        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties, assetUrlConfig }),
       }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
     },
   };
 }
 
-export function preprocessWikilinks(markdown: string, availableFiles: readonly string[]): string {
-  const wikilinkRegex = /!\[\[([^\]]+)\]\]/g;
-  return markdown.replace(wikilinkRegex, (match, content) => {
-    const parts = content.split('|');
-    const filename = parts[0].trim();
-
-    let alt = '';
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i].trim();
-      if (!/^\d+$/.test(part)) {
-        alt = part;
-      }
+export function preprocessWikilinks(
+  markdown: string,
+  availableFiles: readonly string[],
+  noteReferences: readonly NoteReference[] = []
+): string {
+  let preprocessed = markdown;
+  for (let pass = 0; pass < 10; pass += 1) {
+    const next = preprocessWikilinksOnce(preprocessed, availableFiles, noteReferences);
+    if (next === preprocessed) {
+      return next;
     }
+    preprocessed = next;
+  }
+  return preprocessed;
+}
 
-    const normalizedFilename = filename.toLowerCase();
+function preprocessWikilinksOnce(
+  markdown: string,
+  availableFiles: readonly string[],
+  noteReferences: readonly NoteReference[]
+): string {
+  const noteResolver = createNoteReferenceResolver({ notes: noteReferences });
+  const embedRegex = /!\[\[([^\]]+)\]\]/g;
+  const linkRegex = /(^|[^!])\[\[([^\]]+)\]\]/g;
+
+  const withEmbeds = markdown.replace(embedRegex, (match, content) => {
+    const { target } = parseWikilinkContent({ content });
+    const normalizedFilename = target.toLowerCase();
     const resolvedPath = availableFiles.find((file) => {
+      const normalizedFile = file.toLowerCase();
       const base = file.split('/').pop()?.toLowerCase();
-      return base === normalizedFilename;
+      return normalizedFile === normalizedFilename || normalizedFile.endsWith(`/${normalizedFilename}`) || base === normalizedFilename;
     });
 
     if (resolvedPath) {
+      const alt = getImageAltFromWikilinkContent({ content });
       return `![${alt}](</${resolvedPath}>)`;
+    }
+
+    const noteReference = noteResolver.resolve({ target });
+    if (noteReference?.content) {
+      return `\n\n${noteReference.content.trim()}\n\n`;
     }
 
     return match;
   });
+
+  return withEmbeds.replace(linkRegex, (match, prefix, content) => {
+    const { target, label } = parseWikilinkContent({ content });
+    const noteReference = noteResolver.resolve({ target });
+    if (!noteReference || noteReference.linkable === false) {
+      return match;
+    }
+
+    return `${prefix}[${label || noteReference.title}](${noteReference.href})`;
+  });
+}
+
+function getImageAltFromWikilinkContent({ content }: { content: string }): string {
+  const parts = content.split("|").slice(1);
+  let alt = "";
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      alt = trimmed;
+    }
+  }
+  return alt;
 }
 
 const defaultMarkdownRenderer = createMarkdownRenderer({

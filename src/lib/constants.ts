@@ -38,6 +38,11 @@ export const DEFAULT_REGISTRY_FILENAME = 'registry.json';
 export const THUMBNAILS_DIR = '_thumbnails';
 
 /**
+ * Generated rendered HTML artifact directory.
+ */
+export const RENDERED_DIR = '_rendered';
+
+/**
  * Default responsive image widths, in pixels.
  */
 export const DEFAULT_THUMBNAIL_SIZES = [320, 640, 960, 1280] as const;

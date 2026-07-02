@@ -1,12 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { replaceLocalImagesWithThumbnails, pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
+import { pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
-
-// Mock dependency modules
-vi.mock('./files', () => ({
-  getAssetSubDir: vi.fn(),
-}));
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -19,11 +14,14 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(),
 }));
 
-// Access mocked functions
-import { getAssetSubDir } from './files';
 import { readFile, readdir, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 
+type MockDirectoryEntry = {
+  name: string;
+  isDirectory: () => boolean;
+  isFile: () => boolean;
+};
 
 describe('WordPress Deployment Library', () => {
   const mockSite: Site = {
@@ -46,108 +44,28 @@ describe('WordPress Deployment Library', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock implementation
-    vi.mocked(getAssetSubDir).mockResolvedValue('content');
     vi.mocked(readFile).mockResolvedValue('# My Post Title\nThis is content.');
     global.fetch = vi.fn();
   });
 
-  describe('replaceLocalImagesWithThumbnails', () => {
-    it('should replace local image sources with absolute CDN URLs pointing to the largest thumbnail', async () => {
-      const html = '<p>Hello world</p><img src="/images/pic.png" alt="Pic" />';
-      const sizes = [300, 600, 1200];
+  describe('htmlToMarkdown', () => {
+    it('decodes collected WordPress media filenames for local Markdown references and downloads', () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
 
-      // Simulate that the file exists in the "content" directory
-      vi.mocked(getAssetSubDir).mockResolvedValue('content');
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain(
-        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp 1200w" src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp" alt="Pic" />'
+      const result = htmlToMarkdown(
+        '<figure><img src="https://testsite.com/wp-content/uploads/2020/02/%E6%88%AA%E5%9C%96-2020-02-13-%E4%B8%8A%E5%8D%8810.36.11-1024x521.png" alt="" /></figure>',
+        mockSite,
+        mockRegistry,
+        'zelda-map',
+        collectedImages
       );
-    });
 
-    it('should fallback to site domain if imageHost is not provided', async () => {
-      const html = '<img src="/pic.png" alt="Direct" />';
-      const sizes = [300, 600, 1200];
-
-      const siteWithoutImageHost = { ...mockSite, imageHost: undefined };
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: siteWithoutImageHost,
-        registry: { ...mockRegistry, imageHost: undefined },
-        sizes,
-      });
-
-      expect(result).toContain(
-        '<img decoding="async" loading="lazy" style="max-width:100%;" sizes="(max-width: 1200px) 100vw, 1200px" srcset="https://testsite.com/api/vault-public/_thumbnails/pic-300.webp 300w, https://testsite.com/api/vault-public/_thumbnails/pic-600.webp 600w, https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp 1200w" src="https://testsite.com/api/vault-public/_thumbnails/pic-1200.webp" alt="Direct" />'
+      expect(result).toContain('![](zelda-map/截圖-2020-02-13-上午10.36.11.png)');
+      expect(collectedImages[0]?.localPath).toBe('/mock/vault/content/zelda-map/截圖-2020-02-13-上午10.36.11.png');
+      expect(collectedImages[0]?.tryHighResUrl).toBe(
+        'https://testsite.com/wp-content/uploads/2020/02/截圖-2020-02-13-上午10.36.11.png'
       );
-    });
-
-    it('should preserve original image attributes like class, width, height', async () => {
-      const html = '<img src="/images/pic.png" class="aligncenter custom-class" width="800" height="600" alt="Pic" />';
-      const sizes = [300, 600, 1200];
-
-      vi.mocked(getAssetSubDir).mockResolvedValue('content');
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain('class="aligncenter custom-class"');
-      expect(result).toContain('width="800"');
-      expect(result).toContain('height="600"');
-      expect(result).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/images/pic-1200.webp"');
-    });
-
-    it('should resolve encoded root-level image references to attachment thumbnails without double encoding', async () => {
-      const html = '<img src="/Pasted%2520image%252020260630150256.png" alt="Cable status" />';
-      const sizes = [300, 600, 1200];
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-        assetFiles: ['attachments/Pasted image 20260630150256.png'],
-      });
-
-      expect(result).toContain(
-        'src="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp"'
-      );
-      expect(result).toContain(
-        'srcset="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-300.webp 300w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-600.webp 600w, https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image%2020260630150256-1200.webp 1200w"'
-      );
-      expect(result).not.toContain('%2520');
-    });
-
-    it('should ignore external URLs and data URIs', async () => {
-      const html = `
-        <img src="https://external.com/photo.jpg" alt="Ext" />
-        <img src="data:image/png;base64,abc" alt="Data" />
-        <img src="#hash" alt="Hash" />
-      `;
-      const sizes = [300, 600, 1200];
-
-      const result = await replaceLocalImagesWithThumbnails({
-        html,
-        site: mockSite,
-        registry: mockRegistry,
-        sizes,
-      });
-
-      expect(result).toContain('src="https://external.com/photo.jpg"');
-      expect(result).toContain('src="data:image/png;base64,abc"');
-      expect(result).toContain('src="#hash"');
     });
   });
 
@@ -302,6 +220,163 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<table class="has-fixed-layout">');
       expect(body.content).toContain('</table>\n</figure>');
       expect(body.content).toContain('<!-- /wp:table -->');
+    });
+
+    it('should publish markdown images as valid WordPress image blocks', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockImplementation(async (filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath.endsWith('root.json')) {
+          return JSON.stringify({
+            publicFiles: [],
+            contentFiles: ['hero.png'],
+          });
+        }
+        return [
+          '# My Post Title',
+          '',
+          '![Hero caption](hero.png)',
+        ].join('\n');
+      });
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
+      expect(body.content).toContain('<figure class="size-large wp-block-image">');
+      expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
+      expect(body.content).not.toContain('srcset=');
+      expect(body.content).not.toContain('sizes=');
+      expect(body.content).not.toContain('style="max-width: 100%;"');
+      expect(body.content).not.toContain('loading=');
+      expect(body.content).not.toContain('decoding=');
+      expect(body.content).toContain('<figcaption class="wp-element-caption">Hero caption</figcaption>');
+      expect(body.content).toContain('<!-- /wp:image -->');
+      expect(body.content).not.toContain('className":"wp-block-image');
+    });
+
+    it('should transclude private note includes before publishing to WordPress', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      const mockedReaddir = vi.mocked(readdir) as unknown as {
+        mockImplementation: (implementation: () => Promise<MockDirectoryEntry[]>) => void;
+      };
+      mockedReaddir.mockImplementation(async () => [
+        {
+          name: 'promo-note.md',
+          isDirectory: () => false,
+          isFile: () => true,
+        },
+      ]);
+      vi.mocked(readFile).mockImplementation(async (filePath) => {
+        if (filePath === '/mock/vault/content/post-one.md') {
+          return [
+            '---',
+            'title: "Post One"',
+            '---',
+            '# Post One',
+            '',
+            'Before embed.',
+            '',
+            '![Hero](hero.png)',
+            '',
+            '![[promo-note]]',
+          ].join('\n');
+        }
+        if (filePath === '/mock/vault/_includes/promo-note.md') {
+          return [
+            '---',
+            'title: "Promo Note"',
+            '---',
+            '# Promo Note',
+            '',
+            'Embedded promotion body.',
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const indicesWithEmbed = new Map<string, VaultDirectoryIndex>([
+        [
+          '',
+          {
+            version: 1,
+            pages: [
+              { title: 'Post One', slug: 'post-one', date: '2026-06-16T12:00:00.000Z', excerpt: '' },
+            ],
+          },
+        ],
+      ]);
+
+      await pushToWordPress({
+        site: { ...mockSite, noteIncludePaths: ['_includes'] },
+        registry: mockRegistry,
+        allIndices: indicesWithEmbed,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+
+      expect(body.content).toContain('Embedded promotion body.');
+      expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
+      expect(body.content).toContain('<figure class="size-large wp-block-image">');
+      expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
+      expect(body.content).not.toContain('srcset=');
+      expect(body.content).not.toContain('sizes=');
+      expect(body.content).not.toContain('![[promo-note]]');
+      expect(body.content).not.toContain('Promo Note');
+    });
+
+    it('should require imageHost for WordPress publishing', async () => {
+      await expect(
+        pushToWordPress({
+          site: { ...mockSite, imageHost: undefined },
+          registry: { ...mockRegistry, imageHost: undefined },
+          allIndices: mockIndices,
+          targetPostSlug: 'post-one',
+          dryRun: false,
+        })
+      ).rejects.toThrow('imageHost');
     });
 
     it('should only query and perform no mutations when dryRun is true', async () => {
@@ -538,6 +613,11 @@ describe('WordPress Deployment Library', () => {
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/post-one.md',
         expect.stringContaining('title: "Post One Title"'),
+        'utf-8'
+      );
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/post-one.md',
+        expect.not.stringContaining('---\n\n# Post One Title'),
         'utf-8'
       );
       expect(writeFile).toHaveBeenCalledWith(

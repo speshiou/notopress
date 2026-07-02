@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMarkdownRenderer, type MarkdownNode, preprocessWikilinks } from "./markdown";
+import { serializeHtmlToWordPressBlocks } from "./wordpress-blocks";
 
 describe("createMarkdownRenderer", () => {
   it("injects responsive image attributes into image nodes before processing", async () => {
@@ -42,7 +43,7 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
@@ -54,8 +55,8 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["attachments/Pasted image 20260630150256.png"],
     });
 
-    expect(html).toContain('src="/attachments/Pasted%20image%2020260630150256.png"');
-    expect(html).toContain('srcset="/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+    expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp"');
+    expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
   });
 
   it("renders GitHub-Flavored Markdown tables inside generic figures", async () => {
@@ -148,7 +149,7 @@ describe("createMarkdownRenderer", () => {
     });
     expect(html).toContain("<p>Some text before</p>");
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain("<p>Some text after</p>");
   });
 
@@ -160,7 +161,7 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
@@ -172,9 +173,31 @@ describe("createMarkdownRenderer", () => {
       assetFiles: ["image.png"],
     });
     expect(html).toContain('<figure class="image-figure">');
-    expect(html).toContain('<img src="/image.png" style="max-width: 100%;" alt="My Alt Text"');
+    expect(html).toContain('<img src="/api/vault-public/_thumbnails/image-320.webp" style="max-width: 100%;" alt="My Alt Text"');
     expect(html).toContain('<figcaption>This is my <a href="https://example.com">caption link</a> text.</figcaption></figure>');
     expect(html).not.toContain('<p><em>This is my');
+  });
+
+  it("renders markdown images and image wikilinks to the same cached HTML and WordPress image block", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const render = (markdown: string) => renderMarkdownContent({
+      markdown,
+      thumbnailSizes: [320],
+      assetFiles: ["attachments/map.png"],
+      getFigureProperties: () => ({ class: "wp-block-image", style: "height: auto !important;" }),
+    });
+
+    const markdownImageHtml = await render("![](attachments/map.png)\n*Map caption.*");
+    const wikilinkImageHtml = await render("![[map.png]]\n*Map caption.*");
+
+    expect(wikilinkImageHtml).toBe(markdownImageHtml);
+    expect(markdownImageHtml).toContain('srcset="/api/vault-public/_thumbnails/attachments/map-320.webp 320w"');
+
+    const markdownImageBlock = serializeHtmlToWordPressBlocks(markdownImageHtml);
+    const wikilinkImageBlock = serializeHtmlToWordPressBlocks(wikilinkImageHtml);
+    expect(wikilinkImageBlock).toBe(markdownImageBlock);
+    expect(markdownImageBlock).toContain('<img src="/api/vault-public/_thumbnails/attachments/map-320.webp" alt="" />');
+    expect(markdownImageBlock).not.toContain("srcset=");
   });
 });
 
@@ -184,5 +207,95 @@ describe("preprocessWikilinks", () => {
     const assetFiles = ["attachments/screenshot.png"];
     const result = preprocessWikilinks(markdown, assetFiles);
     expect(result).toBe("Hello ![](</attachments/screenshot.png>) and ![My Alt Text](</attachments/screenshot.png>)");
+  });
+
+  it("converts path-prefixed image wikilinks using available asset files", () => {
+    const result = preprocessWikilinks("Map ![[attachments/map.png|Map Alt]]", ["attachments/map.png"]);
+
+    expect(result).toBe("Map ![Map Alt](</attachments/map.png>)");
+  });
+
+  it("converts note wikilinks to Markdown links using note titles", () => {
+    const result = preprocessWikilinks("Read [[vpn-promotion-for-games]].", [], [
+      {
+        fullSlug: "vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/vpn-promotion-for-games",
+      },
+    ]);
+
+    expect(result).toBe("Read [Best VPN Promotions for Games](/vpn-promotion-for-games).");
+  });
+
+  it("keeps nested note paths when rendering wikilink URLs", () => {
+    const result = preprocessWikilinks("Read [[gaming/vpn-promotion-for-games]].", [], [
+      {
+        fullSlug: "gaming/vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/gaming/vpn-promotion-for-games",
+      },
+    ]);
+
+    expect(result).toBe("Read [Best VPN Promotions for Games](/gaming/vpn-promotion-for-games).");
+  });
+
+  it("renders note embeds as content without adding the embedded note title", () => {
+    const result = preprocessWikilinks("Before\n![[vpn-promotion-for-games]]\nAfter", [], [
+      {
+        fullSlug: "vpn-promotion-for-games",
+        title: "Best VPN Promotions for Games",
+        href: "/vpn-promotion-for-games",
+        content: "This is the promotion body.",
+      },
+    ]);
+
+    expect(result).toBe("Before\n\n\nThis is the promotion body.\n\n\nAfter");
+  });
+
+  it("recursively renders note embeds and note links inside embedded note content", () => {
+    const result = preprocessWikilinks("Before\n![[first-embed]]\nAfter", [], [
+      {
+        fullSlug: "first-embed",
+        title: "First Embed",
+        href: "/first-embed",
+        content: "First body.\n\n![[second-embed]]\n\n[[linked-note]]",
+      },
+      {
+        fullSlug: "second-embed",
+        title: "Second Embed",
+        href: "/second-embed",
+        content: "Second body.",
+      },
+      {
+        fullSlug: "linked-note",
+        title: "Linked Note",
+        href: "/linked-note",
+      },
+    ]);
+
+    expect(result).toContain("Before");
+    expect(result).toContain("First body.");
+    expect(result).toContain("Second body.");
+    expect(result).toContain("[Linked Note](/linked-note)");
+    expect(result).toContain("After");
+    expect(result).not.toContain("[[");
+    expect(result.indexOf("First body.")).toBeLessThan(result.indexOf("Second body."));
+    expect(result.indexOf("Second body.")).toBeLessThan(result.indexOf("[Linked Note](/linked-note)"));
+  });
+
+  it("does not render private include notes as normal links", () => {
+    const result = preprocessWikilinks("Embed ![[promo-note]] but keep [[promo-note]].", [], [
+      {
+        fullSlug: "promo-note",
+        title: "Promo Note",
+        href: "/promo-note",
+        content: "Private promo body.",
+        linkable: false,
+      },
+    ]);
+
+    expect(result).toContain("Private promo body.");
+    expect(result).toContain("[[promo-note]]");
+    expect(result).not.toContain("[Promo Note](/promo-note)");
   });
 });

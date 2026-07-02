@@ -29,6 +29,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Never** include absolute filesystem paths (e.g., `/Users/username/...`) in any code, documentation, or commit messages.
 - Always use **relative paths** for internal links and documentation.
 - If an absolute path is required for local configuration, use placeholder strings or rely strictly on environment variables.
+- Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
 
 # Skills
 Consult the `skills/` directory for specific guides and automation patterns:
