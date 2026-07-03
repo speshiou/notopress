@@ -627,12 +627,12 @@ describe('WordPress Deployment Library', () => {
       );
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/post-one.md',
-        expect.not.stringContaining('---\n\n# Post One Title'),
+        expect.not.stringContaining('# Post One Title'),
         'utf-8'
       );
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/post-one.md',
-        expect.stringContaining('# Post One Title\n\nWordPress body text.'),
+        expect.stringContaining('---\nWordPress body text.'),
         'utf-8'
       );
     });
@@ -673,7 +673,7 @@ describe('WordPress Deployment Library', () => {
 
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/pulled-post-slug.md',
-        expect.stringContaining('# Pulled Title\n\nFetched by ID.'),
+        expect.stringContaining('---\nFetched by ID.'),
         'utf-8'
       );
     });

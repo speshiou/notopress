@@ -789,15 +789,13 @@ export async function pullFromWordPress({
   const modifiedIso = parseWpDate(wpPost.modified, wpPost.modified_gmt);
   const decodedTitle = decodeHtmlEntities(wpPost.title.rendered);
 
-  // Prepend frontmatter and title heading
+  // Prepend frontmatter while preserving the WordPress body as-is.
   const frontmatter = [
     `---`,
     `title: "${decodedTitle.replace(/"/g, '\\"')}"`,
     `date: "${dateIso}"`,
     `updated: "${modifiedIso}"`,
     `---`,
-    `# ${decodedTitle}`,
-    ``,
     markdownBody,
     ``,
   ].join('\n');
