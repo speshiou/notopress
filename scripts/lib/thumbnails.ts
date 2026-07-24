@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { mkdir, readdir } from 'fs/promises';
+import { mkdir, readdir, stat } from 'fs/promises';
 import path from 'path';
 import { THUMBNAILS_DIR } from '../../src/lib/constants';
 import {
@@ -15,6 +15,7 @@ type Logger = Pick<typeof console, 'log'>;
 
 export type ThumbnailGeneratorDeps = {
   exists: (path: string) => Promise<boolean>;
+  getFileStat: (path: string) => Promise<{ mtimeMs: number; size: number } | null>;
   readdir: (path: string, options: { withFileTypes: true }) => Promise<FileEntry[]>;
   mkdir: (path: string, options: { recursive: true }) => Promise<string | undefined>;
   joinPath: (...paths: string[]) => string;
@@ -81,12 +82,27 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       }
 
       let generatedCount = 0;
+      let skippedCount = 0;
+
       for (const imageFile of imageFiles) {
         const inputPath = deps.joinPath(sourceDir, imageFile);
+        const sourceStat = await deps.getFileStat(inputPath);
 
         for (const width of sizes) {
           const thumbnailRelPath = deps.getThumbnailPath({ imagePath: imageFile, width });
           const outputPath = deps.joinPath(sourceDir, thumbnailRelPath);
+          const targetStat = await deps.getFileStat(outputPath);
+
+          const isUpToDate =
+            sourceStat !== null &&
+            targetStat !== null &&
+            targetStat.size > 0 &&
+            targetStat.mtimeMs >= sourceStat.mtimeMs;
+
+          if (isUpToDate) {
+            skippedCount += 1;
+            continue;
+          }
 
           if (dryRun) {
             deps.logger.log(`[DRY RUN] Would generate ${label} thumbnail: ${thumbnailRelPath}`);
@@ -100,13 +116,29 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
         }
       }
 
-      deps.logger.log(`✨ Generated ${generatedCount} ${label} responsive image thumbnails.`);
+      if (skippedCount > 0 && generatedCount === 0) {
+        deps.logger.log(`✨ All ${skippedCount} ${label} responsive image thumbnails are up to date.`);
+      } else if (skippedCount > 0) {
+        deps.logger.log(
+          `✨ Generated ${generatedCount} ${label} responsive image thumbnails (${skippedCount} up to date, skipped).`
+        );
+      } else {
+        deps.logger.log(`✨ Generated ${generatedCount} ${label} responsive image thumbnails.`);
+      }
     },
   };
 }
 
 const defaultThumbnailGenerator = createThumbnailGenerator({
   exists,
+  getFileStat: async (filePath: string) => {
+    try {
+      const fileStat = await stat(filePath);
+      return { mtimeMs: fileStat.mtimeMs, size: fileStat.size };
+    } catch {
+      return null;
+    }
+  },
   readdir,
   mkdir,
   joinPath: path.join,
