@@ -38,7 +38,7 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
 - **Optional image host**: Configure an `imageHost` for absolute image URLs, especially for CDN or WordPress publishing workflows.
-- **Optional WordPress publishing**: Push your local Markdown posts to WordPress, update existing posts by slug, or target one post with `--post`.
+- **Optional WordPress publishing**: Push your local Markdown posts to WordPress, update existing posts by slug, or target specific posts with `--push`.
 
 ## Organizing Your Content
 
@@ -244,7 +244,7 @@ npm run sync -- --site example-blog
 npm run deploy -- --site example-blog --registry ./custom-registry.json
 ```
 
-Use `--wp` with `sync` or `deploy` to publish local Markdown posts to the configured WordPress site, and `--post <slug>` to limit that WordPress publish step to one post.
+Use `--wp` with `sync` or `deploy` to publish local Markdown posts to the configured WordPress site, and `--push <slug1,slug2,...>` to limit that WordPress publish step to specific posts (comma-separated list of slugs).
 
 ## Roadmap
 

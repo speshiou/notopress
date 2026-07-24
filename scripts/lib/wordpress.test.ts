@@ -125,7 +125,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -138,6 +138,11 @@ describe('WordPress Deployment Library', () => {
         expect.stringContaining('/wp/v2/posts/456'),
         expect.objectContaining({ method: 'POST' })
       );
+
+      const updateCall = mockFetch.mock.calls.find((call) => call[0].includes('/wp/v2/posts/456'));
+      expect(updateCall).toBeDefined();
+      const body = JSON.parse(updateCall![1].body);
+      expect(body).not.toHaveProperty('date');
     });
 
     it('should perform GET queries and POST to create a new post when it does not exist', async () => {
@@ -164,7 +169,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'blog/post-two',
+        targetSlugs: ['blog/post-two'],
         dryRun: false,
       });
 
@@ -176,6 +181,61 @@ describe('WordPress Deployment Library', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/wp/v2/posts'),
         expect.objectContaining({ method: 'POST' })
+      );
+
+      const createCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(createCall).toBeDefined();
+      const body = JSON.parse(createCall![1].body);
+      expect(body.date).toBe('2026-06-16T13:00:00.000Z');
+    });
+
+    it('should publish content with nested wordpress.type page frontmatter to the pages endpoint', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/pages') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/pages') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 321 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockResolvedValue([
+        '---',
+        'title: "About"',
+        'wordpress:',
+        '  type: page',
+        '---',
+        '# About',
+        '',
+        'Page body.',
+      ].join('\n'));
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/pages?slug=post-one'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/pages'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts'),
+        expect.objectContaining({ method: 'GET' })
       );
     });
 
@@ -208,7 +268,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -258,7 +318,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -349,7 +409,7 @@ describe('WordPress Deployment Library', () => {
         site: { ...mockSite, noteIncludePaths: ['_includes'] },
         registry: mockRegistry,
         allIndices: indicesWithEmbed,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -373,7 +433,7 @@ describe('WordPress Deployment Library', () => {
           site: { ...mockSite, imageHost: undefined },
           registry: { ...mockRegistry, imageHost: undefined },
           allIndices: mockIndices,
-          targetPostSlug: 'post-one',
+          targetSlugs: ['post-one'],
           dryRun: false,
         })
       ).rejects.toThrow('imageHost');
@@ -395,7 +455,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: true,
       });
 
@@ -434,7 +494,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -444,6 +504,91 @@ describe('WordPress Deployment Library', () => {
       const body = JSON.parse(postCall![1].body);
       expect(body.content).toContain('# This is a comment');
       expect(body.content).toContain('<h1>Real Title</h1>');
+    });
+
+    it('should support multiple target slugs', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one', 'blog/post-two'],
+        dryRun: false,
+      });
+
+      // Verify it queried both slug endpoints
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=post-one'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=blog-post-two'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      // Verify two POST calls occurred
+      const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
+      expect(postCalls.length).toBe(2);
+    });
+
+    it('should throw an error if none of the target slugs are found', async () => {
+      await expect(
+        pushToWordPress({
+          site: mockSite,
+          registry: mockRegistry,
+          allIndices: mockIndices,
+          targetSlugs: ['non-existent-slug'],
+          dryRun: false,
+        })
+      ).rejects.toThrow('Could not find any posts in the vault matching slugs: "non-existent-slug"');
+    });
+
+    it('should warn but proceed if only a subset of slugs are missing', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one', 'non-existent-slug'],
+        dryRun: false,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Warning: Could not find posts in the vault matching slugs: "non-existent-slug"')
+      );
+      warnSpy.mockRestore();
     });
   });
 
@@ -617,12 +762,12 @@ describe('WordPress Deployment Library', () => {
       );
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/post-one.md',
-        expect.not.stringContaining('---\n\n# Post One Title'),
+        expect.not.stringContaining('# Post One Title'),
         'utf-8'
       );
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/post-one.md',
-        expect.stringContaining('# Post One Title\n\nWordPress body text.'),
+        expect.stringContaining('---\nWordPress body text.'),
         'utf-8'
       );
     });
@@ -663,7 +808,7 @@ describe('WordPress Deployment Library', () => {
 
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/content/pulled-post-slug.md',
-        expect.stringContaining('# Pulled Title\n\nFetched by ID.'),
+        expect.stringContaining('---\nFetched by ID.'),
         'utf-8'
       );
     });

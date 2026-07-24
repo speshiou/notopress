@@ -490,7 +490,10 @@ async function main() {
     }
 
     const shouldPushWp = hasFlag({ flag: '--wp' });
-    const targetPostSlug = getFlagValue({ flag: '--post' });
+    const pushValue = getFlagValue({ flag: '--push' });
+    const targetSlugs = pushValue
+      ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
     
     const { allIndices } = await syncContent({ site, registry, isDryRun });
 
@@ -499,7 +502,7 @@ async function main() {
         site,
         registry,
         allIndices,
-        targetPostSlug,
+        targetSlugs,
         dryRun: isDryRun,
       });
     }

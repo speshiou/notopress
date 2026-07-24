@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { z } from 'zod';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
@@ -16,7 +17,7 @@ interface PushToWordPressArgs {
   site: Site;
   registry: Registry;
   allIndices: Map<string, VaultDirectoryIndex>;
-  targetPostSlug?: string;
+  targetSlugs?: string[];
   dryRun: boolean;
 }
 
@@ -26,6 +27,46 @@ interface WpFetchArgs {
   path: string;
   method?: string;
   body?: unknown;
+}
+
+interface WordPressPostPayload {
+  title: string;
+  content: string;
+  slug: string;
+  status: 'publish';
+  date?: string;
+}
+
+const WordPressContentTypeSchema = z.enum(['post', 'page']);
+const WordPressFrontmatterSchema = z.object({
+  wordpress: z.object({
+    type: WordPressContentTypeSchema.optional(),
+  }).optional(),
+}).passthrough();
+
+type WordPressContentType = z.infer<typeof WordPressContentTypeSchema>;
+type WordPressRestResource = {
+  contentType: WordPressContentType;
+  restBase: 'posts' | 'pages';
+};
+
+const WORDPRESS_REST_RESOURCES: Record<WordPressContentType, WordPressRestResource> = {
+  post: { contentType: 'post', restBase: 'posts' },
+  page: { contentType: 'page', restBase: 'pages' },
+};
+
+function getWordPressRestResource({
+  frontmatter,
+}: {
+  frontmatter: Record<string, unknown>;
+}): WordPressRestResource {
+  const result = WordPressFrontmatterSchema.safeParse(frontmatter);
+  if (!result.success) {
+    throw new Error('Invalid WordPress frontmatter. Expected wordpress.type to be "post" or "page".');
+  }
+
+  const contentType = result.data.wordpress?.type || 'post';
+  return WORDPRESS_REST_RESOURCES[contentType];
 }
 
 function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
@@ -105,7 +146,7 @@ export async function pushToWordPress({
   site,
   registry,
   allIndices,
-  targetPostSlug,
+  targetSlugs,
   dryRun,
 }: PushToWordPressArgs) {
   const credentials = site.wordpress;
@@ -124,8 +165,8 @@ export async function pushToWordPress({
   console.log(`\n📝 Preparing WordPress Publishing...`);
   console.log(`- Target Endpoint: ${endpoint}`);
   console.log(`- Authenticated As: ${credentials.username}`);
-  if (targetPostSlug) {
-    console.log(`- Target Single Post: ${targetPostSlug}`);
+  if (targetSlugs && targetSlugs.length > 0) {
+    console.log(`- Target Post Slugs: ${targetSlugs.join(', ')}`);
   }
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
@@ -147,8 +188,8 @@ export async function pushToWordPress({
       // Build the full hierarchical slug
       const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
 
-      // Filter by target post slug if specified
-      if (targetPostSlug && fullSlug !== targetPostSlug) {
+      // Filter by target post slugs if specified
+      if (targetSlugs && targetSlugs.length > 0 && !targetSlugs.includes(fullSlug)) {
         continue;
       }
 
@@ -162,8 +203,24 @@ export async function pushToWordPress({
     }
   }
 
-  if (targetPostSlug && postsToPublish.length === 0) {
-    throw new Error(`⨯ Could not find any post in the vault matching slug: "${targetPostSlug}"`);
+  if (targetSlugs && targetSlugs.length > 0) {
+    const foundSlugs = new Set(postsToPublish.map((p) => p.slug));
+    const missingSlugs = targetSlugs.filter((slug) => !foundSlugs.has(slug));
+    if (missingSlugs.length > 0) {
+      if (postsToPublish.length === 0) {
+        throw new Error(
+          `⨯ Could not find any posts in the vault matching slugs: ${targetSlugs
+            .map((s) => `"${s}"`)
+            .join(', ')}`
+        );
+      } else {
+        console.warn(
+          `⚠️ Warning: Could not find posts in the vault matching slugs: ${missingSlugs
+            .map((s) => `"${s}"`)
+            .join(', ')}`
+        );
+      }
+    }
   }
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
@@ -174,7 +231,8 @@ export async function pushToWordPress({
 
       // Read markdown and parse frontmatter
       const fileContent = await readFile(post.localPath, 'utf-8');
-      const { content: markdownBody } = matter(fileContent);
+      const { data, content: markdownBody } = matter(fileContent);
+      const wordpressResource = getWordPressRestResource({ frontmatter: data });
 
       // Strip first H1 from markdown to avoid duplicated titles, only if it's the first non-empty line of the document and not inside a code block
       const lines = markdownBody.split('\n');
@@ -239,52 +297,54 @@ export async function pushToWordPress({
       const existingPosts = await wpFetch({
         endpoint,
         credentials,
-        path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any`,
+        path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
       });
 
       const wpPostExists = existingPosts && existingPosts.length > 0;
       const wpPostId = wpPostExists ? existingPosts[0].id : null;
 
-      const payload = {
+      const payload: WordPressPostPayload = {
         title: post.title,
         content: wordpressBlockContent,
         slug: wpSlug,
         status: 'publish',
-        date: post.date,
       };
 
       if (wpPostExists) {
         if (dryRun) {
-          console.log(`  [DRY RUN] Would UPDATE WordPress post "${post.title}" (ID: ${wpPostId})`);
+          console.log(`  [DRY RUN] Would UPDATE WordPress ${wordpressResource.contentType} "${post.title}" (ID: ${wpPostId})`);
         } else {
           await wpFetch({
             endpoint,
             credentials,
-            path: `/wp/v2/posts/${wpPostId}`,
+            path: `/wp/v2/${wordpressResource.restBase}/${wpPostId}`,
             method: 'POST',
             body: payload,
           });
-          console.log(`  ✅ Successfully UPDATED WordPress post (ID: ${wpPostId})`);
+          console.log(`  ✅ Successfully UPDATED WordPress ${wordpressResource.contentType} (ID: ${wpPostId})`);
         }
       } else {
         if (dryRun) {
-          console.log(`  [DRY RUN] Would CREATE new WordPress post "${post.title}"`);
+          console.log(`  [DRY RUN] Would CREATE new WordPress ${wordpressResource.contentType} "${post.title}"`);
         } else {
           const newPost = await wpFetch({
             endpoint,
             credentials,
-            path: `/wp/v2/posts`,
+            path: `/wp/v2/${wordpressResource.restBase}`,
             method: 'POST',
-            body: payload,
+            body: {
+              ...payload,
+              date: post.date,
+            },
           });
-          console.log(`  ✅ Successfully CREATED new WordPress post (ID: ${newPost.id})`);
+          console.log(`  ✅ Successfully CREATED new WordPress ${wordpressResource.contentType} (ID: ${newPost.id})`);
         }
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
-      // We don't want to crash the whole sync if one post fails, but if single post targeted, we bubble up
-      if (targetPostSlug) {
+      // We don't want to crash the whole sync if one post fails, but if target slugs are specified, we bubble up
+      if (targetSlugs && targetSlugs.length > 0) {
         throw err;
       }
     }
@@ -779,15 +839,13 @@ export async function pullFromWordPress({
   const modifiedIso = parseWpDate(wpPost.modified, wpPost.modified_gmt);
   const decodedTitle = decodeHtmlEntities(wpPost.title.rendered);
 
-  // Prepend frontmatter and title heading
+  // Prepend frontmatter while preserving the WordPress body as-is.
   const frontmatter = [
     `---`,
     `title: "${decodedTitle.replace(/"/g, '\\"')}"`,
     `date: "${dateIso}"`,
     `updated: "${modifiedIso}"`,
     `---`,
-    `# ${decodedTitle}`,
-    ``,
     markdownBody,
     ``,
   ].join('\n');
