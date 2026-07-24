@@ -189,6 +189,56 @@ describe('WordPress Deployment Library', () => {
       expect(body.date).toBe('2026-06-16T13:00:00.000Z');
     });
 
+    it('should publish content with nested wordpress.type page frontmatter to the pages endpoint', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/pages') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/pages') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 321 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockResolvedValue([
+        '---',
+        'title: "About"',
+        'wordpress:',
+        '  type: page',
+        '---',
+        '# About',
+        '',
+        'Page body.',
+      ].join('\n'));
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetPostSlug: 'post-one',
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/pages?slug=post-one'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/pages'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts'),
+        expect.objectContaining({ method: 'GET' })
+      );
+    });
+
     it('should publish markdown tables as striped WordPress table figures', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {

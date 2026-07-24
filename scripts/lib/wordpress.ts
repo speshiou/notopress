@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { z } from 'zod';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
@@ -34,6 +35,38 @@ interface WordPressPostPayload {
   slug: string;
   status: 'publish';
   date?: string;
+}
+
+const WordPressContentTypeSchema = z.enum(['post', 'page']);
+const WordPressFrontmatterSchema = z.object({
+  wordpress: z.object({
+    type: WordPressContentTypeSchema.optional(),
+  }).optional(),
+}).passthrough();
+
+type WordPressContentType = z.infer<typeof WordPressContentTypeSchema>;
+type WordPressRestResource = {
+  contentType: WordPressContentType;
+  restBase: 'posts' | 'pages';
+};
+
+const WORDPRESS_REST_RESOURCES: Record<WordPressContentType, WordPressRestResource> = {
+  post: { contentType: 'post', restBase: 'posts' },
+  page: { contentType: 'page', restBase: 'pages' },
+};
+
+function getWordPressRestResource({
+  frontmatter,
+}: {
+  frontmatter: Record<string, unknown>;
+}): WordPressRestResource {
+  const result = WordPressFrontmatterSchema.safeParse(frontmatter);
+  if (!result.success) {
+    throw new Error('Invalid WordPress frontmatter. Expected wordpress.type to be "post" or "page".');
+  }
+
+  const contentType = result.data.wordpress?.type || 'post';
+  return WORDPRESS_REST_RESOURCES[contentType];
 }
 
 function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
@@ -182,7 +215,8 @@ export async function pushToWordPress({
 
       // Read markdown and parse frontmatter
       const fileContent = await readFile(post.localPath, 'utf-8');
-      const { content: markdownBody } = matter(fileContent);
+      const { data, content: markdownBody } = matter(fileContent);
+      const wordpressResource = getWordPressRestResource({ frontmatter: data });
 
       // Strip first H1 from markdown to avoid duplicated titles, only if it's the first non-empty line of the document and not inside a code block
       const lines = markdownBody.split('\n');
@@ -247,7 +281,7 @@ export async function pushToWordPress({
       const existingPosts = await wpFetch({
         endpoint,
         credentials,
-        path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any`,
+        path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
       });
 
       const wpPostExists = existingPosts && existingPosts.length > 0;
@@ -262,32 +296,32 @@ export async function pushToWordPress({
 
       if (wpPostExists) {
         if (dryRun) {
-          console.log(`  [DRY RUN] Would UPDATE WordPress post "${post.title}" (ID: ${wpPostId})`);
+          console.log(`  [DRY RUN] Would UPDATE WordPress ${wordpressResource.contentType} "${post.title}" (ID: ${wpPostId})`);
         } else {
           await wpFetch({
             endpoint,
             credentials,
-            path: `/wp/v2/posts/${wpPostId}`,
+            path: `/wp/v2/${wordpressResource.restBase}/${wpPostId}`,
             method: 'POST',
             body: payload,
           });
-          console.log(`  ✅ Successfully UPDATED WordPress post (ID: ${wpPostId})`);
+          console.log(`  ✅ Successfully UPDATED WordPress ${wordpressResource.contentType} (ID: ${wpPostId})`);
         }
       } else {
         if (dryRun) {
-          console.log(`  [DRY RUN] Would CREATE new WordPress post "${post.title}"`);
+          console.log(`  [DRY RUN] Would CREATE new WordPress ${wordpressResource.contentType} "${post.title}"`);
         } else {
           const newPost = await wpFetch({
             endpoint,
             credentials,
-            path: `/wp/v2/posts`,
+            path: `/wp/v2/${wordpressResource.restBase}`,
             method: 'POST',
             body: {
               ...payload,
               date: post.date,
             },
           });
-          console.log(`  ✅ Successfully CREATED new WordPress post (ID: ${newPost.id})`);
+          console.log(`  ✅ Successfully CREATED new WordPress ${wordpressResource.contentType} (ID: ${newPost.id})`);
         }
       }
     } catch (err) {
