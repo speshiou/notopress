@@ -17,7 +17,7 @@ interface PushToWordPressArgs {
   site: Site;
   registry: Registry;
   allIndices: Map<string, VaultDirectoryIndex>;
-  targetPostSlug?: string;
+  targetSlugs?: string[];
   dryRun: boolean;
 }
 
@@ -146,7 +146,7 @@ export async function pushToWordPress({
   site,
   registry,
   allIndices,
-  targetPostSlug,
+  targetSlugs,
   dryRun,
 }: PushToWordPressArgs) {
   const credentials = site.wordpress;
@@ -165,8 +165,8 @@ export async function pushToWordPress({
   console.log(`\n📝 Preparing WordPress Publishing...`);
   console.log(`- Target Endpoint: ${endpoint}`);
   console.log(`- Authenticated As: ${credentials.username}`);
-  if (targetPostSlug) {
-    console.log(`- Target Single Post: ${targetPostSlug}`);
+  if (targetSlugs && targetSlugs.length > 0) {
+    console.log(`- Target Post Slugs: ${targetSlugs.join(', ')}`);
   }
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
@@ -188,8 +188,8 @@ export async function pushToWordPress({
       // Build the full hierarchical slug
       const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
 
-      // Filter by target post slug if specified
-      if (targetPostSlug && fullSlug !== targetPostSlug) {
+      // Filter by target post slugs if specified
+      if (targetSlugs && targetSlugs.length > 0 && !targetSlugs.includes(fullSlug)) {
         continue;
       }
 
@@ -203,8 +203,24 @@ export async function pushToWordPress({
     }
   }
 
-  if (targetPostSlug && postsToPublish.length === 0) {
-    throw new Error(`⨯ Could not find any post in the vault matching slug: "${targetPostSlug}"`);
+  if (targetSlugs && targetSlugs.length > 0) {
+    const foundSlugs = new Set(postsToPublish.map((p) => p.slug));
+    const missingSlugs = targetSlugs.filter((slug) => !foundSlugs.has(slug));
+    if (missingSlugs.length > 0) {
+      if (postsToPublish.length === 0) {
+        throw new Error(
+          `⨯ Could not find any posts in the vault matching slugs: ${targetSlugs
+            .map((s) => `"${s}"`)
+            .join(', ')}`
+        );
+      } else {
+        console.warn(
+          `⚠️ Warning: Could not find posts in the vault matching slugs: ${missingSlugs
+            .map((s) => `"${s}"`)
+            .join(', ')}`
+        );
+      }
+    }
   }
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
@@ -327,8 +343,8 @@ export async function pushToWordPress({
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
-      // We don't want to crash the whole sync if one post fails, but if single post targeted, we bubble up
-      if (targetPostSlug) {
+      // We don't want to crash the whole sync if one post fails, but if target slugs are specified, we bubble up
+      if (targetSlugs && targetSlugs.length > 0) {
         throw err;
       }
     }

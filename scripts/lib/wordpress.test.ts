@@ -125,7 +125,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -169,7 +169,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'blog/post-two',
+        targetSlugs: ['blog/post-two'],
         dryRun: false,
       });
 
@@ -221,7 +221,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -268,7 +268,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -318,7 +318,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -409,7 +409,7 @@ describe('WordPress Deployment Library', () => {
         site: { ...mockSite, noteIncludePaths: ['_includes'] },
         registry: mockRegistry,
         allIndices: indicesWithEmbed,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -433,7 +433,7 @@ describe('WordPress Deployment Library', () => {
           site: { ...mockSite, imageHost: undefined },
           registry: { ...mockRegistry, imageHost: undefined },
           allIndices: mockIndices,
-          targetPostSlug: 'post-one',
+          targetSlugs: ['post-one'],
           dryRun: false,
         })
       ).rejects.toThrow('imageHost');
@@ -455,7 +455,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: true,
       });
 
@@ -494,7 +494,7 @@ describe('WordPress Deployment Library', () => {
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        targetPostSlug: 'post-one',
+        targetSlugs: ['post-one'],
         dryRun: false,
       });
 
@@ -504,6 +504,91 @@ describe('WordPress Deployment Library', () => {
       const body = JSON.parse(postCall![1].body);
       expect(body.content).toContain('# This is a comment');
       expect(body.content).toContain('<h1>Real Title</h1>');
+    });
+
+    it('should support multiple target slugs', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one', 'blog/post-two'],
+        dryRun: false,
+      });
+
+      // Verify it queried both slug endpoints
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=post-one'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=blog-post-two'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      // Verify two POST calls occurred
+      const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
+      expect(postCalls.length).toBe(2);
+    });
+
+    it('should throw an error if none of the target slugs are found', async () => {
+      await expect(
+        pushToWordPress({
+          site: mockSite,
+          registry: mockRegistry,
+          allIndices: mockIndices,
+          targetSlugs: ['non-existent-slug'],
+          dryRun: false,
+        })
+      ).rejects.toThrow('Could not find any posts in the vault matching slugs: "non-existent-slug"');
+    });
+
+    it('should warn but proceed if only a subset of slugs are missing', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 789 }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one', 'non-existent-slug'],
+        dryRun: false,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Warning: Could not find posts in the vault matching slugs: "non-existent-slug"')
+      );
+      warnSpy.mockRestore();
     });
   });
 
