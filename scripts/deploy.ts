@@ -176,6 +176,7 @@ async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Re
     `s3://${site.bucketName}/${site.siteId}/`,
     '--endpoint-url',
     endpoint,
+    '--size-only',
     '--exclude',
     '*.DS_Store',
     '--exclude',
