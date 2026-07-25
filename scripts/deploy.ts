@@ -403,7 +403,12 @@ async function syncContent({
   isDryRun: boolean;
 }) {
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
-  await ensureVaultAgentRules({ vaultPath: site.vaultPath, dryRun: isDryRun });
+  await ensureVaultAgentRules({
+    vaultPath: site.vaultPath,
+    siteId: site.siteId,
+    isWordPressEnabled: Boolean(site.wordpress),
+    dryRun: isDryRun,
+  });
 
   const { rootContentIndex, vaultRootIndex, allIndices } = await generateIndices({
     vaultPath: site.vaultPath,

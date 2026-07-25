@@ -1,0 +1,15 @@
+# WordPress Integration & Commands
+- **Sync & Push Commands**:
+  - `npm run sync -- --site {{siteId}} --wp`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
+  - `npm run sync -- --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
+  - `npm run sync -- --site {{siteId}} --wp --dry-run`: Previews WordPress API mutations without altering remote posts.
+- **Pull Commands**:
+  - `npm run sync -- --site {{siteId}} --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
+  - `wp post list --post_type=post`: Lists published WordPress posts.
+  - `wp cache flush`: Clears WordPress object cache.
+  - `wp plugin list`: Displays installed WordPress plugins.
+- **WordPress Conventions & Safety**:
+  - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
+  - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
+  - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.

@@ -4,10 +4,13 @@ import { exists } from './files';
 
 type Logger = Pick<typeof console, 'log'>;
 
+export type RuleModule = 'base' | 'wordpress';
+
 export type AgentRulesDeps = {
   exists: (path: string) => Promise<boolean>;
   readFile: (path: string, encoding: BufferEncoding) => Promise<string>;
   writeFile: (path: string, content: string) => Promise<void>;
+  readTemplate: (moduleName: RuleModule) => Promise<string>;
   joinPath: (...paths: string[]) => string;
   logger: Logger;
 };
@@ -16,31 +19,29 @@ const AGENTS_FILENAME = 'AGENTS.md';
 const BEGIN_MARKER = '<!-- BEGIN:notopress-vault-agent-rules -->';
 const END_MARKER = '<!-- END:notopress-vault-agent-rules -->';
 
-const VAULT_AGENT_RULES = `${BEGIN_MARKER}
-# This is a Notopress vault
+export function renderManagedBlock({
+  baseTemplate,
+  wordpressTemplate,
+  siteId,
+  isWordPressEnabled,
+}: {
+  baseTemplate: string;
+  wordpressTemplate?: string;
+  siteId?: string;
+  isWordPressEnabled?: boolean;
+}): string {
+  const blocks: string[] = [baseTemplate.trim()];
 
-This vault is synced by Notopress. Edit source Markdown files and source assets, but do not manually edit generated files such as \`root.json\`, directory-level \`index.json\`, or generated thumbnails. Regenerate them with the Notopress sync tooling when needed.
+  if (isWordPressEnabled && wordpressTemplate) {
+    blocks.push(wordpressTemplate.trim());
+  }
 
-Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.
+  const rawContent = blocks.join('\n\n');
+  const targetSiteId = siteId || '<site-id>';
+  const processedContent = rawContent.replace(/\{\{siteId\}\}/g, targetSiteId);
 
-For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: \`*Feature comparison table.*\`. Plain paragraphs are treated as normal article text, not captions.
-
-# WordPress Integration & Commands
-- **Sync & Push Commands**:
-  - \`npm run sync -- --site <site-id> --wp\`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
-  - \`npm run sync -- --site <site-id> --wp --push <slug1,slug2>\`: Publishes specific post slugs to WordPress.
-  - \`npm run sync -- --site <site-id> --wp --dry-run\`: Previews WordPress API mutations without altering remote posts.
-- **Pull Commands**:
-  - \`npm run sync -- --site <site-id> --pull <slug-or-id>\`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
-- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
-  - \`wp post list --post_type=post\`: Lists published WordPress posts.
-  - \`wp cache flush\`: Clears WordPress object cache.
-  - \`wp plugin list\`: Displays installed WordPress plugins.
-- **WordPress Conventions & Safety**:
-  - Keep WordPress HTML/Gutenberg block conversion logic centralized in \`src/lib/wordpress-blocks.ts\` and \`scripts/lib/wordpress.ts\`.
-  - Pass WordPress credentials (\`endpoint\`, \`username\`, \`applicationPassword\`) via \`registry.json\` or environment variables; never hardcode API keys or credentials in code or tests.
-  - Always verify WordPress post updates using \`--dry-run\` before applying batch sync operations to production endpoints.
-${END_MARKER}`;
+  return `${BEGIN_MARKER}\n${processedContent}\n${END_MARKER}`;
+}
 
 function ensureTrailingNewline(content: string): string {
   return content.endsWith('\n') ? content : `${content}\n`;
@@ -88,10 +89,30 @@ function replaceManagedBlock({ content, block }: { content: string; block: strin
 
 export function createAgentRulesWriter(deps: AgentRulesDeps) {
   return {
-    async ensureVaultAgentRules({ vaultPath, dryRun }: { vaultPath: string; dryRun: boolean }): Promise<void> {
+    async ensureVaultAgentRules({
+      vaultPath,
+      siteId,
+      isWordPressEnabled,
+      dryRun,
+    }: {
+      vaultPath: string;
+      siteId?: string;
+      isWordPressEnabled?: boolean;
+      dryRun: boolean;
+    }): Promise<void> {
+      const baseTemplate = await deps.readTemplate('base');
+      const wordpressTemplate = isWordPressEnabled ? await deps.readTemplate('wordpress') : undefined;
+
+      const managedBlock = renderManagedBlock({
+        baseTemplate,
+        wordpressTemplate,
+        siteId,
+        isWordPressEnabled,
+      });
+
       const agentsPath = deps.joinPath(vaultPath, AGENTS_FILENAME);
       const existingContent = (await deps.exists(agentsPath)) ? await deps.readFile(agentsPath, 'utf-8') : '';
-      const nextContent = ensureTrailingNewline(replaceManagedBlock({ content: existingContent, block: VAULT_AGENT_RULES }));
+      const nextContent = ensureTrailingNewline(replaceManagedBlock({ content: existingContent, block: managedBlock }));
 
       if (nextContent === ensureTrailingNewline(existingContent)) {
         deps.logger.log(`✅ ${AGENTS_FILENAME} agent rules are up to date.`);
@@ -113,6 +134,11 @@ const defaultAgentRulesWriter = createAgentRulesWriter({
   exists,
   readFile,
   writeFile,
+  readTemplate: async (moduleName: RuleModule) => {
+    const templateFileName = moduleName === 'base' ? 'vault-base.md' : 'wordpress.md';
+    const templatePath = path.join(process.cwd(), 'src', 'templates', 'agent-rules', templateFileName);
+    return readFile(templatePath, 'utf-8');
+  },
   joinPath: path.join,
   logger: console,
 });

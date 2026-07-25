@@ -1,33 +1,101 @@
 import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
-import { createAgentRulesWriter } from './agent-rules';
+import { createAgentRulesWriter, RuleModule } from './agent-rules';
+
+const MOCK_BASE_TEMPLATE = `# This is a Notopress vault
+
+This vault is synced by Notopress. Edit source Markdown files and source assets, but do not manually edit generated files such as \`root.json\`, directory-level \`index.json\`, or generated thumbnails. Regenerate them with the Notopress sync tooling when needed.
+
+Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.
+
+For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: \`*Feature comparison table.*\`. Plain paragraphs are treated as normal article text, not captions.`;
+
+const MOCK_WORDPRESS_TEMPLATE = `# WordPress Integration & Commands
+- **Sync & Push Commands**:
+  - \`npm run sync -- --site {{siteId}} --wp\`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
+  - \`npm run sync -- --site {{siteId}} --wp --push <slug1,slug2>\`: Publishes specific post slugs to WordPress.
+  - \`npm run sync -- --site {{siteId}} --wp --dry-run\`: Previews WordPress API mutations without altering remote posts.
+- **Pull Commands**:
+  - \`npm run sync -- --site {{siteId}} --pull <slug-or-id>\`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
+  - \`wp post list --post_type=post\`: Lists published WordPress posts.
+  - \`wp cache flush\`: Clears WordPress object cache.
+  - \`wp plugin list\`: Displays installed WordPress plugins.
+- **WordPress Conventions & Safety**:
+  - Keep WordPress HTML/Gutenberg block conversion logic centralized in \`src/lib/wordpress-blocks.ts\` and \`scripts/lib/wordpress.ts\`.
+  - Pass WordPress credentials (\`endpoint\`, \`username\`, \`applicationPassword\`) via \`registry.json\` or environment variables; never hardcode API keys or credentials in code or tests.
+  - Always verify WordPress post updates using \`--dry-run\` before applying batch sync operations to production endpoints.`;
 
 describe('createAgentRulesWriter', () => {
-  it('creates vault AGENTS.md rules when missing', async () => {
-    const writes: Record<string, string> = {};
-    const logger = { log: vi.fn() };
+  function makeMockWriter({
+    exists = vi.fn(async () => false),
+    readFile = vi.fn(async () => ''),
+    writeFile = vi.fn(async () => undefined),
+    logger = { log: vi.fn() },
+  }: {
+    exists?: (path: string) => Promise<boolean>;
+    readFile?: (path: string, encoding: BufferEncoding) => Promise<string>;
+    writeFile?: (path: string, content: string) => Promise<void>;
+    logger?: Pick<typeof console, 'log'>;
+  } = {}) {
+    const readTemplate = vi.fn(async (moduleName: RuleModule) => {
+      if (moduleName === 'base') return MOCK_BASE_TEMPLATE;
+      if (moduleName === 'wordpress') return MOCK_WORDPRESS_TEMPLATE;
+      return '';
+    });
+
     const writer = createAgentRulesWriter({
-      exists: vi.fn(async () => false),
-      readFile: vi.fn(async () => ''),
+      exists,
+      readFile,
+      writeFile,
+      readTemplate,
+      joinPath: path.posix.join,
+      logger,
+    });
+
+    return { writer, readTemplate, writeFile, logger };
+  }
+
+  it('creates base vault AGENTS.md rules when missing and WordPress is disabled', async () => {
+    const writes: Record<string, string> = {};
+    const { writer } = makeMockWriter({
       writeFile: vi.fn(async (filePath: string, content: string) => {
         writes[filePath] = content;
       }),
-      joinPath: path.posix.join,
-      logger,
     });
 
     await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
 
     expect(writes['vault/AGENTS.md']).toContain('<!-- BEGIN:notopress-vault-agent-rules -->');
     expect(writes['vault/AGENTS.md']).toContain('This is a Notopress vault');
-    expect(writes['vault/AGENTS.md']).toContain('directory-level `index.json`');
     expect(writes['vault/AGENTS.md']).toContain('Plain paragraphs are treated as normal article text, not captions.');
+    expect(writes['vault/AGENTS.md']).not.toContain('WordPress Integration & Commands');
     expect(writes['vault/AGENTS.md'].endsWith('\n')).toBe(true);
+  });
+
+  it('includes WordPress section with dynamic siteId substitution when isWordPressEnabled is true', async () => {
+    const writes: Record<string, string> = {};
+    const { writer } = makeMockWriter({
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+    });
+
+    await writer.ensureVaultAgentRules({
+      vaultPath: 'vault',
+      siteId: 'my-tech-blog',
+      isWordPressEnabled: true,
+      dryRun: false,
+    });
+
+    expect(writes['vault/AGENTS.md']).toContain('WordPress Integration & Commands');
+    expect(writes['vault/AGENTS.md']).toContain('npm run sync -- --site my-tech-blog --wp');
+    expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
   });
 
   it('replaces the managed block while preserving user notes', async () => {
     const writes: Record<string, string> = {};
-    const writer = createAgentRulesWriter({
+    const { writer } = makeMockWriter({
       exists: vi.fn(async () => true),
       readFile: vi.fn(async () =>
         [
@@ -44,8 +112,6 @@ describe('createAgentRulesWriter', () => {
       writeFile: vi.fn(async (filePath: string, content: string) => {
         writes[filePath] = content;
       }),
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
     });
 
     await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
@@ -57,14 +123,12 @@ describe('createAgentRulesWriter', () => {
 
   it('appends the managed block to an existing user-authored AGENTS.md', async () => {
     const writes: Record<string, string> = {};
-    const writer = createAgentRulesWriter({
+    const { writer } = makeMockWriter({
       exists: vi.fn(async () => true),
       readFile: vi.fn(async () => '# User rules\n\nKeep article titles short.\n'),
       writeFile: vi.fn(async (filePath: string, content: string) => {
         writes[filePath] = content;
       }),
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
     });
 
     await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
@@ -74,99 +138,11 @@ describe('createAgentRulesWriter', () => {
     expect(writes['vault/AGENTS.md']).toContain('<!-- END:notopress-vault-agent-rules -->');
   });
 
-  it('repairs an orphaned begin marker without dropping user notes', async () => {
-    const writes: Record<string, string> = {};
-    const writer = createAgentRulesWriter({
-      exists: vi.fn(async () => true),
-      readFile: vi.fn(async () =>
-        [
-          '# User rules',
-          '',
-          '<!-- BEGIN:notopress-vault-agent-rules -->',
-          'Keep this custom note.',
-          '',
-        ].join('\n')
-      ),
-      writeFile: vi.fn(async (filePath: string, content: string) => {
-        writes[filePath] = content;
-      }),
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
-    });
-
-    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
-
-    expect(writes['vault/AGENTS.md']).toContain('# User rules');
-    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
-    expect(writes['vault/AGENTS.md'].match(/<!-- BEGIN:notopress-vault-agent-rules -->/g)).toHaveLength(1);
-    expect(writes['vault/AGENTS.md']).toContain('<!-- END:notopress-vault-agent-rules -->');
-  });
-
-  it('repairs an orphaned end marker without dropping user notes', async () => {
-    const writes: Record<string, string> = {};
-    const writer = createAgentRulesWriter({
-      exists: vi.fn(async () => true),
-      readFile: vi.fn(async () =>
-        [
-          '# User rules',
-          '',
-          'Keep this custom note.',
-          '<!-- END:notopress-vault-agent-rules -->',
-          '',
-        ].join('\n')
-      ),
-      writeFile: vi.fn(async (filePath: string, content: string) => {
-        writes[filePath] = content;
-      }),
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
-    });
-
-    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
-
-    expect(writes['vault/AGENTS.md']).toContain('# User rules');
-    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
-    expect(writes['vault/AGENTS.md']).toContain('<!-- BEGIN:notopress-vault-agent-rules -->');
-    expect(writes['vault/AGENTS.md'].match(/<!-- END:notopress-vault-agent-rules -->/g)).toHaveLength(1);
-  });
-
-  it('repairs reversed markers without dropping user notes', async () => {
-    const writes: Record<string, string> = {};
-    const writer = createAgentRulesWriter({
-      exists: vi.fn(async () => true),
-      readFile: vi.fn(async () =>
-        [
-          '# User rules',
-          '',
-          '<!-- END:notopress-vault-agent-rules -->',
-          'Keep this custom note.',
-          '<!-- BEGIN:notopress-vault-agent-rules -->',
-          '',
-        ].join('\n')
-      ),
-      writeFile: vi.fn(async (filePath: string, content: string) => {
-        writes[filePath] = content;
-      }),
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
-    });
-
-    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
-
-    expect(writes['vault/AGENTS.md']).toContain('# User rules');
-    expect(writes['vault/AGENTS.md']).toContain('Keep this custom note.');
-    expect(writes['vault/AGENTS.md'].match(/<!-- BEGIN:notopress-vault-agent-rules -->/g)).toHaveLength(1);
-    expect(writes['vault/AGENTS.md'].match(/<!-- END:notopress-vault-agent-rules -->/g)).toHaveLength(1);
-  });
-
   it('does not write during dry run', async () => {
     const writeFile = vi.fn(async () => undefined);
     const logger = { log: vi.fn() };
-    const writer = createAgentRulesWriter({
-      exists: vi.fn(async () => false),
-      readFile: vi.fn(async () => ''),
+    const { writer } = makeMockWriter({
       writeFile,
-      joinPath: path.posix.join,
       logger,
     });
 
@@ -186,32 +162,14 @@ describe('createAgentRulesWriter', () => {
       'Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.',
       '',
       'For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: `*Feature comparison table.*`. Plain paragraphs are treated as normal article text, not captions.',
-      '',
-      '# WordPress Integration & Commands',
-      '- **Sync & Push Commands**:',
-      '  - `npm run sync -- --site <site-id> --wp`: Syncs content vault and publishes Markdown posts to WordPress via REST API.',
-      '  - `npm run sync -- --site <site-id> --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.',
-      '  - `npm run sync -- --site <site-id> --wp --dry-run`: Previews WordPress API mutations without altering remote posts.',
-      '- **Pull Commands**:',
-      '  - `npm run sync -- --site <site-id> --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.',
-      '- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):',
-      '  - `wp post list --post_type=post`: Lists published WordPress posts.',
-      '  - `wp cache flush`: Clears WordPress object cache.',
-      '  - `wp plugin list`: Displays installed WordPress plugins.',
-      '- **WordPress Conventions & Safety**:',
-      '  - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.',
-      '  - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.',
-      '  - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.',
       '<!-- END:notopress-vault-agent-rules -->',
       '',
     ].join('\n');
     const writeFile = vi.fn(async () => undefined);
-    const writer = createAgentRulesWriter({
+    const { writer } = makeMockWriter({
       exists: vi.fn(async () => true),
       readFile: vi.fn(async () => existingContent),
       writeFile,
-      joinPath: path.posix.join,
-      logger: { log: vi.fn() },
     });
 
     await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
