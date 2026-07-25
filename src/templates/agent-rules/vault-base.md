@@ -5,3 +5,8 @@ This vault is synced by Notopress. Edit source Markdown files and source assets,
 Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.
 
 For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: `*Feature comparison table.*`. Plain paragraphs are treated as normal article text, not captions.
+
+# Notopress Commands
+- **Sync Vault**:
+  - `notopress sync --site {{siteId}}`: Syncs content vault, generates indices and thumbnails.
+  - `notopress sync --site {{siteId}} --dry-run`: Previews sync changes without writing files.

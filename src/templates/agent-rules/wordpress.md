@@ -1,10 +1,10 @@
 # WordPress Integration & Commands
 - **Sync & Push Commands**:
-  - `npm run sync -- --site {{siteId}} --wp`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
-  - `npm run sync -- --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
-  - `npm run sync -- --site {{siteId}} --wp --dry-run`: Previews WordPress API mutations without altering remote posts.
+  - `notopress sync --site {{siteId}} --wp`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
+  - `notopress sync --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
+  - `notopress sync --site {{siteId}} --wp --dry-run`: Previews WordPress API mutations without altering remote posts.
 - **Pull Commands**:
-  - `npm run sync -- --site {{siteId}} --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+  - `notopress sync --site {{siteId}} --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.

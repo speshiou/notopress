@@ -2,6 +2,9 @@
   "name": "notopress",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "notopress": "./bin/notopress.js"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
