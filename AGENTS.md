@@ -31,6 +31,22 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - If an absolute path is required for local configuration, use placeholder strings or rely strictly on environment variables.
 - Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
 
+# WordPress Integration & Projects
+- **Sync & Push Commands**:
+  - `npm run sync -- --site <site-id> --wp`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
+  - `npm run sync -- --site <site-id> --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
+  - `npm run sync -- --site <site-id> --wp --dry-run`: Previews WordPress API mutations without altering remote posts.
+- **Pull Commands**:
+  - `npm run sync -- --site <site-id> --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
+  - `wp post list --post_type=post`: Lists published WordPress posts.
+  - `wp cache flush`: Clears WordPress object cache.
+  - `wp plugin list`: Displays installed WordPress plugins.
+- **WordPress Conventions & Safety**:
+  - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
+  - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
+  - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
+
 # Skills
 Consult the `skills/` directory for specific guides and automation patterns:
 - [Pull Request Creation](skills/pull-request/SKILL.md)
