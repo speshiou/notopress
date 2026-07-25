@@ -8,5 +8,5 @@ For captions, use a single italic paragraph immediately after the media or table
 
 # Notopress Commands
 - **Sync Vault**:
-  - `notopress sync --site {{siteId}}`: Syncs content vault, generates indices and thumbnails.
-  - `notopress sync --site {{siteId}} --dry-run`: Previews sync changes without writing files.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}}`: Syncs content vault, generates indices and thumbnails.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --dry-run`: Previews sync changes without writing files.

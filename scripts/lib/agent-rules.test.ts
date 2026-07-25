@@ -12,11 +12,11 @@ For captions, use a single italic paragraph immediately after the media or table
 
 const MOCK_WORDPRESS_TEMPLATE = `# WordPress Integration & Commands
 - **Sync & Push Commands**:
-  - \`npm run sync -- --site {{siteId}} --wp\`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
-  - \`npm run sync -- --site {{siteId}} --wp --push <slug1,slug2>\`: Publishes specific post slugs to WordPress.
-  - \`npm run sync -- --site {{siteId}} --wp --dry-run\`: Previews WordPress API mutations without altering remote posts.
+  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp\`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
+  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push <slug1,slug2>\`: Publishes specific post slugs to WordPress.
+  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --dry-run\`: Previews WordPress API mutations without altering remote posts.
 - **Pull Commands**:
-  - \`npm run sync -- --site {{siteId}} --pull <slug-or-id>\`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --pull <slug-or-id>\`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - \`wp post list --post_type=post\`: Lists published WordPress posts.
   - \`wp cache flush\`: Clears WordPress object cache.
@@ -84,13 +84,15 @@ describe('createAgentRulesWriter', () => {
     await writer.ensureVaultAgentRules({
       vaultPath: 'vault',
       siteId: 'my-tech-blog',
+      notopressPath: '/path/to/notopress',
       isWordPressEnabled: true,
       dryRun: false,
     });
 
     expect(writes['vault/AGENTS.md']).toContain('WordPress Integration & Commands');
-    expect(writes['vault/AGENTS.md']).toContain('npm run sync -- --site my-tech-blog --wp');
+    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run sync -- --site my-tech-blog --wp');
     expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
+    expect(writes['vault/AGENTS.md']).not.toContain('{{notopressPath}}');
   });
 
   it('replaces the managed block while preserving user notes', async () => {

@@ -23,11 +23,13 @@ export function renderManagedBlock({
   baseTemplate,
   wordpressTemplate,
   siteId,
+  notopressPath,
   isWordPressEnabled,
 }: {
   baseTemplate: string;
   wordpressTemplate?: string;
   siteId?: string;
+  notopressPath?: string;
   isWordPressEnabled?: boolean;
 }): string {
   const blocks: string[] = [baseTemplate.trim()];
@@ -38,7 +40,10 @@ export function renderManagedBlock({
 
   const rawContent = blocks.join('\n\n');
   const targetSiteId = siteId || '<site-id>';
-  const processedContent = rawContent.replace(/\{\{siteId\}\}/g, targetSiteId);
+  const targetNotopressPath = notopressPath || '/path/to/notopress';
+  const processedContent = rawContent
+    .replace(/\{\{siteId\}\}/g, targetSiteId)
+    .replace(/\{\{notopressPath\}\}/g, targetNotopressPath);
 
   return `${BEGIN_MARKER}\n${processedContent}\n${END_MARKER}`;
 }
@@ -92,11 +97,13 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
     async ensureVaultAgentRules({
       vaultPath,
       siteId,
+      notopressPath = process.cwd(),
       isWordPressEnabled,
       dryRun,
     }: {
       vaultPath: string;
       siteId?: string;
+      notopressPath?: string;
       isWordPressEnabled?: boolean;
       dryRun: boolean;
     }): Promise<void> {
@@ -107,6 +114,7 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
         baseTemplate,
         wordpressTemplate,
         siteId,
+        notopressPath,
         isWordPressEnabled,
       });
 
