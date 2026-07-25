@@ -93,6 +93,9 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
           const outputPath = deps.joinPath(sourceDir, thumbnailRelPath);
           const targetStat = await deps.getFileStat(outputPath);
 
+          // Skip image re-encoding if the thumbnail exists, is non-empty, and its modification timestamp
+          // is newer than or equal to the source image's timestamp. This avoids CPU re-encoding work
+          // and preserves local file modification times for S3 sync (#38).
           const isUpToDate =
             sourceStat !== null &&
             targetStat !== null &&

@@ -169,6 +169,8 @@ async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Re
   // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
   // and not the directory itself.
   // Each site is synced to its own subdirectory in the bucket: /{site-id}/*
+  // We include '--size-only' to skip uploading existing image assets and thumbnails whose size matches
+  // the remote object, avoiding redundant uploads when local modification timestamps change (#38).
   const args = [
     's3',
     'sync',
