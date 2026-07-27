@@ -660,6 +660,32 @@ describe('WordPress Deployment Library', () => {
 
       expect(mockFetch).toHaveBeenCalled();
     });
+
+    it('should mark all posts as synced without calling WordPress REST API when markSynced is true', async () => {
+      const writes: Record<string, string> = {};
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFile).mockResolvedValue('# Post content');
+      vi.mocked(writeFile).mockImplementation(async (filePath, content) => {
+        writes[String(filePath)] = String(content);
+      });
+
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        markSynced: true,
+        dryRun: false,
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(writes['/mock/vault/.notopress-sync.json']).toBeDefined();
+      const savedState = JSON.parse(writes['/mock/vault/.notopress-sync.json']);
+      expect(savedState.wordpress['post-one']).toBeDefined();
+      expect(savedState.wordpress['blog/post-two']).toBeDefined();
+    });
   });
 
   describe('restoreLocalImagePath', () => {

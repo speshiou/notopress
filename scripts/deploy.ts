@@ -498,7 +498,8 @@ async function main() {
     }
 
     const hasPushFlag = hasFlag({ flag: '--push' });
-    const shouldPushWp = hasFlag({ flag: '--wp' }) || hasPushFlag;
+    const markSynced = hasFlag({ flag: '--mark-synced' });
+    const shouldPushWp = hasFlag({ flag: '--wp' }) || hasPushFlag || markSynced;
     const forcePush = hasFlag({ flag: '--force' });
     const pushValue = getFlagValue({ flag: '--push' });
     const targetSlugs = pushValue && pushValue !== 'true'
@@ -514,6 +515,7 @@ async function main() {
         allIndices,
         targetSlugs,
         force: forcePush,
+        markSynced,
         dryRun: isDryRun,
       });
     }

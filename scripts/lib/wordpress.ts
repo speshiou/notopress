@@ -22,6 +22,7 @@ interface PushToWordPressArgs {
   allIndices: Map<string, VaultDirectoryIndex>;
   targetSlugs?: string[];
   force?: boolean;
+  markSynced?: boolean;
   dryRun: boolean;
 }
 
@@ -152,6 +153,7 @@ export async function pushToWordPress({
   allIndices,
   targetSlugs,
   force,
+  markSynced,
   dryRun,
 }: PushToWordPressArgs) {
   const credentials = site.wordpress;
@@ -236,6 +238,27 @@ export async function pushToWordPress({
   }
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
+
+  if (markSynced) {
+    console.log(`\n📝 Initializing WordPress Sync State (marking vault posts as synced)...`);
+    let markedCount = 0;
+    for (const post of postsToPublish) {
+      const fileContent = await readFile(post.localPath, 'utf-8');
+      const currentHash = computeContentHash(fileContent);
+      wpSyncState[post.slug] = {
+        contentHash: currentHash,
+        syncedAt: new Date().toISOString(),
+      };
+      markedCount += 1;
+      console.log(`  ✓ Marked "${post.title}" (slug: ${post.slug}) as synced.`);
+    }
+
+    if (!dryRun && markedCount > 0) {
+      await saveSyncState({ vaultPath: site.vaultPath, syncState });
+    }
+    console.log(`\n✅ Successfully marked ${markedCount} post(s) as synced in .notopress-sync.json.`);
+    return;
+  }
 
   let updatedCount = 0;
   let skippedCount = 0;

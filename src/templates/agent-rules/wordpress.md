@@ -1,6 +1,7 @@
 # WordPress Integration & Commands
 - **Sync & Push Commands**:
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push`: Incrementally syncs content vault and pushes new/modified posts to WordPress (skipping unchanged posts).
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --mark-synced`: Marks all current vault posts as synced in `.notopress-sync.json` without pushing to WordPress (useful on initial setup).
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --force`: Force updates all posts on WordPress regardless of content hash.
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --dry-run`: Previews WordPress API mutations without altering remote posts.
