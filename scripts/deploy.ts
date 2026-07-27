@@ -477,8 +477,15 @@ async function main() {
       return;
     }
 
-    const pullSlugOrId = getFlagValue({ flag: '--pull' });
-    if (pullSlugOrId) {
+    const hasPullFlag = hasFlag({ flag: '--pull' });
+    if (hasPullFlag) {
+      const pullSlugOrId = getFlagValue({ flag: '--pull' });
+      if (!pullSlugOrId) {
+        throw new Error(
+          `⨯ Please specify a post slug or ID to pull from WordPress.\n  Example: notopress sync --site ${site.siteId} --pull my-post-slug`
+        );
+      }
+
       const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
       const { allIndices } = await generateIndices({
         vaultPath: site.vaultPath,
