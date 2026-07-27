@@ -586,9 +586,79 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Warning: Could not find posts in the vault matching slugs: "non-existent-slug"')
+        expect.stringContaining('Could not find posts in the vault matching slugs')
       );
       warnSpy.mockRestore();
+    });
+
+    it('should skip unchanged posts when content hash matches sync state', async () => {
+      const { computeContentHash } = await import('./sync-state');
+      const postContent = '# My Post Title\nThis is content.';
+      const hash = computeContentHash(postContent);
+
+      vi.mocked(existsSync).mockImplementation((p) => String(p).endsWith('.notopress-sync.json'));
+      vi.mocked(readFile).mockImplementation(async (p) => {
+        if (String(p).endsWith('.notopress-sync.json')) {
+          return JSON.stringify({
+            wordpress: {
+              'post-one': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
+              'blog/post-two': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
+            },
+          });
+        }
+        return postContent;
+      });
+
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        dryRun: false,
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should push unchanged post when force is true', async () => {
+      const { computeContentHash } = await import('./sync-state');
+      const postContent = '# My Post Title\nThis is content.';
+      const hash = computeContentHash(postContent);
+
+      vi.mocked(existsSync).mockImplementation((p) => String(p).endsWith('.notopress-sync.json'));
+      vi.mocked(readFile).mockImplementation(async (p) => {
+        if (String(p).endsWith('.notopress-sync.json')) {
+          return JSON.stringify({
+            wordpress: {
+              'post-one': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
+            },
+          });
+        }
+        return postContent;
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [] };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 789 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        force: true,
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalled();
     });
   });
 

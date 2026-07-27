@@ -13,11 +13,15 @@ import { type NoteReferenceInput } from '../../src/lib/note-links';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 
 
+import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
+
+
 interface PushToWordPressArgs {
   site: Site;
   registry: Registry;
   allIndices: Map<string, VaultDirectoryIndex>;
   targetSlugs?: string[];
+  force?: boolean;
   dryRun: boolean;
 }
 
@@ -147,6 +151,7 @@ export async function pushToWordPress({
   registry,
   allIndices,
   targetSlugs,
+  force,
   dryRun,
 }: PushToWordPressArgs) {
   const credentials = site.wordpress;
@@ -168,7 +173,14 @@ export async function pushToWordPress({
   if (targetSlugs && targetSlugs.length > 0) {
     console.log(`- Target Post Slugs: ${targetSlugs.join(', ')}`);
   }
+  if (force) {
+    console.log(`- Force Mode: ENABLED (Bypassing content hash checks)`);
+  }
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
+
+  const syncState = await loadSyncState({ vaultPath: site.vaultPath });
+  const wpSyncState = syncState.wordpress || {};
+  syncState.wordpress = wpSyncState;
 
   // Load public files from root.json if it exists
   let assetFiles: string[] = [];
@@ -225,12 +237,26 @@ export async function pushToWordPress({
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
 
+  let updatedCount = 0;
+  let skippedCount = 0;
+
   for (const post of postsToPublish) {
     try {
-      console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
-
       // Read markdown and parse frontmatter
       const fileContent = await readFile(post.localPath, 'utf-8');
+      const currentHash = computeContentHash(fileContent);
+
+      const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
+      const isAlreadySynced = wpSyncState[post.slug]?.contentHash === currentHash;
+
+      if (!force && !isExplicitTarget && isAlreadySynced) {
+        console.log(`  ⏭️  Skipping "${post.title}" (slug: ${post.slug}) - content unchanged.`);
+        skippedCount += 1;
+        continue;
+      }
+
+      console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
+
       const { data, content: markdownBody } = matter(fileContent);
       const wordpressResource = getWordPressRestResource({ frontmatter: data });
 
@@ -340,6 +366,12 @@ export async function pushToWordPress({
           console.log(`  ✅ Successfully CREATED new WordPress ${wordpressResource.contentType} (ID: ${newPost.id})`);
         }
       }
+
+      wpSyncState[post.slug] = {
+        contentHash: currentHash,
+        syncedAt: new Date().toISOString(),
+      };
+      updatedCount += 1;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
@@ -348,6 +380,14 @@ export async function pushToWordPress({
         throw err;
       }
     }
+  }
+
+  if (!dryRun && updatedCount > 0) {
+    await saveSyncState({ vaultPath: site.vaultPath, syncState });
+  }
+
+  if (skippedCount > 0) {
+    console.log(`\n✨ WordPress sync complete: ${updatedCount} post(s) updated/created, ${skippedCount} post(s) skipped (unchanged).`);
   }
 }
 

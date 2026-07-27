@@ -497,12 +497,14 @@ async function main() {
       return;
     }
 
-    const shouldPushWp = hasFlag({ flag: '--wp' });
+    const hasPushFlag = hasFlag({ flag: '--push' });
+    const shouldPushWp = hasFlag({ flag: '--wp' }) || hasPushFlag;
+    const forcePush = hasFlag({ flag: '--force' });
     const pushValue = getFlagValue({ flag: '--push' });
-    const targetSlugs = pushValue
+    const targetSlugs = pushValue && pushValue !== 'true'
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
-    
+
     const { allIndices } = await syncContent({ site, registry, isDryRun });
 
     if (shouldPushWp) {
@@ -511,6 +513,7 @@ async function main() {
         registry,
         allIndices,
         targetSlugs,
+        force: forcePush,
         dryRun: isDryRun,
       });
     }
