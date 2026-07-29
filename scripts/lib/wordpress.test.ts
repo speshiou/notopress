@@ -866,6 +866,11 @@ describe('WordPress Deployment Library', () => {
         expect.stringContaining('---\nWordPress body text.'),
         'utf-8'
       );
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/.notopress-sync.json',
+        expect.stringContaining('post-one'),
+        'utf-8'
+      );
     });
 
     it('should fallback to target ID if slug fails', async () => {

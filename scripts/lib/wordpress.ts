@@ -915,11 +915,13 @@ export async function pullFromWordPress({
 
   // Find local path from indices
   let targetLocalPath = '';
+  let canonicalSlug = '';
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
       const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
       if (fullSlug.replace(/\//g, '-') === wpPost.slug) {
         targetLocalPath = path.join(site.vaultPath, 'content', dirKey, `${page.slug}.md`);
+        canonicalSlug = fullSlug;
         break;
       }
     }
@@ -928,6 +930,7 @@ export async function pullFromWordPress({
 
   if (!targetLocalPath) {
     targetLocalPath = path.join(site.vaultPath, 'content', `${wpPost.slug}.md`);
+    canonicalSlug = wpPost.slug;
   }
 
   if (dryRun) {
@@ -977,5 +980,14 @@ export async function pullFromWordPress({
 
     await writeFile(targetLocalPath, frontmatter, 'utf-8');
     console.log(`\n  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
+
+    const syncState = await loadSyncState({ vaultPath: site.vaultPath });
+    syncState.wordpress = syncState.wordpress || {};
+    syncState.wordpress[canonicalSlug] = {
+      contentHash: computeContentHash(frontmatter),
+      syncedAt: new Date().toISOString(),
+    };
+    await saveSyncState({ vaultPath: site.vaultPath, syncState });
+    console.log(`  ✓ Updated sync state for "${canonicalSlug}" in .notopress-sync.json`);
   }
 }
