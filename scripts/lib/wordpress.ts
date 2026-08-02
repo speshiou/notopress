@@ -14,6 +14,8 @@ import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } fro
 
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
+import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './wordpress-sync-state';
+
 
 
 interface PushToWordPressArgs {
@@ -181,8 +183,7 @@ export async function pushToWordPress({
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
   const syncState = await loadSyncState({ vaultPath: site.vaultPath });
-  const wpSyncState = syncState.wordpress || {};
-  syncState.wordpress = wpSyncState;
+  const wpSyncState = getWordPressSyncStateFromObject(syncState);
 
   // Load public files from root.json if it exists
   let assetFiles: string[] = [];
@@ -245,10 +246,7 @@ export async function pushToWordPress({
     for (const post of postsToPublish) {
       const fileContent = await readFile(post.localPath, 'utf-8');
       const currentHash = computeContentHash(fileContent);
-      wpSyncState[post.slug] = {
-        contentHash: currentHash,
-        syncedAt: new Date().toISOString(),
-      };
+      setWordPressEntry(syncState, post.slug, { contentHash: currentHash });
       markedCount += 1;
       console.log(`  ✓ Marked "${post.title}" (slug: ${post.slug}) as synced.`);
     }
@@ -390,10 +388,7 @@ export async function pushToWordPress({
         }
       }
 
-      wpSyncState[post.slug] = {
-        contentHash: currentHash,
-        syncedAt: new Date().toISOString(),
-      };
+      setWordPressEntry(syncState, post.slug, { contentHash: currentHash });
       updatedCount += 1;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -981,13 +976,11 @@ export async function pullFromWordPress({
     await writeFile(targetLocalPath, frontmatter, 'utf-8');
     console.log(`\n  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
 
-    const syncState = await loadSyncState({ vaultPath: site.vaultPath });
-    syncState.wordpress = syncState.wordpress || {};
-    syncState.wordpress[canonicalSlug] = {
+    await updateWordPressSyncState({
+      vaultPath: site.vaultPath,
+      slug: canonicalSlug,
       contentHash: computeContentHash(frontmatter),
-      syncedAt: new Date().toISOString(),
-    };
-    await saveSyncState({ vaultPath: site.vaultPath, syncState });
+    });
     console.log(`  ✓ Updated sync state for "${canonicalSlug}" in .notopress-sync.json`);
   }
 }

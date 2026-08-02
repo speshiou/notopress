@@ -12,6 +12,7 @@ export interface WordPressSyncEntry {
 
 export interface VaultSyncState {
   wordpress?: Record<string, WordPressSyncEntry>;
+  [platform: string]: Record<string, unknown> | undefined;
 }
 
 export type SyncStateDeps = {
@@ -26,7 +27,7 @@ export function computeContentHash(content: string): string {
 }
 
 export function createSyncStateManager(deps: SyncStateDeps) {
-  return {
+  const manager = {
     async loadSyncState({ vaultPath }: { vaultPath: string }): Promise<VaultSyncState> {
       const statePath = deps.joinPath(vaultPath, SYNC_STATE_FILENAME);
       if (!(await deps.exists(statePath))) {
@@ -51,7 +52,38 @@ export function createSyncStateManager(deps: SyncStateDeps) {
       const jsonContent = JSON.stringify(syncState, null, 2) + '\n';
       await deps.writeFile(statePath, jsonContent);
     },
+
+    getSyncSection<T = unknown>(
+      syncState: VaultSyncState,
+      sectionKey: string
+    ): Record<string, T> {
+      const section = syncState[sectionKey];
+      if (!section || typeof section !== 'object') {
+        return {};
+      }
+      return section as Record<string, T>;
+    },
+
+    async updateSyncStateSection<T = unknown>({
+      vaultPath,
+      sectionKey,
+      updater,
+    }: {
+      vaultPath: string;
+      sectionKey: string;
+      updater: (section: Record<string, T>) => void;
+    }): Promise<VaultSyncState> {
+      const syncState = await manager.loadSyncState({ vaultPath });
+      const currentSection = manager.getSyncSection<T>(syncState, sectionKey);
+      const sectionCopy = { ...currentSection };
+      updater(sectionCopy);
+      syncState[sectionKey] = sectionCopy;
+      await manager.saveSyncState({ vaultPath, syncState });
+      return syncState;
+    },
   };
+
+  return manager;
 }
 
 const defaultSyncStateManager = createSyncStateManager({
@@ -63,3 +95,5 @@ const defaultSyncStateManager = createSyncStateManager({
 
 export const loadSyncState = defaultSyncStateManager.loadSyncState;
 export const saveSyncState = defaultSyncStateManager.saveSyncState;
+export const getSyncSection = defaultSyncStateManager.getSyncSection;
+export const updateSyncStateSection = defaultSyncStateManager.updateSyncStateSection;
