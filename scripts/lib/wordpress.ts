@@ -15,6 +15,12 @@ import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } fro
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
 import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './wordpress-sync-state';
+import {
+  formatWordPressSyncSummary,
+  type WordPressSyncErrorResult,
+  type WordPressSyncItemResult,
+} from './wordpress-sync-log';
+
 
 
 
@@ -258,7 +264,9 @@ export async function pushToWordPress({
     return;
   }
 
-  let updatedCount = 0;
+  const updatedPosts: WordPressSyncItemResult[] = [];
+  const createdPosts: WordPressSyncItemResult[] = [];
+  const failedPosts: WordPressSyncErrorResult[] = [];
   let skippedCount = 0;
 
   for (const post of postsToPublish) {
@@ -359,7 +367,7 @@ export async function pushToWordPress({
 
       if (wpPostExists) {
         if (dryRun) {
-          console.log(`  [DRY RUN] Would UPDATE WordPress ${wordpressResource.contentType} "${post.title}" (ID: ${wpPostId})`);
+          console.log(`  🔄 [DRY RUN] Would UPDATE WordPress ${wordpressResource.contentType} "${post.title}" (ID: ${wpPostId})`);
         } else {
           await wpFetch({
             endpoint,
@@ -368,11 +376,20 @@ export async function pushToWordPress({
             method: 'POST',
             body: payload,
           });
-          console.log(`  ✅ Successfully UPDATED WordPress ${wordpressResource.contentType} (ID: ${wpPostId})`);
+          console.log(`  🔄 Successfully UPDATED WordPress ${wordpressResource.contentType} (ID: ${wpPostId})`);
         }
+        updatedPosts.push({
+          title: post.title,
+          slug: post.slug,
+          action: 'updated',
+          contentType: wordpressResource.contentType,
+          id: wpPostId,
+          isDryRun: dryRun,
+        });
       } else {
+        let createdId: number | null = null;
         if (dryRun) {
-          console.log(`  [DRY RUN] Would CREATE new WordPress ${wordpressResource.contentType} "${post.title}"`);
+          console.log(`  🆕 [DRY RUN] Would CREATE new WordPress ${wordpressResource.contentType} "${post.title}"`);
         } else {
           const newPost = await wpFetch({
             endpoint,
@@ -384,15 +401,28 @@ export async function pushToWordPress({
               date: post.date,
             },
           });
-          console.log(`  ✅ Successfully CREATED new WordPress ${wordpressResource.contentType} (ID: ${newPost.id})`);
+          createdId = newPost.id;
+          console.log(`  🆕 Successfully CREATED new WordPress ${wordpressResource.contentType} (ID: ${newPost.id})`);
         }
+        createdPosts.push({
+          title: post.title,
+          slug: post.slug,
+          action: 'created',
+          contentType: wordpressResource.contentType,
+          id: createdId,
+          isDryRun: dryRun,
+        });
       }
 
       setWordPressEntry(syncState, post.slug, { contentHash: currentHash });
-      updatedCount += 1;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
+      failedPosts.push({
+        title: post.title,
+        slug: post.slug,
+        error: errMsg,
+      });
       // We don't want to crash the whole sync if one post fails, but if target slugs are specified, we bubble up
       if (targetSlugs && targetSlugs.length > 0) {
         throw err;
@@ -400,13 +430,22 @@ export async function pushToWordPress({
     }
   }
 
+  const updatedCount = updatedPosts.length + createdPosts.length;
   if (!dryRun && updatedCount > 0) {
     await saveSyncState({ vaultPath: site.vaultPath, syncState });
   }
 
-  if (skippedCount > 0) {
-    console.log(`\n✨ WordPress sync complete: ${updatedCount} post(s) updated/created, ${skippedCount} post(s) skipped (unchanged).`);
-  }
+  console.log(
+    `\n` +
+      formatWordPressSyncSummary({
+        updated: updatedPosts,
+        created: createdPosts,
+        failed: failedPosts,
+        skippedCount,
+        totalProcessed: postsToPublish.length,
+        isDryRun: dryRun,
+      })
+  );
 }
 
 interface WpPost {
