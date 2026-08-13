@@ -61,7 +61,7 @@ describe('WordPress Deployment Library', () => {
         collectedImages
       );
 
-      expect(result).toContain('![](zelda-map/截圖-2020-02-13-上午10.36.11.png)');
+      expect(result).toContain('![](<zelda-map/截圖-2020-02-13-上午10.36.11.png>)');
       expect(collectedImages[0]?.localPath).toBe('/mock/vault/content/zelda-map/截圖-2020-02-13-上午10.36.11.png');
       expect(collectedImages[0]?.tryHighResUrl).toBe(
         'https://testsite.com/wp-content/uploads/2020/02/截圖-2020-02-13-上午10.36.11.png'
@@ -282,7 +282,7 @@ describe('WordPress Deployment Library', () => {
       expect(body.content).toContain('<!-- /wp:table -->');
     });
 
-    it('should publish markdown images as valid WordPress image blocks', async () => {
+    it('should publish angle-bracket and percent-encoded image paths as valid WordPress image blocks', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
           return {
@@ -304,13 +304,15 @@ describe('WordPress Deployment Library', () => {
         if (normalizedPath.endsWith('root.json')) {
           return JSON.stringify({
             publicFiles: [],
-            contentFiles: ['hero.png'],
+            contentFiles: ['hero image.png'],
           });
         }
         return [
           '# My Post Title',
           '',
-          '![Hero caption](hero.png)',
+          '![Angle-bracket caption](<hero image.png>)',
+          '',
+          '![Encoded caption](hero%20image.png)',
         ].join('\n');
       });
 
@@ -327,13 +329,16 @@ describe('WordPress Deployment Library', () => {
       const body = JSON.parse(postCall![1].body);
       expect(body.content).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
       expect(body.content).toContain('<figure class="size-large wp-block-image">');
-      expect(body.content).toContain('src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero-1200.webp"');
+      const expectedImageUrl = 'src="https://cdn.testsite.com/test-blog/content/_thumbnails/hero%20image-1200.webp"';
+      expect(body.content.split(expectedImageUrl)).toHaveLength(3);
+      expect(body.content).not.toContain('hero%2520image');
       expect(body.content).not.toContain('srcset=');
       expect(body.content).not.toContain('sizes=');
       expect(body.content).not.toContain('style="max-width: 100%;"');
       expect(body.content).not.toContain('loading=');
       expect(body.content).not.toContain('decoding=');
-      expect(body.content).toContain('<figcaption class="wp-element-caption">Hero caption</figcaption>');
+      expect(body.content).toContain('<figcaption class="wp-element-caption">Angle-bracket caption</figcaption>');
+      expect(body.content).toContain('<figcaption class="wp-element-caption">Encoded caption</figcaption>');
       expect(body.content).toContain('<!-- /wp:image -->');
       expect(body.content).not.toContain('className":"wp-block-image');
     });
@@ -726,6 +731,25 @@ describe('WordPress Deployment Library', () => {
       );
       expect(result).toBe('docs/screenshot.png');
     });
+
+    it('should find decoded local filenames when thumbnail URLs contain encoded spaces', () => {
+      vi.mocked(existsSync).mockImplementation((filePath) => (
+        typeof filePath === 'string' &&
+        filePath.endsWith('/mock/vault/content/post-one/Pasted image.webp')
+      ));
+      const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
+
+      const result = htmlToMarkdown(
+        '<img src="https://cdn.testsite.com/test-blog/content/_thumbnails/attachments/Pasted%20image-1200.webp" alt="Image">',
+        mockSite,
+        mockRegistry,
+        'post-one',
+        collectedImages
+      );
+
+      expect(result).toBe('![Image](<post-one/Pasted image.webp>)');
+      expect(collectedImages).toEqual([]);
+    });
   });
 
   describe('htmlToMarkdown', () => {
@@ -744,7 +768,7 @@ describe('WordPress Deployment Library', () => {
     it('should parse links and simple images', () => {
       const html = '<p>Link to <a href="https://google.com">Google</a> and <img src="/images/pic.png" alt="Pic" /></p>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('Link to [Google](https://google.com) and ![Pic](images/pic.png)');
+      expect(md).toBe('Link to [Google](https://google.com) and ![Pic](<images/pic.png>)');
     });
 
     it('should parse code blocks and inline code', () => {
@@ -774,25 +798,52 @@ describe('WordPress Deployment Library', () => {
     it('should parse figures and figcaptions', () => {
       const html = '<figure class="wp-block-image"><img src="/images/fig.png" alt="Alt text" /><figcaption>Caption text</figcaption></figure>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('![Alt text](images/fig.png)\n*Caption text*');
+      expect(md).toBe('![Alt text](<images/fig.png>)\n\n*Caption text*');
     });
 
     it('should parse figures with link inside figcaption', () => {
       const html = '<figure><img src="/images/fig.png" alt="Alt" /><figcaption>Source: <a href="http://google.com">Google</a></figcaption></figure>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('![Alt](images/fig.png)\n*Source: [Google](http://google.com)*');
+      expect(md).toBe('![Alt](<images/fig.png>)\n\n*Source: [Google](http://google.com)*');
     });
 
     it('should parse HTML tables and captions into markdown tables', () => {
       const html = '<table><caption>List of codes</caption><thead><tr><th>Region</th><th>Code</th></tr></thead><tbody><tr><td>USA</td><td>+1</td></tr></tbody></table>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
-      expect(md).toBe('*List of codes*\n\n| Region | Code |\n| --- | --- |\n| USA | +1 |');
+      expect(md).toBe('| Region | Code |\n| --- | --- |\n| USA | +1 |\n\n*List of codes*');
+    });
+
+    it('should parse Gutenberg table figures and figcaptions into contiguous markdown', () => {
+      const html = '<figure class="wp-block-table"><table><thead><tr><th>Region</th><th>Code</th></tr></thead><tbody><tr><td>USA</td><td>+1</td></tr><tr><td>Taiwan</td><td>+886</td></tr></tbody></table><figcaption>Calling codes</figcaption></figure>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+
+      expect(md).toBe('| Region | Code |\n| --- | --- |\n| USA | +1 |\n| Taiwan | +886 |\n\n*Calling codes*');
+      expect(md).not.toContain('| --- | --- |\n\n|');
+    });
+
+    it('should collect each image destination once while preserving image captions', () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
+      const html = '<figure><img src="https://cdn.testsite.com/test-blog/content/_thumbnails/image-1200.webp" alt="Alt"><figcaption>Caption</figcaption></figure>';
+
+      const md = htmlToMarkdown(html, mockSite, mockRegistry, 'post-one', collectedImages);
+
+      expect(md).toBe('![Alt](<post-one/image.webp>)\n\n*Caption*');
+      expect(collectedImages).toHaveLength(1);
     });
 
     it('should strip comments and scripts from HTML content', () => {
       const html = '<!-- wp:paragraph --><p>Hello</p><script>console.log(123);</script>';
       const md = htmlToMarkdown(html, mockSite, mockRegistry);
       expect(md).toBe('Hello');
+    });
+
+    it('should preserve custom Block API v3 Gutenberg block comments in Markdown', () => {
+      const html = '<p>Before</p>\n<!-- wp:namespace/example-block {"setting":"value"} /-->\n<p>After</p>';
+      const md = htmlToMarkdown(html, mockSite, mockRegistry);
+      expect(md).toContain('<!-- wp:namespace/example-block {"setting":"value"} /-->');
+      expect(md).toContain('Before');
+      expect(md).toContain('After');
     });
   });
 
@@ -845,7 +896,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=post-one'),
+        expect.stringContaining('/wp/v2/posts?slug=post-one&status=any&context=edit'),
         expect.objectContaining({ method: 'GET' })
       );
 
@@ -871,6 +922,52 @@ describe('WordPress Deployment Library', () => {
         expect.stringContaining('post-one'),
         'utf-8'
       );
+    });
+
+    it('should safely convert an edit-context raw block document with tables, captions, images, and custom blocks', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const rawContent = [
+        '<!-- wp:paragraph --><p>Intro</p><!-- /wp:paragraph -->',
+        '<!-- wp:table --><figure class="wp-block-table"><table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table><figcaption>Comparison</figcaption></figure><!-- /wp:table -->',
+        '<!-- wp:image --><figure class="wp-block-image"><img src="https://cdn.testsite.com/test-blog/content/_thumbnails/one-1200.webp" alt="One"><figcaption>First image</figcaption></figure><!-- /wp:image -->',
+        '<!-- wp:image --><figure class="wp-block-image"><img src="https://cdn.testsite.com/test-blog/content/_thumbnails/two-1200.webp" alt="Two"></figure><!-- /wp:image -->',
+        '<!-- wp:image --><figure class="wp-block-image"><img src="https://cdn.testsite.com/test-blog/content/_thumbnails/three-1200.webp" alt="Three"></figure><!-- /wp:image -->',
+        '<!-- wp:namespace/example-block {"setting":"value"} /-->',
+      ].join('\n');
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{
+          id: 123,
+          date: '2026-06-30T10:00:00',
+          modified: '2026-06-30T11:00:00',
+          slug: 'post-one',
+          title: { raw: 'Post One Title', rendered: 'Post One Title' },
+          content: { raw: rawContent, rendered: '<p>Rendered fallback should not be used.</p>' },
+          status: 'publish',
+        }],
+      });
+      global.fetch = mockFetch;
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      let output = '';
+
+      try {
+        await pullFromWordPress({
+          site: mockSite,
+          registry: mockRegistry,
+          allIndices: mockIndices,
+          slugOrId: 'post-one',
+          dryRun: true,
+        });
+        output = log.mock.calls.flat().join('\n');
+      } finally {
+        log.mockRestore();
+      }
+
+      expect(output).toContain('| Name | Value |\n| --- | --- |\n| A | B |\n\n*Comparison*');
+      expect(output).toContain('![One](<post-one/one.webp>)\n\n*First image*');
+      expect(output).toContain('<!-- wp:namespace/example-block {"setting":"value"} /-->');
+      expect(output).toContain('Would download 3 image(s)');
+      expect(output).not.toContain('Rendered fallback should not be used.');
     });
 
     it('should fallback to target ID if slug fails', async () => {

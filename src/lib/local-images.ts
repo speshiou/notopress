@@ -23,6 +23,10 @@ export function isExternalOrInlineAsset({ src }: { src: string }): boolean {
   );
 }
 
+export function formatMarkdownImageDestination({ src }: { src: string }): string {
+  return `<${src.replace(/</g, "%3C").replace(/>/g, "%3E")}>`;
+}
+
 type LocalImageIndex = {
   availableFileSet: ReadonlySet<string>;
   filesByBasename: ReadonlyMap<string, readonly string[]>;
@@ -93,6 +97,6 @@ export function resolveMarkdownImagePaths({
     const resolvedPath = resolveLocalImagePath({ src: url, availableFiles });
     const trimmedSuffix = suffix.trim();
     const suffixText = trimmedSuffix ? ` ${trimmedSuffix}` : "";
-    return `![${alt}](<${resolvedPath}>${suffixText})`;
+    return `![${alt}](${formatMarkdownImageDestination({ src: resolvedPath })}${suffixText})`;
   });
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveLocalImagePath, resolveMarkdownImagePaths, safelyDecodeUriComponent } from "./local-images";
+import {
+  formatMarkdownImageDestination,
+  resolveLocalImagePath,
+  resolveMarkdownImagePaths,
+  safelyDecodeUriComponent,
+} from "./local-images";
 
 describe("local image helpers", () => {
   const availableFiles = [
@@ -10,6 +15,10 @@ describe("local image helpers", () => {
 
   it("decodes repeatedly until URI components are stable", () => {
     expect(safelyDecodeUriComponent({ value: "Pasted%2520image.png" })).toBe("Pasted image.png");
+  });
+
+  it("formats paths with spaces as valid Markdown image destinations", () => {
+    expect(formatMarkdownImageDestination({ src: "post/Pasted image.webp" })).toBe("<post/Pasted image.webp>");
   });
 
   it("resolves root-level references to known attachment files", () => {

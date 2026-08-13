@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { renderMarkdownContent } from "./markdown";
 import { serializeHtmlToWordPressBlocks } from "./wordpress-blocks";
 
 describe("serializeHtmlToWordPressBlocks", () => {
@@ -121,5 +122,50 @@ describe("serializeHtmlToWordPressBlocks", () => {
 
     expect(result).toContain("<!-- wp:table -->");
     expect(result).not.toContain('"className":"is-style-stripes"');
+  });
+
+  it("passes through self-closing Block API v3 custom blocks without wp:html wrapping", () => {
+    const customBlock = '<!-- wp:namespace/example-block {"setting":"value"} /-->';
+    const html = `<p>Intro paragraph</p>\n${customBlock}\n<p>Outro paragraph</p>`;
+
+    const result = serializeHtmlToWordPressBlocks(html);
+
+    expect(result).toContain("<!-- wp:paragraph -->\n<p>Intro paragraph</p>\n<!-- /wp:paragraph -->");
+    expect(result).toContain('<!-- wp:namespace/example-block {"setting":"value"} /-->');
+    expect(result).not.toContain('<!-- wp:html -->\n<!-- wp:namespace/example-block');
+  });
+
+  it("passes through paired custom Gutenberg blocks intact", () => {
+    const customBlock = '<!-- wp:namespace/example-block {"setting":"value"} -->\n<div class="wp-block-namespace-example-block">Block content</div>\n<!-- /wp:namespace/example-block -->';
+    const html = `<p>Intro</p>\n${customBlock}`;
+
+    const result = serializeHtmlToWordPressBlocks(html);
+
+    expect(result).toContain("<!-- wp:paragraph -->\n<p>Intro</p>\n<!-- /wp:paragraph -->");
+    expect(result).toContain(customBlock);
+    expect(result).not.toContain("<!-- wp:html -->\n<!-- wp:namespace/example-block");
+  });
+
+  it("handles custom Gutenberg block markup with data-wp-interactive context", () => {
+    const customBlock = [
+      '<!-- wp:namespace/example-block {"setting":"value"} -->',
+      '<section class="example-block wp-block-namespace-example-block" data-wp-interactive="namespace/example-block" data-wp-context=\'{"setting":"value"}\'>',
+      '\t<p>Interactive block content</p>',
+      '</section>',
+      '<!-- /wp:namespace/example-block -->',
+    ].join('\n');
+
+    const result = serializeHtmlToWordPressBlocks(customBlock);
+
+    expect(result).toBe(customBlock);
+  });
+
+  it("preserves a pulled custom block through Markdown rendering and WordPress serialization", async () => {
+    const customBlock = '<!-- wp:namespace/example-block {"setting":"value"} /-->';
+
+    const html = await renderMarkdownContent({ markdown: customBlock, thumbnailSizes: [] });
+    const result = serializeHtmlToWordPressBlocks(html);
+
+    expect(result).toBe(customBlock);
   });
 });

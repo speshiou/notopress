@@ -3,14 +3,17 @@ import { existsSync } from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
 import { z } from 'zod';
+import { parse as parseWordPressBlocks } from '@wordpress/block-serialization-default-parser';
 import { Site, Registry } from '../../src/domain/registry';
 import { VaultDirectoryIndex } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
 import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
-import { safelyDecodeUriComponent } from '../../src/lib/local-images';
+import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../src/lib/local-images';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
+import { createRawBlockConverter } from './wordpress-raw-blocks';
+import { validatePulledMarkdown } from './wordpress-pull-validation';
 
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
@@ -457,9 +460,11 @@ interface WpPost {
   slug: string;
   title: {
     rendered: string;
+    raw?: string;
   };
   content: {
     rendered: string;
+    raw?: string;
   };
   status: string;
 }
@@ -569,7 +574,8 @@ export function resolveAndCollectImagePath(
   const ext = path.extname(filename);
   const baseName = path.basename(filename, ext);
   const cleanBaseName = baseName.replace(/-(\d+x\d+|\d+)$/, '');
-  const finalFilename = safelyDecodeUriComponent({ value: `${cleanBaseName}${ext}` });
+  const decodedBaseName = safelyDecodeUriComponent({ value: cleanBaseName });
+  const finalFilename = `${decodedBaseName}${ext}`;
 
   // Check if the file already exists locally
   const dir = path.dirname(tempPath);
@@ -580,7 +586,7 @@ export function resolveAndCollectImagePath(
 
   for (const folder of candidateFolders) {
     for (const curExt of extensions) {
-      const checkFilename = `${cleanBaseName}${curExt}`;
+      const checkFilename = `${decodedBaseName}${curExt}`;
       const relPath = folder ? `${folder}/${checkFilename}` : checkFilename;
       
       const publicPath = path.join(site.vaultPath, 'public', relPath);
@@ -600,7 +606,8 @@ export function resolveAndCollectImagePath(
   if (thumbIndex !== -1) {
     tempPath = tempPath.substring(thumbIndex + '_thumbnails/'.length);
     const match = tempPath.match(/(.+)-\d+\.webp$/);
-    const pathWithoutThumbExt = match ? match[1] : tempPath.replace(/\.[^/.]+$/, "");
+    const encodedPathWithoutThumbExt = match ? match[1] : tempPath.replace(/\.[^/.]+$/, "");
+    const pathWithoutThumbExt = safelyDecodeUriComponent({ value: encodedPathWithoutThumbExt });
 
     for (const curExt of extensions) {
       const publicPath = path.join(site.vaultPath, 'public', `${pathWithoutThumbExt}${curExt}`);
@@ -623,11 +630,14 @@ export function resolveAndCollectImagePath(
     if (originalUrl.includes(filename)) {
       tryHighResUrl = originalUrl.replace(filename, finalFilename);
     }
-    collectedImages.push({
-      remoteUrl: originalUrl,
-      tryHighResUrl,
-      localPath: targetFullPath,
-    });
+    const isAlreadyCollected = collectedImages.some((image) => image.localPath === targetFullPath);
+    if (!isAlreadyCollected) {
+      collectedImages.push({
+        remoteUrl: originalUrl,
+        tryHighResUrl,
+        localPath: targetFullPath,
+      });
+    }
   }
 
   return targetLocalPath;
@@ -644,10 +654,12 @@ export function htmlToMarkdown(
   slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
-  // Strip script tags and HTML comments
+  // Strip script tags, standard HTML comments, and core Gutenberg block comments (e.g. wp:paragraph)
+  // while preserving custom/namespaced Gutenberg block comments (e.g. wp:namespace/example-block)
+  const coreBlocksPattern = '(?:paragraph|heading|image|list|quote|table|code|html|freeform)\\b';
   const cleanHtml = html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
+    .replace(new RegExp(`<!--(?!\\s*\\/?wp:(?!${coreBlocksPattern})[a-zA-Z0-9_-]+(?:\\/[a-zA-Z0-9_-]+)?\\b)[\\s\\S]*?-->`, 'gi'), '');
 
   // Tokenize the HTML
   const tagRegex = /(<\/?[a-zA-Z0-9:-]+(?:\s+[a-zA-Z0-9:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*\/?>)/g;
@@ -665,7 +677,9 @@ export function htmlToMarkdown(
 
   for (const part of parts) {
     if (!part) continue;
-    if (part.startsWith('<') && part.endsWith('>')) {
+    if (part.startsWith('<!--') && part.endsWith('-->')) {
+      stack[stack.length - 1].children.push({ type: 'text', attributes: {}, children: [], text: part });
+    } else if (part.startsWith('<') && part.endsWith('>')) {
       const isClosing = part.startsWith('</');
       const tagContent = part.replace(/^<\/?/, '').replace(/\/?>$/, '').trim();
       const tagName = tagContent.split(/\s+/)[0].toLowerCase();
@@ -707,6 +721,62 @@ export function htmlToMarkdown(
   function render(node: Node, listDepth = 0): string {
     if (node.type === 'text') {
       return node.text || '';
+    }
+
+    function renderTable(tableNode: Node): string {
+      const rows: Node[] = [];
+      function collectRows(currentNode: Node): void {
+        if (currentNode.type === 'tr') rows.push(currentNode);
+        for (const child of currentNode.children) collectRows(child);
+      }
+      collectRows(tableNode);
+
+      const renderedRows = rows.map((row) => {
+        const cells = row.children.filter((child) => child.type === 'th' || child.type === 'td');
+        const values = cells.map((cell) => cell.children
+          .map((child) => render(child, listDepth))
+          .join('')
+          .trim()
+          .replace(/\s*\n\s*/g, ' ')
+          .replace(/\|/g, '\\|'));
+        return { values, isHeader: cells.some((cell) => cell.type === 'th') };
+      }).filter((row) => row.values.length > 0);
+
+      if (renderedRows.length === 0) return '';
+      const headerIndex = renderedRows.findIndex((row) => row.isHeader);
+      const effectiveHeaderIndex = headerIndex === -1 ? 0 : headerIndex;
+      const header = renderedRows[effectiveHeaderIndex];
+      const bodyRows = renderedRows.filter((_row, index) => index !== effectiveHeaderIndex);
+      return [
+        `| ${header.values.join(' | ')} |`,
+        `| ${header.values.map(() => '---').join(' | ')} |`,
+        ...bodyRows.map((row) => `| ${row.values.join(' | ')} |`),
+      ].join('\n');
+    }
+
+    if (node.type === 'figure') {
+      const image = findNodeByType(node, 'img');
+      if (image) {
+        const src = image.attributes['src'] || '';
+        const alt = image.attributes['alt'] || '';
+        const figcaption = findNodeByType(node, 'figcaption');
+        const captionMarkdown = figcaption ? `\n\n*${render(figcaption, listDepth).trim()}*` : '';
+        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
+        return `\n\n![${alt}](${formatMarkdownImageDestination({ src: localSrc })})${captionMarkdown}\n\n`;
+      }
+
+      const table = findNodeByType(node, 'table');
+      if (table) {
+        const caption = findNodeByType(node, 'figcaption') || findNodeByType(table, 'caption');
+        const captionMarkdown = caption ? `\n\n*${render(caption, listDepth).trim()}*` : '';
+        return `\n\n${renderTable(table)}${captionMarkdown}\n\n`;
+      }
+    }
+
+    if (node.type === 'table') {
+      const caption = findNodeByType(node, 'caption');
+      const captionMarkdown = caption ? `\n\n*${render(caption, listDepth).trim()}*` : '';
+      return `\n\n${renderTable(node)}${captionMarkdown}\n\n`;
     }
 
     const childrenContent = node.children.map(c => render(c, listDepth)).join('');
@@ -779,27 +849,10 @@ export function htmlToMarkdown(
         const src = node.attributes['src'] || '';
         const alt = node.attributes['alt'] || '';
         const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
-        return `![${alt}](${localSrc})`;
+        return `![${alt}](${formatMarkdownImageDestination({ src: localSrc })})`;
       }
-      case 'figure': {
-        const img = findNodeByType(node, 'img');
-        if (!img) return childrenContent;
-        const src = img.attributes['src'] || '';
-        const alt = img.attributes['alt'] || '';
-        
-        const figcaption = findNodeByType(node, 'figcaption');
-        let captionMarkdown = '';
-        if (figcaption) {
-          captionMarkdown = `\n*${render(figcaption, listDepth).trim()}*\n`;
-        }
-
-        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
-        return `\n\n![${alt}](${localSrc})${captionMarkdown}\n\n`;
-      }
-      case 'table':
-        return `\n\n${childrenContent.trim()}\n\n`;
       case 'caption':
-        return `*${childrenContent.trim()}*\n\n`;
+        return childrenContent;
       case 'thead':
       case 'tbody':
         return childrenContent;
@@ -882,7 +935,7 @@ export async function pullFromWordPress({
     const posts = (await wpFetch({
       endpoint,
       credentials,
-      path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any`,
+      path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any&context=edit`,
     })) as WpPost[];
     
     if (posts && posts.length > 0) {
@@ -902,7 +955,7 @@ export async function pullFromWordPress({
       wpPost = (await wpFetch({
         endpoint,
         credentials,
-        path: `/wp/v2/posts/${slugOrId}`,
+        path: `/wp/v2/posts/${slugOrId}?context=edit`,
       })) as WpPost;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -917,11 +970,41 @@ export async function pullFromWordPress({
     throw new Error(`⨯ Could not find any post in WordPress matching slug or ID: "${slugOrId}"`);
   }
 
-  console.log(`✅ Found post: "${wpPost.title.rendered}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
+  const rawTitle = wpPost.title.raw || wpPost.title.rendered;
 
-  // Convert HTML to Markdown (and collect any remote image urls to download)
+  console.log(`✅ Found post: "${rawTitle}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
+
+  // Convert the authoritative raw block document when edit context provides it.
+  // Classic posts and older WordPress responses fall back to rendered HTML.
   const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
-  const markdownBody = htmlToMarkdown(wpPost.content.rendered, site, registry, wpPost.slug, collectedImages);
+  const convertHtml = ({ html }: { html: string }) => htmlToMarkdown(
+    html,
+    site,
+    registry,
+    wpPost.slug,
+    collectedImages
+  );
+  let markdownBody: string;
+  if (typeof wpPost.content.raw === 'string') {
+    const convertRawBlocks = createRawBlockConverter({
+      parseBlocks: ({ content }) => {
+        const parsedBlocks: unknown = parseWordPressBlocks(content);
+        return parsedBlocks;
+      },
+      convertHtml,
+    });
+    const conversion = convertRawBlocks({ content: wpPost.content.raw });
+    markdownBody = conversion.markdown;
+    if (conversion.preservedBlockNames.length > 0) {
+      console.log(`  ℹ️ Preserved unsupported or dynamic blocks: ${conversion.preservedBlockNames.join(', ')}`);
+    }
+  } else {
+    markdownBody = convertHtml({ html: wpPost.content.rendered });
+  }
+  validatePulledMarkdown({
+    sourceContent: wpPost.content.raw ?? wpPost.content.rendered,
+    markdown: markdownBody,
+  });
 
   // Parse Date GMT to prevent timezone shifting
   function parseWpDate(dateStr: string, dateGmtStr?: string): string {
@@ -934,7 +1017,7 @@ export async function pullFromWordPress({
 
   const dateIso = parseWpDate(wpPost.date, wpPost.date_gmt);
   const modifiedIso = parseWpDate(wpPost.modified, wpPost.modified_gmt);
-  const decodedTitle = decodeHtmlEntities(wpPost.title.rendered);
+  const decodedTitle = decodeHtmlEntities(rawTitle);
 
   // Prepend frontmatter while preserving the WordPress body as-is.
   const frontmatter = [

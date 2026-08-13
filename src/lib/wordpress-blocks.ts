@@ -277,6 +277,44 @@ function findElementEnd({ html, startIndex, tagName }: { html: string; startInde
   return html.length;
 }
 
+function findGutenbergBlockEnd({ html, startIndex }: { html: string; startIndex: number }): number {
+  const openingTagMatch = /^<!--\s*wp:([a-zA-Z0-9-]+\/[a-zA-Z0-9-]+|[a-zA-Z0-9-]+)\b[\s\S]*?-->/.exec(html.slice(startIndex));
+  if (!openingTagMatch) {
+    const commentEndIndex = html.indexOf("-->", startIndex + 4);
+    return commentEndIndex === -1 ? html.length : commentEndIndex + 3;
+  }
+
+  const fullOpeningTag = openingTagMatch[0];
+  const blockName = openingTagMatch[1];
+  const isSelfClosing = /\/\s*-->$/.test(fullOpeningTag);
+
+  if (isSelfClosing) {
+    return startIndex + fullOpeningTag.length;
+  }
+
+  const escapedBlockName = blockName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<!--\\s*(/)?wp:${escapedBlockName}\\b[\\s\\S]*?-->`, "gi");
+  pattern.lastIndex = startIndex;
+
+  let depth = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    const isClosing = Boolean(match[1]);
+    const isSelf = /\/\s*-->$/.test(match[0]);
+
+    if (isClosing) {
+      depth -= 1;
+      if (depth === 0) {
+        return pattern.lastIndex;
+      }
+    } else if (!isSelf) {
+      depth += 1;
+    }
+  }
+
+  return startIndex + fullOpeningTag.length;
+}
+
 function splitTopLevelHtml(html: string): string[] {
   const blocks: string[] = [];
   let cursor = 0;
@@ -297,6 +335,13 @@ function splitTopLevelHtml(html: string): string[] {
     }
 
     if (html.startsWith("<!--", nextTagIndex)) {
+      if (/^<!--\s*wp:/i.test(html.slice(nextTagIndex))) {
+        const endIndex = findGutenbergBlockEnd({ html, startIndex: nextTagIndex });
+        blocks.push(html.slice(nextTagIndex, endIndex).trim());
+        cursor = endIndex;
+        continue;
+      }
+
       const commentEndIndex = html.indexOf("-->", nextTagIndex + 4);
       const endIndex = commentEndIndex === -1 ? html.length : commentEndIndex + 3;
       blocks.push(html.slice(nextTagIndex, endIndex).trim());
@@ -378,7 +423,14 @@ function serializeListBlock({ html, tagName }: { html: string; tagName: string }
   return wrapWordPressBlock({ blockName: "list", html, attributes });
 }
 
+const WORDPRESS_BLOCK_COMMENT_PATTERN = /^<!--\s*wp:([a-zA-Z0-9-]+\/[a-zA-Z0-9-]+|[a-zA-Z0-9-]+)\b/;
+
 function serializeKnownBlock(html: string): string {
+  const trimmed = html.trim();
+  if (WORDPRESS_BLOCK_COMMENT_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
   const tagName = getOpeningTagName(html);
 
   if (!tagName) {
