@@ -6,7 +6,17 @@ const MOCK_BASE_TEMPLATE = `# This is a Notopress vault
 
 This vault is synced by Notopress. Edit source Markdown files and source assets, but do not manually edit generated files such as \`root.json\`, directory-level \`index.json\`, or generated thumbnails. Regenerate them with the Notopress sync tooling when needed.
 
-Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.
+Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them. Put YAML frontmatter at the very start of each article, enclosed by \`---\` delimiters, using this format:
+
+\`\`\`yaml
+---
+title: "Article title"
+date: "2026-01-15T08:30:00.000Z"
+published: true
+---
+\`\`\`
+
+Use an ISO 8601 timestamp for \`date\`. Set \`published: false\` to exclude a draft from generated indexes.
 
 For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: \`*Feature comparison table.*\`. Plain paragraphs are treated as normal article text, not captions.`;
 
@@ -68,6 +78,8 @@ describe('createAgentRulesWriter', () => {
 
     expect(writes['vault/AGENTS.md']).toContain('<!-- BEGIN:notopress-vault-agent-rules -->');
     expect(writes['vault/AGENTS.md']).toContain('This is a Notopress vault');
+    expect(writes['vault/AGENTS.md']).toContain('title: "Article title"');
+    expect(writes['vault/AGENTS.md']).toContain('published: false');
     expect(writes['vault/AGENTS.md']).toContain('Plain paragraphs are treated as normal article text, not captions.');
     expect(writes['vault/AGENTS.md']).not.toContain('WordPress Integration & Commands');
     expect(writes['vault/AGENTS.md'].endsWith('\n')).toBe(true);
@@ -157,13 +169,7 @@ describe('createAgentRulesWriter', () => {
   it('does not rewrite an up-to-date rules file', async () => {
     const existingContent = [
       '<!-- BEGIN:notopress-vault-agent-rules -->',
-      '# This is a Notopress vault',
-      '',
-      'This vault is synced by Notopress. Edit source Markdown files and source assets, but do not manually edit generated files such as `root.json`, directory-level `index.json`, or generated thumbnails. Regenerate them with the Notopress sync tooling when needed.',
-      '',
-      'Keep article metadata consistent with the surrounding Markdown files. Preserve existing frontmatter fields unless the edit explicitly requires changing them.',
-      '',
-      'For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: `*Feature comparison table.*`. Plain paragraphs are treated as normal article text, not captions.',
+      MOCK_BASE_TEMPLATE,
       '<!-- END:notopress-vault-agent-rules -->',
       '',
     ].join('\n');
