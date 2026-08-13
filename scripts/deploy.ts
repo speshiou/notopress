@@ -15,17 +15,7 @@ import { generateSitemaps } from './lib/sitemaps';
 import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
 import { generateRenderedContent } from './lib/rendered-content';
-
-type CommandResult = {
-  status: number | null;
-  signal: NodeJS.Signals | null;
-  error?: Error;
-  stderr: Buffer;
-};
-
-type SpawnWithInputOptions = SpawnOptions & {
-  input?: string;
-};
+import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -48,41 +38,6 @@ async function execAsync({
       else reject(new Error(`Command "${command} ${args.join(' ')}" failed with code ${code}`));
     });
     child.on('error', (err) => reject(err));
-  });
-}
-
-function spawnWithInput({
-  command,
-  args,
-  options = {},
-}: {
-  command: string;
-  args: string[];
-  options?: SpawnWithInputOptions;
-}): Promise<CommandResult> {
-  return new Promise((resolve) => {
-    const { input, ...spawnOptions } = options;
-    const child = spawn(command, args, { ...spawnOptions, shell: false });
-    let stderr = Buffer.alloc(0);
-
-    if (child.stderr) {
-      child.stderr.on('data', (data: Buffer) => {
-        stderr = Buffer.concat([stderr, data]);
-      });
-    }
-
-    if (input && child.stdin) {
-      child.stdin.write(input);
-      child.stdin.end();
-    }
-
-    child.on('close', (code, signal) => {
-      resolve({ status: code, signal, stderr });
-    });
-
-    child.on('error', (error) => {
-      resolve({ status: null, signal: null, error, stderr });
-    });
   });
 }
 
@@ -324,58 +279,29 @@ async function syncVercelEnvironment({ site, registry }: { site: Site; registry:
   const envVars = getDeploymentEnvVars({ site, registry });
 
   console.log(`\n📡 Synchronizing environment variables to Vercel...`);
-
-  for (const [key, value] of Object.entries(envVars)) {
-    if (!value) {
-      console.warn(`⚠️  Warning: ${key} is missing, skipping.`);
-      continue;
-    }
-
-    const metadataKey = key as keyof typeof ENV_METADATA;
-    const metadata = ENV_METADATA[metadataKey];
-    if (!metadata) {
-      throw new Error(`Missing metadata for environment variable: ${key}`);
-    }
-
-    const sensitiveFlag = metadata.isSensitive ? ['--sensitive'] : [];
-    console.log(`  Syncing ${key}... (Sensitive: ${metadata.isSensitive})`);
-
-    const addResult = await spawnWithInput({
-      command: 'vercel',
-      args: ['env', 'add', key, 'production', ...sensitiveFlag],
-      options: {
-        input: value,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: getVercelCommandEnv({ projectId: vercelProjectId }),
-      },
-    });
-
-    if (addResult.status !== 0) {
-      const stderr = addResult.stderr.toString();
-
-      if (stderr.toLowerCase().includes('already exists')) {
-        const updateResult = await spawnWithInput({
-          command: 'vercel',
-          args: ['env', 'update', key, 'production', ...sensitiveFlag],
-          options: {
-            input: value,
-            stdio: ['pipe', 'inherit', 'inherit'],
-            env: getVercelCommandEnv({ projectId: vercelProjectId }),
-          },
-        });
-
-        if (updateResult.error) throw updateResult.error;
-        if (updateResult.status !== 0) {
-          throw new Error(`Update failed with status ${updateResult.status}`);
-        }
-      } else {
-        process.stderr.write(addResult.stderr);
-        throw addResult.error || new Error(`Command failed with status ${addResult.status}`);
-      }
-    }
-
-    console.log(`✅ ${key} synchronized${metadata.isSensitive ? ' (as sensitive)' : ''}.`);
-  }
+  const synchronize = createVercelEnvironmentSynchronizer({
+    runCommand: ({ args, env: commandEnv }) => new Promise((resolve) => {
+      const child = spawn('vercel', args, {
+        shell: false,
+        stdio: ['ignore', 'inherit', 'pipe'],
+        env: commandEnv,
+      });
+      let stderr = '';
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString();
+        process.stderr.write(data);
+      });
+      child.on('close', (status) => resolve({ status, stderr }));
+      child.on('error', (error) => resolve({ status: null, error, stderr }));
+    }),
+    log: console.log,
+    warn: console.warn,
+  });
+  await synchronize({
+    variables: envVars,
+    metadata: ENV_METADATA,
+    commandEnv: getVercelCommandEnv({ projectId: vercelProjectId }),
+  });
 }
 
 async function deployToVercel({ site }: { site: Site }) {
