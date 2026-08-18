@@ -3,26 +3,7 @@ import { GetObjectCommand, type GetObjectCommandOutput } from "@aws-sdk/client-s
 import { getS3Client } from "@/lib/s3";
 import { env } from "@/lib/env";
 
-/**
- * Maps common file extensions to Content-Type headers.
- */
-function getContentType(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "png": return "image/png";
-    case "jpg":
-    case "jpeg": return "image/jpeg";
-    case "gif": return "image/gif";
-    case "svg": return "image/svg+xml";
-    case "webp": return "image/webp";
-    case "pdf": return "application/pdf";
-    case "txt": return "text/plain";
-    case "css": return "text/css";
-    case "js": return "application/javascript";
-    case "json": return "application/json";
-    default: return "application/octet-stream";
-  }
-}
+import { getContentType } from "@/lib/content-types";
 
 export async function GET(
   _request: NextRequest,
@@ -60,6 +41,7 @@ export async function GET(
     return new NextResponse(stream, {
       headers: {
         "Content-Type": getContentType(filePath),
+        "Content-Disposition": "inline",
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });
