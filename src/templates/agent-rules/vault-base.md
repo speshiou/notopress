@@ -9,10 +9,14 @@ Keep article metadata consistent with the surrounding Markdown files. Preserve e
 title: "Article title"
 date: "2026-01-15T08:30:00.000Z"
 published: true
+categories:
+  - engineering
+tags:
+  - publishing
 ---
 ```
 
-Use an ISO 8601 timestamp for `date`. Set `published: false` to exclude a draft from generated indexes.
+Use an ISO 8601 timestamp for `date`. Set `published: false` to exclude a draft from generated indexes. `categories` and `tags` are optional arrays of taxonomy slugs. When present, keep each slug as a separate list item; omit either field when the article does not manage that taxonomy.
 
 For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: `*Feature comparison table.*`. Plain paragraphs are treated as normal article text, not captions.
 

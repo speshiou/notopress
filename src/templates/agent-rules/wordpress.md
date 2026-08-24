@@ -12,6 +12,7 @@
   - `wp cache flush`: Clears WordPress object cache.
   - `wp plugin list`: Displays installed WordPress plugins.
 - **WordPress Conventions & Safety**:
+  - Top-level `categories` and `tags` frontmatter fields contain optional WordPress term slugs. Use only slugs that already exist in WordPress; NotoPress resolves them to term IDs and does not create missing terms.
   - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.

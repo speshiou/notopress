@@ -239,6 +239,83 @@ describe('WordPress Deployment Library', () => {
       );
     });
 
+    it('should resolve optional category and tag slugs into the WordPress post payload', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/categories?slug=engineering')) {
+          return { ok: true, json: async () => [{ id: 12, slug: 'engineering' }] };
+        }
+        if (url.includes('/wp/v2/tags?slug=nextjs')) {
+          return { ok: true, json: async () => [{ id: 34, slug: 'nextjs' }] };
+        }
+        if (url.includes('/wp/v2/tags?slug=publishing')) {
+          return { ok: true, json: async () => [{ id: 56, slug: 'publishing' }] };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [] };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 789 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockResolvedValue([
+        '---',
+        'categories:',
+        '  - engineering',
+        'tags:',
+        '  - nextjs',
+        '  - publishing',
+        '---',
+        '# My Post Title',
+        'Body.',
+      ].join('\n'));
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => (
+        call[0].includes('/wp/v2/posts') && call[1]?.method === 'POST'
+      ));
+      expect(postCall).toBeDefined();
+      expect(JSON.parse(postCall![1].body)).toMatchObject({
+        categories: [12],
+        tags: [34, 56],
+      });
+    });
+
+    it('should omit optional taxonomy payload fields when frontmatter does not specify them', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [] };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 789 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      });
+
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body).not.toHaveProperty('categories');
+      expect(body).not.toHaveProperty('tags');
+    });
+
     it('should publish markdown tables as striped WordPress table figures', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
@@ -920,6 +997,49 @@ describe('WordPress Deployment Library', () => {
       expect(writeFile).toHaveBeenCalledWith(
         '/mock/vault/.notopress-sync.json',
         expect.stringContaining('post-one'),
+        'utf-8'
+      );
+    });
+
+    it('should pull WordPress categories and tags back into slug frontmatter', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts?slug=post-one') && options.method === 'GET') {
+          return {
+            ok: true,
+            json: async () => [{
+              id: 123,
+              date: '2026-06-30T10:00:00',
+              modified: '2026-06-30T11:00:00',
+              slug: 'post-one',
+              title: { rendered: 'Post One Title' },
+              content: { rendered: '<p>WordPress body text.</p>' },
+              status: 'publish',
+              categories: [12],
+              tags: [34],
+            }],
+          };
+        }
+        if (url.includes('/wp/v2/categories?include=12')) {
+          return { ok: true, json: async () => [{ id: 12, slug: 'engineering' }] };
+        }
+        if (url.includes('/wp/v2/tags?include=34')) {
+          return { ok: true, json: async () => [{ id: 34, slug: 'nextjs' }] };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pullFromWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        slugOrId: 'post-one',
+        dryRun: false,
+      });
+
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/post-one.md',
+        expect.stringContaining('categories:\n  - "engineering"\ntags:\n  - "nextjs"'),
         'utf-8'
       );
     });

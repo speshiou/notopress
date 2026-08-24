@@ -9,6 +9,7 @@ import {
   type NoteReference,
   type NoteReferenceInput,
 } from "./note-links";
+import { ContentTaxonomiesSchema } from "../domain/content-metadata";
 
 export const PageMetadataSchema = z.object({
   title: z.string(),
@@ -16,6 +17,7 @@ export const PageMetadataSchema = z.object({
   date: z.string(),
   updatedAt: z.string().optional(),
   excerpt: z.string(),
+  ...ContentTaxonomiesSchema.shape,
 });
 
 export const VaultDirectoryIndexSchema = z.object({

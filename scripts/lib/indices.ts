@@ -8,6 +8,7 @@ import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../../src/lib
 import { isGeneratedThumbnailPath, normalizeThumbnailSizes } from '../../src/lib/responsive-images';
 import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from './files';
 import { generateImageThumbnails } from './thumbnails';
+import { parseContentTaxonomies } from '../../src/lib/content-metadata';
 
 type Logger = Pick<typeof console, 'log' | 'warn' | 'error'>;
 type MatterResult = {
@@ -177,6 +178,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         const fileStats = await deps.stat(fullPath);
 
         const { data, content } = deps.parseMatter(fileContent);
+        const taxonomies = parseContentTaxonomies({ frontmatter: data });
 
         if (data.published === false) {
           continue;
@@ -223,7 +225,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           }
         }
 
-        pages.push({ title, slug, date, updatedAt, excerpt });
+        pages.push({ title, slug, date, updatedAt, excerpt, ...taxonomies });
       }
     }
 

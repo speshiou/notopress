@@ -42,7 +42,15 @@ describe('createIndexGenerator', () => {
       relativePath: path.posix.relative,
       parseMatter: (content) =>
         content === 'home'
-          ? { data: { title: 'Home', date: '2024-01-02' }, content: '# Home\nIntro text' }
+          ? {
+              data: {
+                title: 'Home',
+                date: '2024-01-02',
+                categories: ['docs', 'docs'],
+                tags: ['getting-started'],
+              },
+              content: '# Home\nIntro text',
+            }
           : content === 'include'
           ? { data: { title: 'VPN Promotion' }, content: '# VPN Promotion\nPrivate body' }
           : { data: {}, content: '# Post\nPost excerpt' },
@@ -61,6 +69,8 @@ describe('createIndexGenerator', () => {
     });
 
     expect(result.rootContentIndex.pages[0].title).toBe('Home');
+    expect(result.rootContentIndex.pages[0].categories).toEqual(['docs']);
+    expect(result.rootContentIndex.pages[0].tags).toEqual(['getting-started']);
     expect(result.allIndices.get('blog')?.pages[0].slug).toBe('post');
     expect(JSON.parse(writes['vault/root.json'])).toMatchObject({
       directories: ['blog'],

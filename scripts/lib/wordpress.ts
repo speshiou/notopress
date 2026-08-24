@@ -14,6 +14,12 @@ import { type NoteReferenceInput } from '../../src/lib/note-links';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 import { createRawBlockConverter } from './wordpress-raw-blocks';
 import { validatePulledMarkdown } from './wordpress-pull-validation';
+import { parseContentTaxonomies } from '../../src/lib/content-metadata';
+import {
+  createWordPressTaxonomyResolver,
+  formatTaxonomyFrontmatterLines,
+  type WordPressTaxonomyPayload,
+} from './wordpress-taxonomies';
 
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
@@ -45,7 +51,7 @@ interface WpFetchArgs {
   body?: unknown;
 }
 
-interface WordPressPostPayload {
+interface WordPressPostPayload extends WordPressTaxonomyPayload {
   title: string;
   content: string;
   slug: string;
@@ -173,6 +179,9 @@ export async function pushToWordPress({
   }
 
   const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
+  const taxonomyResolver = createWordPressTaxonomyResolver({
+    request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+  });
   const sizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   const imageHost = site.imageHost || registry.imageHost;
 
@@ -291,6 +300,10 @@ export async function pushToWordPress({
 
       const { data, content: markdownBody } = matter(fileContent);
       const wordpressResource = getWordPressRestResource({ frontmatter: data });
+      const contentTaxonomies = parseContentTaxonomies({ frontmatter: data });
+      const taxonomyPayload = wordpressResource.contentType === 'post'
+        ? await taxonomyResolver.resolvePayload({ taxonomies: contentTaxonomies })
+        : {};
 
       // Strip first H1 from markdown to avoid duplicated titles, only if it's the first non-empty line of the document and not inside a code block
       const lines = markdownBody.split('\n');
@@ -366,6 +379,7 @@ export async function pushToWordPress({
         content: wordpressBlockContent,
         slug: wpSlug,
         status: 'publish',
+        ...taxonomyPayload,
       };
 
       if (wpPostExists) {
@@ -467,6 +481,8 @@ interface WpPost {
     raw?: string;
   };
   status: string;
+  categories?: number[];
+  tags?: number[];
 }
 
 export function decodeHtmlEntities(str: string): string {
@@ -921,6 +937,9 @@ export async function pullFromWordPress({
   }
 
   const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
+  const taxonomyResolver = createWordPressTaxonomyResolver({
+    request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+  });
   console.log(`\n📥 Preparing WordPress Pull...`);
   console.log(`- Target Endpoint: ${endpoint}`);
   console.log(`- Authenticated As: ${credentials.username}`);
@@ -1018,6 +1037,10 @@ export async function pullFromWordPress({
   const dateIso = parseWpDate(wpPost.date, wpPost.date_gmt);
   const modifiedIso = parseWpDate(wpPost.modified, wpPost.modified_gmt);
   const decodedTitle = decodeHtmlEntities(rawTitle);
+  const contentTaxonomies = await taxonomyResolver.resolveFrontmatter({
+    categoryIds: wpPost.categories || [],
+    tagIds: wpPost.tags || [],
+  });
 
   // Prepend frontmatter while preserving the WordPress body as-is.
   const frontmatter = [
@@ -1025,6 +1048,7 @@ export async function pullFromWordPress({
     `title: "${decodedTitle.replace(/"/g, '\\"')}"`,
     `date: "${dateIso}"`,
     `updated: "${modifiedIso}"`,
+    ...formatTaxonomyFrontmatterLines({ taxonomies: contentTaxonomies }),
     `---`,
     markdownBody,
     ``,
