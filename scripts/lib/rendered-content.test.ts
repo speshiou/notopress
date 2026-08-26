@@ -74,6 +74,42 @@ describe('rendered content generator', () => {
       expect(rendered).toContain('src="/api/vault-public/_thumbnails/hero-320.webp"');
       expect(rendered).not.toContain('![[promo-note]]');
       expect(rendered).not.toContain('<h1>Post One</h1>');
+
+      const unchangedLogger = { log: vi.fn() };
+      await generateRenderedContent({
+        vaultPath,
+        siteId: 'test-blog',
+        allIndices,
+        rootIndex,
+        thumbnailSizes: [320],
+        noteIncludePaths: ['templates'],
+        dryRun: true,
+        logger: unchangedLogger,
+      });
+
+      expect(unchangedLogger.log).toHaveBeenCalledWith('[DRY RUN] 0 of 1 rendered HTML file(s) would change');
+      expect(unchangedLogger.log).not.toHaveBeenCalledWith(expect.stringContaining('Would update'));
+
+      await writeFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'stale HTML');
+      const changedLogger = { log: vi.fn() };
+      await generateRenderedContent({
+        vaultPath,
+        siteId: 'test-blog',
+        allIndices,
+        rootIndex,
+        thumbnailSizes: [320],
+        noteIncludePaths: ['templates'],
+        dryRun: true,
+        logger: changedLogger,
+      });
+
+      expect(changedLogger.log).toHaveBeenCalledWith(
+        '[DRY RUN] Would update rendered HTML: _rendered/content/post-one.html'
+      );
+      expect(changedLogger.log).toHaveBeenCalledWith('[DRY RUN] 1 of 1 rendered HTML file(s) would change');
+      await expect(readFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'utf-8')).resolves.toBe(
+        'stale HTML'
+      );
     } finally {
       await rm(vaultPath, { recursive: true, force: true });
     }

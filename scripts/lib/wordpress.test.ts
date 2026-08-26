@@ -100,6 +100,7 @@ describe('WordPress Deployment Library', () => {
         },
       ],
     ]);
+    const mockRootOnlyIndices = new Map([...mockIndices].filter(([directory]) => directory === ''));
 
     it('should perform GET queries to check for existence and POST queries to update when the post exists', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
@@ -673,35 +674,120 @@ describe('WordPress Deployment Library', () => {
       warnSpy.mockRestore();
     });
 
-    it('should skip unchanged posts when content hash matches sync state', async () => {
+    it('should publish legacy entries once and then skip their unchanged final payload', async () => {
       const { computeContentHash } = await import('./sync-state');
       const postContent = '# My Post Title\nThis is content.';
       const hash = computeContentHash(postContent);
+      let savedSyncState = JSON.stringify({
+        wordpress: {
+          'post-one': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
+        },
+      });
 
       vi.mocked(existsSync).mockImplementation((p) => String(p).endsWith('.notopress-sync.json'));
       vi.mocked(readFile).mockImplementation(async (p) => {
         if (String(p).endsWith('.notopress-sync.json')) {
-          return JSON.stringify({
-            wordpress: {
-              'post-one': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
-              'blog/post-two': { contentHash: hash, syncedAt: '2026-07-27T00:00:00.000Z' },
-            },
-          });
+          return savedSyncState;
         }
         return postContent;
       });
+      vi.mocked(writeFile).mockImplementation(async (filePath, content) => {
+        if (String(filePath).endsWith('.notopress-sync.json')) {
+          savedSyncState = String(content);
+        }
+      });
 
-      const mockFetch = vi.fn();
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [{ id: 456 }] };
+        }
+        if (url.includes('/wp/v2/posts/456') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 456 }) };
+        }
+        return { ok: false, status: 404 };
+      });
       global.fetch = mockFetch;
 
       await pushToWordPress({
         site: mockSite,
         registry: mockRegistry,
-        allIndices: mockIndices,
+        allIndices: mockRootOnlyIndices,
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts/456'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(JSON.parse(savedSyncState).wordpress['post-one']).toEqual({
+        contentHash: hash,
+        payloadHash: expect.any(String),
+        syncedAt: expect.any(String),
+      });
+
+      mockFetch.mockClear();
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockRootOnlyIndices,
         dryRun: false,
       });
 
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should republish when the final payload hash changes even if source markdown is unchanged', async () => {
+      const { computeContentHash } = await import('./sync-state');
+      const postContent = '# My Post Title\nThis is content.';
+      const sourceHash = computeContentHash(postContent);
+      let savedSyncState = '';
+
+      vi.mocked(existsSync).mockImplementation((filePath) => String(filePath).endsWith('.notopress-sync.json'));
+      vi.mocked(readFile).mockImplementation(async (filePath) => {
+        if (String(filePath).endsWith('.notopress-sync.json')) {
+          return JSON.stringify({
+            wordpress: {
+              'post-one': {
+                contentHash: sourceHash,
+                payloadHash: 'stale-payload-hash',
+                syncedAt: '2026-07-27T00:00:00.000Z',
+              },
+            },
+          });
+        }
+        return postContent;
+      });
+      vi.mocked(writeFile).mockImplementation(async (filePath, content) => {
+        if (String(filePath).endsWith('.notopress-sync.json')) {
+          savedSyncState = String(content);
+        }
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [{ id: 456 }] };
+        }
+        if (url.includes('/wp/v2/posts/456') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 456 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockRootOnlyIndices,
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts/456'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      const savedEntry = JSON.parse(savedSyncState).wordpress['post-one'];
+      expect(savedEntry.contentHash).toBe(sourceHash);
+      expect(savedEntry.payloadHash).not.toBe('stale-payload-hash');
     });
 
     it('should push unchanged post when force is true', async () => {

@@ -299,6 +299,30 @@ describe("preprocessWikilinks", () => {
     expect(result).toBe("Read [Best VPN Promotions for Games](/gaming/vpn-promotion-for-games).");
   });
 
+  it("renders escaped table wikilinks alongside regular Markdown links", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const rendered = await renderMarkdownContent({
+      markdown: [
+        "| Type | Link |",
+        "| --- | --- |",
+        "| Wiki | [[zelda-guide\\|12 座空島石碑位置攻略]] |",
+        "| Markdown | [Regular guide](https://example.com/guide) |",
+      ].join("\n"),
+      thumbnailSizes: [],
+      noteReferences: [
+        {
+          fullSlug: "zelda-guide",
+          title: "Zelda Guide",
+          href: "/zelda-guide",
+        },
+      ],
+    });
+
+    expect(rendered).toContain('<a href="/zelda-guide">12 座空島石碑位置攻略</a>');
+    expect(rendered).toContain('<a href="https://example.com/guide">Regular guide</a>');
+    expect(rendered).not.toContain("[[");
+  });
+
   it("renders note embeds as content without adding the embedded note title", () => {
     const result = preprocessWikilinks("Before\n![[vpn-promotion-for-games]]\nAfter", [], [
       {

@@ -5,7 +5,7 @@ import {
   getWordPressSyncState,
   getWordPressSyncStateFromObject,
   getWordPressSyncEntry,
-  isWordPressContentSynced,
+  isWordPressPayloadSynced,
   setWordPressEntry,
   updateWordPressSyncState,
   updateWordPressSyncEntries,
@@ -69,44 +69,44 @@ describe('wordpress-sync-state', () => {
     });
   });
 
-  describe('isWordPressContentSynced', () => {
-    it('returns true when content hash matches', async () => {
+  describe('isWordPressPayloadSynced', () => {
+    it('returns true when payload hash matches', async () => {
       const mockData = {
         wordpress: {
-          'post-a': { contentHash: 'hashA', syncedAt: '2026-07-29T00:00:00Z' },
+          'post-a': { contentHash: 'sourceA', payloadHash: 'payloadA', syncedAt: '2026-07-29T00:00:00Z' },
         },
       };
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(mockData));
 
-      const isSynced = await isWordPressContentSynced({
+      const isSynced = await isWordPressPayloadSynced({
         vaultPath: '/mock/vault',
         slug: 'post-a',
-        contentHash: 'hashA',
+        payloadHash: 'payloadA',
       });
       expect(isSynced).toBe(true);
     });
 
-    it('returns false when content hash differs or entry is missing', async () => {
+    it('returns false when payload hash differs or entry is missing', async () => {
       const mockData = {
         wordpress: {
-          'post-a': { contentHash: 'hashA', syncedAt: '2026-07-29T00:00:00Z' },
+          'post-a': { contentHash: 'sourceA', payloadHash: 'payloadA', syncedAt: '2026-07-29T00:00:00Z' },
         },
       };
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(mockData));
 
-      const isSyncedDiff = await isWordPressContentSynced({
+      const isSyncedDiff = await isWordPressPayloadSynced({
         vaultPath: '/mock/vault',
         slug: 'post-a',
-        contentHash: 'hashB',
+        payloadHash: 'payloadB',
       });
       expect(isSyncedDiff).toBe(false);
 
-      const isSyncedMissing = await isWordPressContentSynced({
+      const isSyncedMissing = await isWordPressPayloadSynced({
         vaultPath: '/mock/vault',
         slug: 'post-b',
-        contentHash: 'hashA',
+        payloadHash: 'payloadA',
       });
       expect(isSyncedMissing).toBe(false);
     });
@@ -115,12 +115,14 @@ describe('wordpress-sync-state', () => {
   describe('setWordPressEntry', () => {
     it('initializes wordpress object and sets entry', () => {
       const state: VaultSyncState = {};
-      const entry = setWordPressEntry(state, 'test-slug', { contentHash: 'abc' });
+      const entry = setWordPressEntry(state, 'test-slug', { contentHash: 'abc', payloadHash: 'payload-abc' });
 
       expect(state.wordpress).toBeDefined();
       expect(state.wordpress?.['test-slug']).toBeDefined();
       expect(state.wordpress?.['test-slug'].contentHash).toBe('abc');
+      expect(state.wordpress?.['test-slug'].payloadHash).toBe('payload-abc');
       expect(entry.contentHash).toBe('abc');
+      expect(entry.payloadHash).toBe('payload-abc');
       expect(entry.syncedAt).toBeDefined();
     });
   });

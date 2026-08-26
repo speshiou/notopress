@@ -43,19 +43,19 @@ export async function getWordPressSyncEntry({
 }
 
 /**
- * Checks if a post slug is already synced with matching content hash.
+ * Checks if a post slug is already synced with a matching publish payload hash.
  */
-export async function isWordPressContentSynced({
+export async function isWordPressPayloadSynced({
   vaultPath,
   slug,
-  contentHash,
+  payloadHash,
 }: {
   vaultPath: string;
   slug: string;
-  contentHash: string;
+  payloadHash: string;
 }): Promise<boolean> {
   const entry = await getWordPressSyncEntry({ vaultPath, slug });
-  return entry?.contentHash === contentHash;
+  return entry?.payloadHash === payloadHash;
 }
 
 /**
@@ -65,10 +65,11 @@ export async function isWordPressContentSynced({
 export function setWordPressEntry(
   syncState: VaultSyncState,
   slug: string,
-  entry: { contentHash: string; syncedAt?: string }
+  entry: { contentHash: string; payloadHash?: string; syncedAt?: string }
 ): WordPressSyncEntry {
   const syncEntry: WordPressSyncEntry = {
     contentHash: entry.contentHash,
+    ...(entry.payloadHash ? { payloadHash: entry.payloadHash } : {}),
     syncedAt: entry.syncedAt ?? new Date().toISOString(),
   };
   syncState.wordpress = syncState.wordpress || {};
@@ -83,15 +84,17 @@ export async function updateWordPressSyncState({
   vaultPath,
   slug,
   contentHash,
+  payloadHash,
   syncedAt,
 }: {
   vaultPath: string;
   slug: string;
   contentHash: string;
+  payloadHash?: string;
   syncedAt?: string;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
-  setWordPressEntry(syncState, slug, { contentHash, syncedAt });
+  setWordPressEntry(syncState, slug, { contentHash, payloadHash, syncedAt });
   await saveSyncState({ vaultPath, syncState });
   return syncState;
 }
@@ -104,7 +107,7 @@ export async function updateWordPressSyncEntries({
   entries,
 }: {
   vaultPath: string;
-  entries: Record<string, { contentHash: string; syncedAt?: string }>;
+  entries: Record<string, { contentHash: string; payloadHash?: string; syncedAt?: string }>;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
   for (const [slug, entry] of Object.entries(entries)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNoteReferenceResolver, extractWikilinkTargets, getNoteHref } from "./note-links";
+import { createNoteReferenceResolver, extractWikilinkTargets, getNoteHref, parseWikilinkContent } from "./note-links";
 
 describe("note link helpers", () => {
   it("maps page slugs to route hrefs", () => {
@@ -36,6 +36,17 @@ describe("note link helpers", () => {
     expect(extractWikilinkTargets("Read [[vpn]] and embed ![[promo-card]].")).toEqual({
       links: ["vpn"],
       embeds: ["promo-card"],
+    });
+  });
+
+  it("parses aliases whose separator is escaped for Markdown tables", () => {
+    expect(parseWikilinkContent({ content: "guide\\|Guide label" })).toEqual({
+      target: "guide",
+      label: "Guide label",
+    });
+    expect(extractWikilinkTargets("| See [[guide\\|Guide label]] |")).toEqual({
+      links: ["guide"],
+      embeds: [],
     });
   });
 });

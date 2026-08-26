@@ -72,9 +72,10 @@ export function extractWikilinkTargets(markdown: string): WikilinkTargets {
 }
 
 export function parseWikilinkContent({ content }: { content: string }): { target: string; label?: string } {
-  const [rawTarget, ...labelParts] = content.split("|");
-  const target = normalizeNoteTarget(rawTarget || "");
-  const label = labelParts.join("|").trim();
+  const separatorIndex = content.indexOf("|");
+  const rawTarget = separatorIndex === -1 ? content : content.slice(0, separatorIndex).replace(/\\$/, "");
+  const target = normalizeNoteTarget(rawTarget);
+  const label = separatorIndex === -1 ? "" : content.slice(separatorIndex + 1).trim();
   return label ? { target, label } : { target };
 }
 

@@ -18,12 +18,12 @@ import { parseContentTaxonomies } from '../../src/lib/content-metadata';
 import {
   createWordPressTaxonomyResolver,
   formatTaxonomyFrontmatterLines,
-  type WordPressTaxonomyPayload,
 } from './wordpress-taxonomies';
 
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
 import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './wordpress-sync-state';
+import { computeWordPressPayloadHash, type WordPressPublishPayload } from './wordpress-payload';
 import {
   formatWordPressSyncSummary,
   type WordPressSyncErrorResult,
@@ -51,13 +51,9 @@ interface WpFetchArgs {
   body?: unknown;
 }
 
-interface WordPressPostPayload extends WordPressTaxonomyPayload {
-  title: string;
-  content: string;
-  slug: string;
-  status: 'publish';
+type WordPressPostPayload = WordPressPublishPayload & {
   date?: string;
-}
+};
 
 const WordPressContentTypeSchema = z.enum(['post', 'page']);
 const WordPressFrontmatterSchema = z.object({
@@ -196,7 +192,7 @@ export async function pushToWordPress({
     console.log(`- Target Post Slugs: ${targetSlugs.join(', ')}`);
   }
   if (force) {
-    console.log(`- Force Mode: ENABLED (Bypassing content hash checks)`);
+    console.log(`- Force Mode: ENABLED (Bypassing publish payload hash checks)`);
   }
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
 
@@ -280,21 +276,15 @@ export async function pushToWordPress({
   const createdPosts: WordPressSyncItemResult[] = [];
   const failedPosts: WordPressSyncErrorResult[] = [];
   let skippedCount = 0;
+  let syncStateChanged = false;
 
   for (const post of postsToPublish) {
     try {
       // Read markdown and parse frontmatter
       const fileContent = await readFile(post.localPath, 'utf-8');
-      const currentHash = computeContentHash(fileContent);
+      const sourceHash = computeContentHash(fileContent);
 
       const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
-      const isAlreadySynced = wpSyncState[post.slug]?.contentHash === currentHash;
-
-      if (!force && !isExplicitTarget && isAlreadySynced) {
-        console.log(`  ⏭️  Skipping "${post.title}" (slug: ${post.slug}) - content unchanged.`);
-        skippedCount += 1;
-        continue;
-      }
 
       console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
 
@@ -335,7 +325,7 @@ export async function pushToWordPress({
       });
 
       // Render Markdown content to HTML
-      let htmlContent = await renderMarkdownContent({
+      const htmlContent = await renderMarkdownContent({
         markdown: bodyWithoutTitle,
         thumbnailSizes: sizes,
         assetFiles,
@@ -364,6 +354,34 @@ export async function pushToWordPress({
       // Replace slashes with hyphens to match WordPress's sanitization behavior
       const wpSlug = post.slug.replace(/\//g, '-');
 
+      const payload: WordPressPostPayload = {
+        title: post.title,
+        content: wordpressBlockContent,
+        slug: wpSlug,
+        status: 'publish',
+        ...taxonomyPayload,
+      };
+      const payloadHash = computeWordPressPayloadHash({
+        contentType: wordpressResource.contentType,
+        payload,
+      });
+      const syncEntry = wpSyncState[post.slug];
+      const payloadIsUnchanged = syncEntry?.payloadHash === payloadHash;
+
+      if (!force && !isExplicitTarget && syncEntry && payloadIsUnchanged) {
+        if (syncEntry.contentHash !== sourceHash) {
+          setWordPressEntry(syncState, post.slug, {
+            contentHash: sourceHash,
+            payloadHash,
+            syncedAt: syncEntry.syncedAt,
+          });
+          syncStateChanged = true;
+        }
+        console.log(`  ⏭️  Skipping "${post.title}" (slug: ${post.slug}) - publish payload unchanged.`);
+        skippedCount += 1;
+        continue;
+      }
+
       // Search WordPress to see if the post already exists by slug
       const existingPosts = await wpFetch({
         endpoint,
@@ -373,14 +391,6 @@ export async function pushToWordPress({
 
       const wpPostExists = existingPosts && existingPosts.length > 0;
       const wpPostId = wpPostExists ? existingPosts[0].id : null;
-
-      const payload: WordPressPostPayload = {
-        title: post.title,
-        content: wordpressBlockContent,
-        slug: wpSlug,
-        status: 'publish',
-        ...taxonomyPayload,
-      };
 
       if (wpPostExists) {
         if (dryRun) {
@@ -431,7 +441,8 @@ export async function pushToWordPress({
         });
       }
 
-      setWordPressEntry(syncState, post.slug, { contentHash: currentHash });
+      setWordPressEntry(syncState, post.slug, { contentHash: sourceHash, payloadHash });
+      syncStateChanged = true;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
@@ -447,8 +458,7 @@ export async function pushToWordPress({
     }
   }
 
-  const updatedCount = updatedPosts.length + createdPosts.length;
-  if (!dryRun && updatedCount > 0) {
+  if (!dryRun && syncStateChanged) {
     await saveSyncState({ vaultPath: site.vaultPath, syncState });
   }
 

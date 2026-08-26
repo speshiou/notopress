@@ -9,6 +9,8 @@ import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } fro
 
 type Logger = Pick<typeof console, 'log'>;
 
+type RenderedContentChange = 'create' | 'update' | null;
+
 function stripFirstMarkdownHeading(markdown: string): string {
   return markdown.replace(/^#\s+.+$/m, '').trim();
 }
@@ -28,6 +30,24 @@ function buildPublicNoteReferences({ allIndices }: { allIndices: Map<string, Vau
 
 export function getRenderedContentPath({ fullSlug }: { fullSlug: string }): string {
   return `${RENDERED_DIR}/content/${fullSlug}.html`;
+}
+
+async function getRenderedContentChange({
+  renderedPath,
+  renderedHtml,
+}: {
+  renderedPath: string;
+  renderedHtml: string;
+}): Promise<RenderedContentChange> {
+  try {
+    const existingHtml = await readFile(renderedPath, 'utf-8');
+    return existingHtml === renderedHtml ? null : 'update';
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return 'create';
+    }
+    throw error;
+  }
 }
 
 export async function generateRenderedContent({
@@ -55,6 +75,7 @@ export async function generateRenderedContent({
   const publicNoteReferences = buildPublicNoteReferences({ allIndices });
   const privateNoteReferences = await collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths });
   let renderedCount = 0;
+  let changedCount = 0;
 
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
@@ -84,7 +105,11 @@ export async function generateRenderedContent({
       });
 
       if (dryRun) {
-        logger.log(`[DRY RUN] Would generate rendered HTML: ${getRenderedContentPath({ fullSlug })}`);
+        const change = await getRenderedContentChange({ renderedPath, renderedHtml: html });
+        if (change) {
+          logger.log(`[DRY RUN] Would ${change} rendered HTML: ${getRenderedContentPath({ fullSlug })}`);
+          changedCount += 1;
+        }
       } else {
         await mkdir(path.dirname(renderedPath), { recursive: true });
         await writeFile(renderedPath, html);
@@ -95,5 +120,7 @@ export async function generateRenderedContent({
 
   if (!dryRun) {
     logger.log(`✨ Generated ${renderedCount} rendered HTML file(s) in ${RENDERED_DIR}/content`);
+  } else {
+    logger.log(`[DRY RUN] ${changedCount} of ${renderedCount} rendered HTML file(s) would change`);
   }
 }
