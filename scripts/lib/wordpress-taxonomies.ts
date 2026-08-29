@@ -3,7 +3,15 @@ import type { ContentTaxonomies } from '../../src/domain/content-metadata';
 
 type WordPressTaxonomyRestBase = 'categories' | 'tags';
 
-type WordPressTaxonomyRequest = ({ path }: { path: string }) => Promise<unknown>;
+type WordPressTaxonomyRequest = ({
+  path,
+  method,
+  body,
+}: {
+  path: string;
+  method?: 'GET' | 'POST';
+  body?: unknown;
+}) => Promise<unknown>;
 
 const WordPressTermSchema = z.object({
   id: z.number().int().positive(),
@@ -27,12 +35,57 @@ function parseTerms({ value, taxonomy }: { value: unknown; taxonomy: WordPressTa
   return result.data;
 }
 
+function parseTerm({ value, taxonomy }: { value: unknown; taxonomy: WordPressTaxonomyRestBase }) {
+  const result = WordPressTermSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`WordPress returned an invalid ${taxonomy} term response.`);
+  }
+  return result.data;
+}
+
 export function createWordPressTaxonomyResolver({
   request,
+  createMissingTerms = false,
 }: {
   request: WordPressTaxonomyRequest;
+  createMissingTerms?: boolean;
 }) {
   const termIdCache = new Map<string, number>();
+
+  async function findTerm({
+    taxonomy,
+    slug,
+  }: {
+    taxonomy: WordPressTaxonomyRestBase;
+    slug: string;
+  }) {
+    const response = await request({
+      path: `/wp/v2/${taxonomy}?slug=${encodeURIComponent(slug)}&per_page=100`,
+    });
+    const terms = parseTerms({ value: response, taxonomy });
+    return terms.find((candidate) => candidate.slug === slug);
+  }
+
+  async function createTerm({
+    taxonomy,
+    slug,
+  }: {
+    taxonomy: WordPressTaxonomyRestBase;
+    slug: string;
+  }) {
+    try {
+      const response = await request({
+        path: `/wp/v2/${taxonomy}`,
+        method: 'POST',
+        body: { name: slug, slug },
+      });
+      return parseTerm({ value: response, taxonomy });
+    } catch (error: unknown) {
+      const term = await findTerm({ taxonomy, slug });
+      if (term) return term;
+      throw error;
+    }
+  }
 
   async function resolveSlugs({
     taxonomy,
@@ -51,14 +104,13 @@ export function createWordPressTaxonomyResolver({
         continue;
       }
 
-      const response = await request({
-        path: `/wp/v2/${taxonomy}?slug=${encodeURIComponent(slug)}&per_page=100`,
-      });
-      const terms = parseTerms({ value: response, taxonomy });
-      const term = terms.find((candidate) => candidate.slug === slug);
+      const existingTerm = await findTerm({ taxonomy, slug });
+      const term = existingTerm || (createMissingTerms
+        ? await createTerm({ taxonomy, slug })
+        : undefined);
       if (!term) {
         throw new Error(
-          `WordPress ${taxonomy} slug "${slug}" does not exist. Create it in WordPress or remove it from the article frontmatter.`
+          `WordPress ${taxonomy} slug "${slug}" does not exist. Run a live sync to create it or remove it from the article frontmatter.`
         );
       }
 

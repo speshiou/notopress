@@ -290,6 +290,54 @@ describe('WordPress Deployment Library', () => {
       });
     });
 
+    it('should create missing taxonomy terms before publishing a post', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/tags?slug=stock-analysis')) {
+          return { ok: true, json: async () => [] };
+        }
+        if (url.endsWith('/wp/v2/tags') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 78, slug: 'stock-analysis' }) };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [] };
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 789 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+      vi.mocked(readFile).mockResolvedValue([
+        '---',
+        'tags:',
+        '  - stock-analysis',
+        '---',
+        '# My Post Title',
+        'Body.',
+      ].join('\n'));
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/tags'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ name: 'stock-analysis', slug: 'stock-analysis' }),
+        })
+      );
+      const postCall = mockFetch.mock.calls.find((call) => (
+        call[0].includes('/wp/v2/posts') && call[1]?.method === 'POST'
+      ));
+      expect(postCall).toBeDefined();
+      expect(JSON.parse(postCall![1].body)).toMatchObject({ tags: [78] });
+    });
+
     it('should omit optional taxonomy payload fields when frontmatter does not specify them', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {

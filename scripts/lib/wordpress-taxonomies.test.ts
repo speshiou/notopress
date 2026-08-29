@@ -36,6 +36,38 @@ describe('createWordPressTaxonomyResolver', () => {
     })).rejects.toThrow('WordPress tags slug "unknown-tag" does not exist');
   });
 
+  it('creates missing taxonomy slugs when enabled and caches their IDs', async () => {
+    const request = vi.fn(async ({ method }: { method?: 'GET' | 'POST' }) => {
+      if (method === 'POST') return { id: 78, slug: 'stock-analysis' };
+      return [];
+    });
+    const resolver = createWordPressTaxonomyResolver({ request, createMissingTerms: true });
+
+    await expect(resolver.resolvePayload({
+      taxonomies: { tags: ['stock-analysis', 'stock-analysis'] },
+    })).resolves.toEqual({ tags: [78, 78] });
+    expect(request).toHaveBeenCalledWith({
+      path: '/wp/v2/tags',
+      method: 'POST',
+      body: { name: 'stock-analysis', slug: 'stock-analysis' },
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers when another sync creates a missing term first', async () => {
+    let lookupCount = 0;
+    const request = vi.fn(async ({ method }: { method?: 'GET' | 'POST' }) => {
+      if (method === 'POST') throw new Error('term_exists');
+      lookupCount += 1;
+      return lookupCount === 1 ? [] : [{ id: 91, slug: 'annual-calendar' }];
+    });
+    const resolver = createWordPressTaxonomyResolver({ request, createMissingTerms: true });
+
+    await expect(resolver.resolvePayload({
+      taxonomies: { tags: ['annual-calendar'] },
+    })).resolves.toEqual({ tags: [91] });
+  });
+
   it('resolves WordPress term IDs back to frontmatter slugs', async () => {
     const request = vi.fn(async ({ path }: { path: string }) => (
       path.includes('/categories?')

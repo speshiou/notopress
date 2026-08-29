@@ -36,7 +36,7 @@ const MOCK_WORDPRESS_TEMPLATE = `# WordPress Integration & Commands
   - \`wp cache flush\`: Clears WordPress object cache.
   - \`wp plugin list\`: Displays installed WordPress plugins.
 - **WordPress Conventions & Safety**:
-  - Top-level \`categories\` and \`tags\` frontmatter fields contain optional WordPress term slugs. Use only slugs that already exist in WordPress; NotoPress resolves them to term IDs and does not create missing terms.
+  - Top-level \`categories\` and \`tags\` frontmatter fields contain optional WordPress term slugs. NotoPress resolves existing terms to IDs and creates missing terms during live sync; dry runs remain read-only and report missing terms.
   - Keep WordPress HTML/Gutenberg block conversion logic centralized in \`src/lib/wordpress-blocks.ts\` and \`scripts/lib/wordpress.ts\`.
   - Pass WordPress credentials (\`endpoint\`, \`username\`, \`applicationPassword\`) via \`registry.json\` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using \`--dry-run\` before applying batch sync operations to production endpoints.`;
@@ -108,7 +108,7 @@ describe('createAgentRulesWriter', () => {
     });
 
     expect(writes['vault/AGENTS.md']).toContain('WordPress Integration & Commands');
-    expect(writes['vault/AGENTS.md']).toContain('NotoPress resolves them to term IDs');
+    expect(writes['vault/AGENTS.md']).toContain('NotoPress resolves existing terms to IDs and creates missing terms during live sync');
     expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run sync -- --site my-tech-blog --wp');
     expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
     expect(writes['vault/AGENTS.md']).not.toContain('{{notopressPath}}');

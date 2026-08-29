@@ -176,7 +176,14 @@ export async function pushToWordPress({
 
   const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
   const taxonomyResolver = createWordPressTaxonomyResolver({
-    request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+    request: ({ path: apiPath, method, body }) => wpFetch({
+      endpoint,
+      credentials,
+      path: apiPath,
+      method,
+      body,
+    }),
+    createMissingTerms: !dryRun,
   });
   const sizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   const imageHost = site.imageHost || registry.imageHost;
