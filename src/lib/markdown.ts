@@ -2,8 +2,8 @@ import { remark } from "remark";
 import html from "remark-html";
 import gfm from "remark-gfm";
 import type { Plugin } from "unified";
-import { getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
-import { resolveMarkdownImagePaths } from "./local-images";
+import { getAssetUrl, getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
+import { isExternalOrInlineAsset, resolveMarkdownImagePaths } from "./local-images";
 import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
 
 export type MarkdownNode = {
@@ -32,6 +32,7 @@ export type MarkdownRendererDeps = {
     thumbnailSizes: readonly number[];
     assetUrlConfig?: AssetUrlConfig;
   }) => { src: string; srcSet: string; sizes: string } | null;
+  getOriginalImageSrc: ({ src, assetUrlConfig }: { src: string; assetUrlConfig?: AssetUrlConfig }) => string;
   processMarkdown: ({ markdown, plugin }: { markdown: string; plugin: Plugin<[], MarkdownNode> }) => Promise<string>;
 };
 
@@ -114,7 +115,9 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
             const imgNode = nonWhitespaceChildren[0];
             const imgUrl = imgNode.url || "";
             const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes, assetUrlConfig });
-            const srcVal = attributes ? attributes.src : encodeURI(imgUrl);
+            const srcVal = attributes
+              ? attributes.src
+              : deps.getOriginalImageSrc({ src: imgUrl, assetUrlConfig });
             const altText = imgNode.alt || '';
 
             const imgProperties: Record<string, string> = {
@@ -226,14 +229,14 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
 
       if (node.type === "image" && node.url) {
         const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes, assetUrlConfig });
-        if (attributes) {
+        const originalSrc = deps.getOriginalImageSrc({ src: node.url, assetUrlConfig });
+        if (attributes || originalSrc !== node.url) {
           node.data = {
             ...node.data,
             hProperties: {
               ...node.data?.hProperties,
-              src: attributes.src,
-              srcset: attributes.srcSet,
-              sizes: attributes.sizes,
+              src: attributes?.src || originalSrc,
+              ...(attributes ? { srcset: attributes.srcSet, sizes: attributes.sizes } : {}),
               style: "max-width: 100%;",
               loading: "lazy",
               decoding: "async",
@@ -368,6 +371,18 @@ function getImageAltFromWikilinkContent({ content }: { content: string }): strin
 
 const defaultMarkdownRenderer = createMarkdownRenderer({
   getResponsiveImageAttributes,
+  getOriginalImageSrc: ({ src, assetUrlConfig }) => {
+    if (isExternalOrInlineAsset({ src }) || !assetUrlConfig) {
+      return encodeURI(src);
+    }
+    return encodeURI(getAssetUrl({
+      filePath: src,
+      imageHost: assetUrlConfig.imageHost,
+      siteId: assetUrlConfig.siteId,
+      s3SubDir: assetUrlConfig.s3SubDir,
+      mode: assetUrlConfig.mode,
+    }));
+  },
   processMarkdown: async ({ markdown, plugin }) => {
     const processedContent = await remark().use(gfm).use(plugin).use(html, { sanitize: false }).process(markdown);
     return processedContent.toString();

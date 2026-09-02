@@ -10,6 +10,7 @@ describe("createMarkdownRenderer", () => {
         srcSet: "/_thumbnails/image-320.webp 320w",
         sizes: "100vw",
       })),
+      getOriginalImageSrc: ({ src }) => src,
       processMarkdown: async () => "rendered",
     });
     const tree: MarkdownNode = {
@@ -57,6 +58,42 @@ describe("createMarkdownRenderer", () => {
 
     expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp"');
     expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+  });
+
+  it("uses the original absolute asset URL for GIFs without responsive thumbnails", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![Animated status](attachments/status.gif)",
+      thumbnailSizes: [320],
+      assetFiles: ["attachments/status.gif"],
+      assetUrlConfig: {
+        imageHost: "https://cdn.example.com/",
+        siteId: "example-site",
+        s3SubDir: "content",
+        mode: "absolute",
+      },
+    });
+
+    expect(html).toContain('src="https://cdn.example.com/example-site/content/attachments/status.gif"');
+    expect(html).not.toContain("srcset=");
+    expect(html).not.toContain("_thumbnails");
+  });
+
+  it("uses the vault asset route for app-relative GIFs without responsive thumbnails", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![Animated status](attachments/status.gif)",
+      thumbnailSizes: [320],
+      assetFiles: ["attachments/status.gif"],
+      assetUrlConfig: {
+        s3SubDir: "content",
+        mode: "app-relative",
+      },
+    });
+
+    expect(html).toContain('src="/api/vault-public/attachments/status.gif"');
+    expect(html).not.toContain("srcset=");
+    expect(html).not.toContain("_thumbnails");
   });
 
   it("renders GitHub-Flavored Markdown tables inside generic figures", async () => {
