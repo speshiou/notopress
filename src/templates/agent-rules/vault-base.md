@@ -23,4 +23,5 @@ For captions, use a single italic paragraph immediately after the media or table
 # Notopress Commands
 - **Sync Vault**:
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}}`: Syncs content vault, generates indices and thumbnails.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --delete`: Also removes remote files that no longer exist locally. Remote files are preserved unless this flag is provided.
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --dry-run`: Previews sync changes without writing files.

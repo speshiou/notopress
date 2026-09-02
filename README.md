@@ -33,7 +33,7 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Note wikilinks**: Public notes can be linked with `[[note-slug]]` or `[[folder/note-slug]]`, using the target note title as link text.
 - **Note transclusions**: Public notes and configured private snippets can be embedded with `![[note-slug]]`, including nested transclusions.
 - **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
-- **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with delete synchronization.
+- **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with optional delete synchronization.
 - **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
@@ -209,6 +209,18 @@ npm run sync
 ```
 
 The sync command writes generated files such as `root.json`, nested content indices, rendered HTML, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
+
+Remote files are preserved by default. To remove remote files that no longer exist in the local vault, opt in with `--delete`:
+
+```bash
+npm run sync -- --delete
+```
+
+Preview deletions before applying them by combining it with dry-run mode:
+
+```bash
+npm run sync -- --delete --dry-run
+```
 
 ### Safety First: Dry Run
 Before making any changes, you can preview what will happen:

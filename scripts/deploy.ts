@@ -16,6 +16,7 @@ import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
 import { generateRenderedContent } from './lib/rendered-content';
 import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
+import { buildS3SyncArgs } from './lib/s3-sync';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -105,9 +106,20 @@ function getS3Credentials({ registry }: { registry: Registry }) {
   };
 }
 
-async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Registry; isDryRun: boolean }) {
+async function syncSite({
+  site,
+  registry,
+  isDryRun,
+  deleteRemoteFiles,
+}: {
+  site: Site;
+  registry: Registry;
+  isDryRun: boolean;
+  deleteRemoteFiles: boolean;
+}) {
   const endpoint = getEndpoint({ site, registry });
   const { accessKeyId, secretAccessKey } = getS3Credentials({ registry });
+  const bucketName = site.bucketName;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     console.error(
@@ -116,9 +128,13 @@ async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Re
     process.exit(1);
   }
 
+  if (!bucketName) {
+    throw new Error(`⨯ Error: "bucketName" is not configured for site [${site.siteId}].`);
+  }
+
   console.log(`\n☁️  Preparing AWS S3 Sync...`);
   console.log(`- Local Path: ${site.vaultPath}`);
-  console.log(`- S3 Bucket:  ${site.bucketName}`);
+  console.log(`- S3 Bucket:  ${bucketName}`);
   console.log(`- Endpoint:   ${endpoint}\n`);
 
   // We add a trailing slash to the vaultPath so that aws s3 sync syncs the *contents* of the directory
@@ -126,26 +142,14 @@ async function syncSite({ site, registry, isDryRun }: { site: Site; registry: Re
   // Each site is synced to its own subdirectory in the bucket: /{site-id}/*
   // We include '--size-only' to skip uploading existing image assets and thumbnails whose size matches
   // the remote object, avoiding redundant uploads when local modification timestamps change (#38).
-  const args = [
-    's3',
-    'sync',
-    `${site.vaultPath}/`,
-    `s3://${site.bucketName}/${site.siteId}/`,
-    '--endpoint-url',
+  const args = buildS3SyncArgs({
+    vaultPath: site.vaultPath,
+    bucketName,
+    siteId: site.siteId,
     endpoint,
-    '--size-only',
-    '--exclude',
-    '*.DS_Store',
-    '--exclude',
-    '*/.git/*',
-    '--exclude',
-    '.git/*',
-    '--delete',
-  ];
-
-  if (isDryRun) {
-    args.push('--dryrun');
-  }
+    deleteRemoteFiles,
+    dryRun: isDryRun,
+  });
 
   console.log(`Executing:\n> aws ${args.join(' ')}\n`);
 
@@ -323,10 +327,12 @@ async function syncContent({
   site,
   registry,
   isDryRun,
+  deleteRemoteFiles,
 }: {
   site: Site;
   registry: Registry;
   isDryRun: boolean;
+  deleteRemoteFiles: boolean;
 }) {
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   await ensureVaultAgentRules({
@@ -362,7 +368,7 @@ async function syncContent({
     dryRun: isDryRun,
   });
 
-  await syncSite({ site, registry, isDryRun });
+  await syncSite({ site, registry, isDryRun, deleteRemoteFiles });
 
   if (!isDryRun) {
     await uploadRegistry({ site, registry });
@@ -385,6 +391,7 @@ function getRunMode(): RunMode {
 
 async function main() {
   const isDryRun = hasFlag({ flag: '--dry-run' });
+  const deleteRemoteFiles = hasFlag({ flag: '--delete' });
   const registryPath = getFlagValue({ flag: '--registry', alias: '-r' });
   const siteId = getFlagValue({ flag: '--site', alias: '-s' });
   const mode = getRunMode();
@@ -439,7 +446,7 @@ async function main() {
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
 
-    const { allIndices } = await syncContent({ site, registry, isDryRun });
+    const { allIndices } = await syncContent({ site, registry, isDryRun, deleteRemoteFiles });
 
     if (shouldPushWp) {
       await pushToWordPress({
