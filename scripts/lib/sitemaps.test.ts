@@ -23,6 +23,27 @@ describe('createSitemapGenerator', () => {
     ).toEqual([{ loc: 'https://example.com/blog', lastmod: '2024-01-01' }]);
   });
 
+  it('emits rewritten public URLs for flattened pages', () => {
+    const generator = createSitemapGenerator({
+      mkdir: vi.fn(async () => undefined),
+      writeFile: vi.fn(async () => undefined),
+      joinPath: path.posix.join,
+      indexSlug: 'page',
+      sitemapXml: 'sitemap.xml',
+      sitemapPagesXml: 'sitemap_pages.xml',
+      logger: { log: vi.fn() },
+    });
+
+    expect(
+      generator.mapPagesToSitemapUrls({
+        domain: 'example.com',
+        relDir: 'guides',
+        routes: { vpn: 'guides/vpn' },
+        pages: [{ title: 'VPN', slug: 'vpn', publicSlug: 'vpn', date: '2024-01-01', excerpt: '' }],
+      })
+    ).toEqual([{ loc: 'https://example.com/vpn', lastmod: '2024-01-01' }]);
+  });
+
   it('writes a sitemap index when nested sitemaps exist', async () => {
     const writes: Record<string, string> = {};
     const generator = createSitemapGenerator({

@@ -10,10 +10,20 @@ import {
   type NoteReferenceInput,
 } from "./note-links";
 import { ContentTaxonomiesSchema } from "../domain/content-metadata";
+import {
+  composeFullSlug,
+  findPublicSlugForFullSlug,
+  getNoteHref,
+  hasVaultRoutes,
+  isRouteWinner,
+  splitFullSlug,
+  toPublicSlug,
+} from "./rewrites";
 
 export const PageMetadataSchema = z.object({
   title: z.string(),
   slug: z.string(),
+  publicSlug: z.string().optional(),
   date: z.string(),
   updatedAt: z.string().optional(),
   excerpt: z.string(),
@@ -36,6 +46,8 @@ export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
     linkable: z.literal(false).optional(),
   })).optional(),
   thumbnailSizes: z.array(z.number().int().positive()).optional(),
+  routes: z.record(z.string(), z.string()).optional(),
+  publicDirectories: z.array(z.string()).optional(),
 });
 
 export type PageMetadata = z.infer<typeof PageMetadataSchema>;
@@ -53,7 +65,8 @@ export type VaultContent =
       thumbnailSizes: readonly number[];
     }
   | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
-  | { type: "asset"; filePath: string };
+  | { type: "asset"; filePath: string }
+  | { type: "redirect"; href: string };
 
 export type VaultConfig = {
   bucketName: string;
@@ -121,6 +134,25 @@ function stripFirstMarkdownHeading(markdown: string): string {
   return markdown.replace(/^#\s+.+$/m, "").trim();
 }
 
+function noteReferenceFromPage({
+  directory,
+  page,
+  routes,
+}: {
+  directory: string;
+  page: PageMetadata;
+  routes?: Record<string, string>;
+}): NoteReferenceInput {
+  const fullSlug = composeFullSlug({ directory, slug: page.slug });
+  const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
+  return {
+    fullSlug,
+    title: page.title,
+    publicSlug,
+    shadowed: routes ? !isRouteWinner({ routes, publicSlug, fullSlug }) : false,
+  };
+}
+
 function buildNoteReferenceInputs({
   rootIndex,
   directoryIndices,
@@ -128,17 +160,13 @@ function buildNoteReferenceInputs({
   rootIndex: VaultRootIndex;
   directoryIndices: ReadonlyMap<string, VaultDirectoryIndex>;
 }): NoteReferenceInput[] {
-  const noteReferences: NoteReferenceInput[] = rootIndex.pages.map((page) => ({
-    fullSlug: page.slug,
-    title: page.title,
-  }));
+  const noteReferences: NoteReferenceInput[] = rootIndex.pages.map((page) =>
+    noteReferenceFromPage({ directory: "", page, routes: rootIndex.routes })
+  );
 
   for (const [directory, directoryIndex] of directoryIndices.entries()) {
     for (const page of directoryIndex.pages) {
-      noteReferences.push({
-        fullSlug: `${directory}/${page.slug}`,
-        title: page.title,
-      });
+      noteReferences.push(noteReferenceFromPage({ directory, page, routes: rootIndex.routes }));
     }
   }
 
@@ -240,6 +268,73 @@ export async function fetchNoteReferencesForMarkdown({
   return [...referencesByFullSlug.values()];
 }
 
+async function loadMarkdownPage({
+  config,
+  fullSlug,
+  metadata,
+  thumbnailSizes,
+}: {
+  config: VaultConfig;
+  fullSlug: string;
+  metadata: PageMetadata;
+  thumbnailSizes: readonly number[];
+}): Promise<Extract<VaultContent, { type: "markdown" }>> {
+  const renderedHtml = await fetchRenderedHtml(config, fullSlug);
+  const markdown = renderedHtml
+    ? ""
+    : await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullSlug}.md`);
+  return {
+    type: "markdown",
+    content: markdown,
+    renderedHtml,
+    matchedSlug: fullSlug,
+    metadata,
+    thumbnailSizes,
+  };
+}
+
+async function loadPageMetadata({
+  config,
+  rootIndex,
+  fullSlug,
+}: {
+  config: VaultConfig;
+  rootIndex: VaultRootIndex;
+  fullSlug: string;
+}): Promise<PageMetadata | null> {
+  const { directory, slug } = splitFullSlug({ fullSlug });
+  if (!directory) {
+    return rootIndex.pages.find((page) => page.slug === slug) || null;
+  }
+  const dirIndex = await fetchDirectoryIndex(config, directory);
+  return dirIndex?.pages.find((page) => page.slug === slug) || null;
+}
+
+function collectionPagesForDirectory({
+  directory,
+  pages,
+  routes,
+}: {
+  directory: string;
+  pages: PageMetadata[];
+  routes?: Record<string, string>;
+}): PageMetadata[] {
+  return pages.filter((page) => {
+    if (page.slug === INDEX_SLUG) {
+      return false;
+    }
+    const fullSlug = composeFullSlug({ directory, slug: page.slug });
+    const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
+    if (routes && !isRouteWinner({ routes, publicSlug, fullSlug })) {
+      return false;
+    }
+    if (!directory) {
+      return true;
+    }
+    return publicSlug === directory || publicSlug.startsWith(`${directory}/`);
+  });
+}
+
 /**
  * Resolves a request by jumping directly to the correct index using the master directory map.
  */
@@ -247,29 +342,68 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
   const segments = slugArray?.filter(Boolean) || [];
   const requestedSlug = segments.join("/") || INDEX_SLUG;
 
-  // 1. Fetch root index (The Master Map)
   const rootIndex = await fetchRootIndex(config);
   if (!rootIndex) return null;
   const thumbnailSizes = rootIndex.thumbnailSizes || DEFAULT_THUMBNAIL_SIZES;
 
-  // 2. Check for public asset match (only in root.json)
   if (segments.length > 0 && rootIndex.publicFiles.includes(requestedSlug)) {
     return { type: "asset", filePath: requestedSlug };
   }
 
-  // 3. Routing Priority Logic
-  
-  // 3a. Is it a page at the root level?
-  const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
-  if (rootPageMatch) {
-    const renderedHtml = await fetchRenderedHtml(config, rootPageMatch.slug);
-    const markdown = renderedHtml
-      ? ""
-      : await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${rootPageMatch.slug}.md`);
-    return { type: "markdown", content: markdown, renderedHtml, matchedSlug: rootPageMatch.slug, metadata: rootPageMatch, thumbnailSizes };
+  if (hasVaultRoutes({ routes: rootIndex.routes })) {
+    const routes = rootIndex.routes || {};
+    const redirectPublicSlug = findPublicSlugForFullSlug({ routes, fullSlug: requestedSlug });
+    if (redirectPublicSlug && redirectPublicSlug !== requestedSlug) {
+      return { type: "redirect", href: getNoteHref({ publicSlug: redirectPublicSlug }) };
+    }
+
+    const routedFullSlug = routes[requestedSlug];
+    if (routedFullSlug) {
+      const metadata = await loadPageMetadata({ config, rootIndex, fullSlug: routedFullSlug });
+      if (!metadata) {
+        return null;
+      }
+      return loadMarkdownPage({ config, fullSlug: routedFullSlug, metadata, thumbnailSizes });
+    }
+
+    const publicDirectories = rootIndex.publicDirectories || [];
+    const isPublicDirectory = publicDirectories.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
+    if (!isPublicDirectory) {
+      return null;
+    }
+
+    const targetDir = requestedSlug === INDEX_SLUG ? "" : requestedSlug;
+    const dirIndex = await fetchDirectoryIndex(config, targetDir);
+    if (!dirIndex) {
+      return null;
+    }
+
+    const indexMatch = dirIndex.pages.find((page) => page.slug === INDEX_SLUG);
+    if (indexMatch) {
+      const fullPath = composeFullSlug({ directory: targetDir, slug: INDEX_SLUG });
+      const indexPublicSlug = indexMatch.publicSlug ?? toPublicSlug({ fullSlug: fullPath });
+      if (!routes[requestedSlug] && isRouteWinner({ routes, publicSlug: indexPublicSlug, fullSlug: fullPath })) {
+        return loadMarkdownPage({ config, fullSlug: fullPath, metadata: indexMatch, thumbnailSizes });
+      }
+    }
+
+    return {
+      type: "collection",
+      pages: collectionPagesForDirectory({ directory: targetDir, pages: dirIndex.pages, routes }),
+      requestedSlug: targetDir,
+    };
   }
 
-  // 3b. Is it a page in a nested directory? (Direct Jump)
+  const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
+  if (rootPageMatch) {
+    return loadMarkdownPage({
+      config,
+      fullSlug: rootPageMatch.slug,
+      metadata: rootPageMatch,
+      thumbnailSizes,
+    });
+  }
+
   const parentDir = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
   const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
 
@@ -277,36 +411,37 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
     const dirIndex = await fetchDirectoryIndex(config, parentDir);
     const nestedMatch = dirIndex?.pages.find(p => p.slug === lastSegment);
     if (nestedMatch) {
-      // requestedSlug is the full path required for S3
-      const renderedHtml = await fetchRenderedHtml(config, requestedSlug);
-      const markdown = renderedHtml
-        ? ""
-        : await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${requestedSlug}.md`);
-      return { type: "markdown", content: markdown, renderedHtml, matchedSlug: requestedSlug, metadata: nestedMatch, thumbnailSizes };
+      return loadMarkdownPage({
+        config,
+        fullSlug: requestedSlug,
+        metadata: nestedMatch,
+        thumbnailSizes,
+      });
     }
   }
 
-  // 3c. Is it a directory? (Serves Index Page or Collection View)
   const isDirectory = rootIndex.directories.includes(requestedSlug) || requestedSlug === INDEX_SLUG;
   if (isDirectory) {
     const targetDir = requestedSlug === INDEX_SLUG ? "" : requestedSlug;
     const dirIndex = await fetchDirectoryIndex(config, targetDir);
     
     if (dirIndex) {
-      // Priority 1: Check for explicit index page (e.g. folder/page.md)
       const indexMatch = dirIndex.pages.find(p => p.slug === INDEX_SLUG);
       if (indexMatch) {
-        const fullPath = targetDir ? `${targetDir}/${INDEX_SLUG}` : INDEX_SLUG;
-        const renderedHtml = await fetchRenderedHtml(config, fullPath);
-        const markdown = renderedHtml
-          ? ""
-          : await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullPath}.md`);
-        return { type: "markdown", content: markdown, renderedHtml, matchedSlug: fullPath, metadata: indexMatch, thumbnailSizes };
+        const fullPath = composeFullSlug({ directory: targetDir, slug: INDEX_SLUG });
+        return loadMarkdownPage({
+          config,
+          fullSlug: fullPath,
+          metadata: indexMatch,
+          thumbnailSizes,
+        });
       }
 
-      // Priority 2: Return collection view
-      const collectionPages = dirIndex.pages.filter(p => p.slug !== INDEX_SLUG);
-      return { type: "collection", pages: collectionPages, requestedSlug: targetDir };
+      return {
+        type: "collection",
+        pages: collectionPagesForDirectory({ directory: targetDir, pages: dirIndex.pages }),
+        requestedSlug: targetDir,
+      };
     }
   }
 

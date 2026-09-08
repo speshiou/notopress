@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RewriteRulesSchema } from './rewrites';
 
 export const ThumbnailSizesSchema = z.array(z.number().int().positive()).min(1).optional();
 
@@ -19,6 +20,7 @@ export const SiteSchema = z.object({
   thumbnailSizes: ThumbnailSizesSchema,
   wordpress: WordPressCredentialsSchema.optional(),
   imageHost: z.string().url().optional(),
+  rewrites: RewriteRulesSchema.optional(),
 });
 
 export const RegistrySchema = z.object({

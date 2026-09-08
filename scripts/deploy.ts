@@ -346,6 +346,7 @@ async function syncContent({
     vaultPath: site.vaultPath,
     thumbnailSizes,
     noteIncludePaths: site.noteIncludePaths,
+    rewrites: site.rewrites,
     dryRun: isDryRun,
   });
 
@@ -365,6 +366,7 @@ async function syncContent({
     domain: site.domain,
     rootContentIndex,
     allIndices,
+    routes: vaultRootIndex.routes,
     dryRun: isDryRun,
   });
 
@@ -419,18 +421,9 @@ async function main() {
         );
       }
 
-      const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
-      const { allIndices } = await generateIndices({
-        vaultPath: site.vaultPath,
-        thumbnailSizes,
-        noteIncludePaths: site.noteIncludePaths,
-        dryRun: true,
-      });
-
       await pullFromWordPress({
         site,
         registry,
-        allIndices,
         slugOrId: pullSlugOrId,
         dryRun: isDryRun,
       });

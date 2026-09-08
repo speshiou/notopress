@@ -22,6 +22,7 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 
 - **Local Markdown publishing**: Use a local folder as the canonical source for site content.
 - **Clean file-based routing**: `content/page.md` becomes the home page, `content/blog/page.md` becomes `/blog`, and nested Markdown files map to clean URLs.
+- **Optional URL rewrites**: Keep articles in local category folders while publishing them under another path (including `/`) via optional `rewrites` in `registry.json`.
 - **Directory collection pages**: Folders without a `page.md` render an archive-style listing of their Markdown pages.
 - **Frontmatter metadata**: `title`, `date`, `updated`, `lastmod`, and `published: false` are supported for page metadata and publishing control.
 - **Automatic excerpts**: Page summaries are generated from the first non-heading paragraph, with fenced code blocks ignored.
@@ -101,6 +102,20 @@ The registry manages global defaults and site-specific overrides.
 | `imageHost` | `string` | (Optional) Absolute image host used for generated image URLs in publishing workflows. |
 | `thumbnailSizes` | `number[]` | (Optional) Override the global responsive image thumbnail widths for this site. |
 | `wordpress` | `object` | (Optional) WordPress REST API credentials for `--wp` publishing. |
+| `rewrites` | `array` | (Optional) Vault-path to public-URL mappings. `source` is a path under `content/` (`guides/:path*`). `destination` is a public URL (`/:path*`). First matching rule wins; duplicate public URLs warn and keep the earlier file. |
+
+Internal note links should use wikilinks (`[[vpn]]` or `[[guides/vpn]]`). Handwritten markdown links like `[text](/guides/vpn)` are not rewritten.
+
+Example: keep files in `content/guides/` and `content/reviews/` while serving them at the site root:
+
+```json
+"rewrites": [
+  { "source": "guides/:path*", "destination": "/:path*" },
+  { "source": "reviews/:path*", "destination": "/:path*" }
+]
+```
+
+`content/guides/vpn.md` publishes at `/vpn`. Moving it to `content/reviews/vpn.md` keeps `/vpn` after the next sync.
 
 ### Responsive Images
 
@@ -135,7 +150,7 @@ Public note links resolve against Markdown files under `content/`:
 [[guide-note|Custom link text]]
 ```
 
-When a note link is rendered, Notopress uses the target note's title as the default link text. Nested notes keep their full public URL path, so `[[docs/guide-note]]` links to `/docs/guide-note`.
+When a note link is rendered, Notopress uses the target note's title as the default link text. Nested notes keep their **public URL**, so `[[docs/guide-note]]` links to `/docs/guide-note` unless a rewrite maps that file elsewhere.
 
 If a target leaf slug is unique, `[[guide-note]]` can resolve without the folder path. If multiple notes share the same filename, use the nested path form to avoid ambiguity.
 

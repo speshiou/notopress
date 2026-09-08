@@ -196,11 +196,15 @@ describe("Vault Resolution (Unit Tests)", () => {
       fullSlug: "root-vpn",
       title: "Root VPN",
       href: "/root-vpn",
+      publicSlug: "root-vpn",
+      shadowed: false,
     });
     expect(references).toContainEqual({
       fullSlug: "gaming/vpn-promotion-for-games",
       title: "Gaming VPN Promotion",
       href: "/gaming/vpn-promotion-for-games",
+      publicSlug: "gaming/vpn-promotion-for-games",
+      shadowed: false,
       content: "Embedded body only.",
     });
     expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/content/gaming/index.json");
@@ -258,18 +262,24 @@ describe("Vault Resolution (Unit Tests)", () => {
       fullSlug: "first-embed",
       title: "First Embed",
       href: "/first-embed",
+      publicSlug: "first-embed",
+      shadowed: false,
       content: "First body.\n\n![[second-embed]]\n\n[[linked-note]]",
     });
     expect(references).toContainEqual({
       fullSlug: "second-embed",
       title: "Second Embed",
       href: "/second-embed",
+      publicSlug: "second-embed",
+      shadowed: false,
       content: "Second body.",
     });
     expect(references).toContainEqual({
       fullSlug: "linked-note",
       title: "Linked Note",
       href: "/linked-note",
+      publicSlug: "linked-note",
+      shadowed: false,
     });
   });
 
@@ -312,16 +322,86 @@ describe("Vault Resolution (Unit Tests)", () => {
       title: "VPN Promotion",
       href: "/vpn-promotion-for-games",
       linkable: false,
+      publicSlug: "vpn-promotion-for-games",
       content: "Private promotion body with [[public-note]].",
     }));
     expect(references).toContainEqual({
       fullSlug: "public-note",
       title: "Public Note",
       href: "/public-note",
+      publicSlug: "public-note",
+      shadowed: false,
     });
     expect(s3.getFileFromS3).toHaveBeenCalledWith(
       "test-bucket",
       "test-vault/_includes/vpn-promotion-for-games.md"
     );
+  });
+
+  it("resolves rewritten public slugs from the route map", async () => {
+    const mockRoot: VaultRootIndex = {
+      version: 1,
+      pages: [{ title: "Home", slug: INDEX_SLUG, publicSlug: INDEX_SLUG, date: "2024-01-01", excerpt: "" }],
+      directories: ["guides"],
+      publicFiles: [],
+      routes: {
+        page: "page",
+        vpn: "guides/vpn",
+      },
+      publicDirectories: [],
+    };
+    const mockGuidesIndex = {
+      version: 1,
+      pages: [{ title: "VPN", slug: "vpn", publicSlug: "vpn", date: "2024-01-02", excerpt: "" }],
+    };
+
+    vi.mocked(s3.getFileFromS3)
+      .mockResolvedValueOnce(JSON.stringify(mockRoot))
+      .mockResolvedValueOnce(JSON.stringify(mockGuidesIndex))
+      .mockRejectedValueOnce(new Error("Rendered HTML not found"))
+      .mockResolvedValueOnce("# VPN");
+
+    const result = await resolveVaultRequest(mockConfig, ["vpn"]);
+    expect(result?.type).toBe("markdown");
+    if (result?.type === "markdown") {
+      expect(result.matchedSlug).toBe("guides/vpn");
+      expect(result.metadata.title).toBe("VPN");
+    }
+  });
+
+  it("redirects old vault paths to the rewritten public href", async () => {
+    const mockRoot: VaultRootIndex = {
+      version: 1,
+      pages: [],
+      directories: ["guides"],
+      publicFiles: [],
+      routes: {
+        vpn: "guides/vpn",
+      },
+      publicDirectories: [],
+    };
+
+    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(JSON.stringify(mockRoot));
+
+    const result = await resolveVaultRequest(mockConfig, ["guides", "vpn"]);
+    expect(result).toEqual({ type: "redirect", href: "/vpn" });
+  });
+
+  it("does not expose flattened source directories as collections", async () => {
+    const mockRoot: VaultRootIndex = {
+      version: 1,
+      pages: [],
+      directories: ["guides"],
+      publicFiles: [],
+      routes: {
+        vpn: "guides/vpn",
+      },
+      publicDirectories: [],
+    };
+
+    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(JSON.stringify(mockRoot));
+
+    const result = await resolveVaultRequest(mockConfig, ["guides"]);
+    expect(result).toBeNull();
   });
 });

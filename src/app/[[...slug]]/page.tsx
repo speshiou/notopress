@@ -2,9 +2,10 @@ import { resolveVaultRequest, fetchRootIndex, fetchNoteReferencesForMarkdown } f
 import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
 import { renderMarkdownContent } from "@/lib/markdown";
+import { getNoteHref, toPublicSlug } from "@/lib/rewrites";
 import matter from "gray-matter";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug?: string[] }> }): Promise<Metadata> {
@@ -19,7 +20,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
     return {};
   }
 
-  const { metadata } = result;
+  const { metadata, matchedSlug } = result;
+  const publicSlug = metadata.publicSlug ?? toPublicSlug({ fullSlug: matchedSlug });
 
   return {
     title: metadata.title,
@@ -37,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
       description: metadata.excerpt,
     },
     alternates: {
-      canonical: `/${metadata.slug}`,
+      canonical: getNoteHref({ publicSlug }),
     },
   };
 }
@@ -54,6 +56,10 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
 
   if (!result) {
     notFound();
+  }
+
+  if (result.type === "redirect") {
+    permanentRedirect(result.href);
   }
 
   // 0. Handle public assets (redirect to API route)
@@ -162,7 +168,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
           <div className="grid gap-16">
             {result.pages.length > 0 ? (
               result.pages.map((page) => (
-                <Link key={page.slug} href={`/${page.slug}`} className="group block">
+                <Link key={page.slug} href={getNoteHref({ publicSlug: page.publicSlug ?? page.slug })} className="group block">
                   <article className="space-y-4">
                     <div className="flex items-center gap-3 text-xs font-bold tracking-widest uppercase text-zinc-400 dark:text-zinc-500">
                       <span>{new Date(page.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>

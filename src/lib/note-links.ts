@@ -1,4 +1,6 @@
-import { INDEX_SLUG } from "./constants";
+import { getNoteHref, toPublicSlug } from "./rewrites";
+
+export { getNoteHref };
 
 export type NoteReference = {
   fullSlug: string;
@@ -6,6 +8,8 @@ export type NoteReference = {
   href: string;
   content?: string;
   linkable?: boolean;
+  publicSlug?: string;
+  shadowed?: boolean;
 };
 
 export type NoteReferenceInput = {
@@ -13,6 +17,8 @@ export type NoteReferenceInput = {
   title: string;
   content?: string;
   linkable?: boolean;
+  publicSlug?: string;
+  shadowed?: boolean;
 };
 
 export type WikilinkTargets = {
@@ -29,18 +35,6 @@ function normalizeNoteTarget(target: string): string {
 function getLeafSlug(fullSlug: string): string {
   const parts = fullSlug.split("/");
   return parts[parts.length - 1] || fullSlug;
-}
-
-export function getNoteHref({ fullSlug }: { fullSlug: string }): string {
-  if (fullSlug === INDEX_SLUG) {
-    return "/";
-  }
-
-  const segments = fullSlug.split("/");
-  const lastSegment = segments[segments.length - 1];
-  const urlSegments = lastSegment === INDEX_SLUG ? segments.slice(0, -1) : segments;
-  const urlPath = urlSegments.map((segment) => encodeURIComponent(segment)).join("/");
-  return `/${urlPath}`;
 }
 
 export function extractWikilinkTargets(markdown: string): WikilinkTargets {
@@ -80,21 +74,32 @@ export function parseWikilinkContent({ content }: { content: string }): { target
 }
 
 export function createNoteReferenceResolver({ notes }: { notes: readonly NoteReferenceInput[] }) {
-  const references = notes.map((note) => ({
-    ...note,
-    href: getNoteHref({ fullSlug: note.fullSlug }),
-  }));
+  const references = notes.map((note) => {
+    const publicSlug = note.publicSlug ?? toPublicSlug({ fullSlug: note.fullSlug });
+    return {
+      ...note,
+      publicSlug,
+      href: getNoteHref({ publicSlug }),
+    };
+  });
   const referencesByKey = new Map<string, NoteReference>();
   const referencesByLeaf = new Map<string, NoteReference[]>();
 
   for (const reference of references) {
     const keys = new Set<string>([reference.fullSlug]);
+    if (reference.publicSlug) {
+      keys.add(reference.publicSlug);
+    }
     const hrefKey = reference.href.replace(/^\//, "");
     if (hrefKey) {
       keys.add(hrefKey);
     }
 
     for (const key of keys) {
+      const existing = referencesByKey.get(key);
+      if (existing && !existing.shadowed && reference.shadowed) {
+        continue;
+      }
       referencesByKey.set(key, reference);
     }
 
@@ -113,7 +118,12 @@ export function createNoteReferenceResolver({ notes }: { notes: readonly NoteRef
       }
 
       const leafMatches = referencesByLeaf.get(normalizedTarget) || [];
-      return leafMatches.length === 1 ? leafMatches[0] : null;
+      if (leafMatches.length === 1) {
+        return leafMatches[0];
+      }
+
+      const unshadowed = leafMatches.filter((note) => !note.shadowed);
+      return unshadowed.length === 1 ? unshadowed[0] : null;
     },
   };
 }
