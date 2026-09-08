@@ -72,10 +72,16 @@ describe('createIndexGenerator', () => {
     expect(result.rootContentIndex.pages[0].categories).toEqual(['docs']);
     expect(result.rootContentIndex.pages[0].tags).toEqual(['getting-started']);
     expect(result.allIndices.get('blog')?.pages[0].slug).toBe('post');
+    expect(result.allIndices.get('blog')?.pages[0].publicSlug).toBe('blog/post');
     expect(JSON.parse(writes['vault/root.json'])).toMatchObject({
       directories: ['blog'],
       publicFiles: ['sitemap.xml'],
       assetFiles: ['hero.png', 'sitemap.xml'],
+      routes: {
+        page: 'page',
+        'blog/post': 'blog/post',
+      },
+      publicDirectories: ['blog'],
       noteIncludes: [
         {
           fullSlug: 'vpn-promotion-for-games',
@@ -155,5 +161,52 @@ describe('createIndexGenerator', () => {
     });
 
     expect(result.rootContentIndex.pages[0].excerpt).toBe('This is the real first paragraph.');
+  });
+
+  it('flattens rewrite sources onto public slugs and warns about shadows', async () => {
+    const tree: Record<string, FileEntry[]> = {
+      'vault/content': [file('page.md'), directory('guides'), directory('reviews')],
+      'vault/content/guides': [file('vpn.md')],
+      'vault/content/reviews': [file('vpn.md')],
+    };
+    const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const writes: Record<string, string> = {};
+
+    const generator = createIndexGenerator({
+      exists: vi.fn(async (filePath: string) => filePath === 'vault/content' || filePath === 'vault/public'),
+      mkdir: vi.fn(async () => undefined),
+      readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
+      readFile: vi.fn(async () => 'content'),
+      stat: vi.fn(async () => ({ mtime: new Date('2024-01-03T00:00:00.000Z') })),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+      joinPath: path.posix.join,
+      relativePath: path.posix.relative,
+      parseMatter: () => ({ data: { title: 'VPN' }, content: '# VPN\nBody' }),
+      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
+      scanPublicFiles: vi.fn(async () => []),
+      scanContentAssetFiles: vi.fn(async () => []),
+      generateImageThumbnails: vi.fn(async () => undefined),
+      logger,
+    });
+
+    const result = await generator.generateIndices({
+      vaultPath: 'vault',
+      thumbnailSizes: [],
+      rewrites: [
+        { source: 'guides/:path*', destination: '/:path*' },
+        { source: 'reviews/:path*', destination: '/:path*' },
+      ],
+      dryRun: false,
+    });
+
+    expect(result.vaultRootIndex.routes).toMatchObject({
+      vpn: 'guides/vpn',
+    });
+    expect(result.vaultRootIndex.routes?.['reviews/vpn']).toBeUndefined();
+    expect(result.allIndices.get('guides')?.pages[0].publicSlug).toBe('vpn');
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('reviews/vpn'));
+    expect(JSON.parse(writes['vault/root.json']).publicDirectories).toEqual([]);
   });
 });

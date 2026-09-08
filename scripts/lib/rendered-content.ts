@@ -5,6 +5,7 @@ import { RENDERED_DIR } from '../../src/lib/constants';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
+import { composeFullSlug, isRouteWinner, toPublicSlug } from '../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 
 type Logger = Pick<typeof console, 'log'>;
@@ -15,13 +16,23 @@ function stripFirstMarkdownHeading(markdown: string): string {
   return markdown.replace(/^#\s+.+$/m, '').trim();
 }
 
-function buildPublicNoteReferences({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
+function buildPublicNoteReferences({
+  allIndices,
+  routes,
+}: {
+  allIndices: Map<string, VaultDirectoryIndex>;
+  routes?: Record<string, string>;
+}): NoteReferenceInput[] {
   const noteReferences: NoteReferenceInput[] = [];
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
+      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
+      const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
       noteReferences.push({
-        fullSlug: dirKey ? `${dirKey}/${page.slug}` : page.slug,
+        fullSlug,
         title: page.title,
+        publicSlug,
+        shadowed: routes ? !isRouteWinner({ routes, publicSlug, fullSlug }) : false,
       });
     }
   }
@@ -72,7 +83,7 @@ export async function generateRenderedContent({
   logger?: Logger;
 }): Promise<void> {
   const assetFiles = rootIndex.assetFiles || rootIndex.publicFiles;
-  const publicNoteReferences = buildPublicNoteReferences({ allIndices });
+  const publicNoteReferences = buildPublicNoteReferences({ allIndices, routes: rootIndex.routes });
   const privateNoteReferences = await collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths });
   let renderedCount = 0;
   let changedCount = 0;

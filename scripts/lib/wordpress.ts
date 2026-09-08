@@ -5,12 +5,21 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { parse as parseWordPressBlocks } from '@wordpress/block-serialization-default-parser';
 import { Site, Registry } from '../../src/domain/registry';
-import { VaultDirectoryIndex } from '../../src/lib/vault';
+import { VaultDirectoryIndex, VaultRootIndexSchema } from '../../src/lib/vault';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
 import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
 import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../src/lib/local-images';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
+import {
+  composeFullSlug,
+  getContentImageFolder,
+  hyphenateSlug,
+  isRouteWinner,
+  listVaultFullSlugCandidates,
+  applyRewrites,
+  toPublicSlug,
+} from '../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 import { createRawBlockConverter } from './wordpress-raw-blocks';
 import { validatePulledMarkdown } from './wordpress-pull-validation';
@@ -87,13 +96,23 @@ function getWordPressRestResource({
   return WORDPRESS_REST_RESOURCES[contentType];
 }
 
-function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, VaultDirectoryIndex> }): NoteReferenceInput[] {
+function buildNoteReferenceInputs({
+  allIndices,
+  routes,
+}: {
+  allIndices: Map<string, VaultDirectoryIndex>;
+  routes?: Record<string, string>;
+}): NoteReferenceInput[] {
   const noteReferences: NoteReferenceInput[] = [];
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
+      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
+      const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
       noteReferences.push({
-        fullSlug: dirKey ? `${dirKey}/${page.slug}` : page.slug,
+        fullSlug,
         title: page.title,
+        publicSlug,
+        shadowed: routes ? !isRouteWinner({ routes, publicSlug, fullSlug }) : false,
       });
     }
   }
@@ -103,10 +122,12 @@ function buildNoteReferenceInputs({ allIndices }: { allIndices: Map<string, Vaul
 async function collectLocalNoteReferences({
   site,
   allIndices,
+  routes,
   markdown,
 }: {
   site: Site;
   allIndices: Map<string, VaultDirectoryIndex>;
+  routes?: Record<string, string>;
   markdown: string;
 }) {
   const privateNoteReferences = await collectPrivateNoteIncludes({
@@ -115,7 +136,7 @@ async function collectLocalNoteReferences({
   });
 
   return collectNoteReferencesForLocalMarkdown({
-    publicNoteReferences: buildNoteReferenceInputs({ allIndices }),
+    publicNoteReferences: buildNoteReferenceInputs({ allIndices, routes }),
     privateNoteReferences,
     markdown,
     readPublicNote: ({ fullSlug }) => readFile(path.join(site.vaultPath, 'content', `${fullSlug}.md`), 'utf-8'),
@@ -206,26 +227,36 @@ export async function pushToWordPress({
   const syncState = await loadSyncState({ vaultPath: site.vaultPath });
   const wpSyncState = getWordPressSyncStateFromObject(syncState);
 
-  // Load public files from root.json if it exists
   let assetFiles: string[] = [];
+  let routes: Record<string, string> | undefined;
   try {
     const rootIndexRaw = await readFile(path.join(site.vaultPath, 'root.json'), 'utf-8');
-    const rootIndex = JSON.parse(rootIndexRaw);
-    assetFiles = rootIndex.assetFiles || rootIndex.publicFiles || [];
-  } catch (err) {
+    const parsed = VaultRootIndexSchema.safeParse(JSON.parse(rootIndexRaw));
+    if (parsed.success) {
+      assetFiles = parsed.data.assetFiles || parsed.data.publicFiles || [];
+      routes = parsed.data.routes;
+    }
+  } catch {
     // If root.json is not found or not yet generated, fallback to empty array
   }
 
-  // Collect all posts from directory indices
-  const postsToPublish: { localPath: string; slug: string; title: string; date: string }[] = [];
+  const postsToPublish: { localPath: string; slug: string; publicSlug: string; title: string; date: string }[] = [];
 
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
-      // Build the full hierarchical slug
-      const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
+      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
+      const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
+      const isWinner = !routes || isRouteWinner({ routes, publicSlug, fullSlug });
+      const isExplicitTarget = Boolean(targetSlugs && targetSlugs.includes(fullSlug));
 
-      // Filter by target post slugs if specified
-      if (targetSlugs && targetSlugs.length > 0 && !targetSlugs.includes(fullSlug)) {
+      if (targetSlugs && targetSlugs.length > 0 && !isExplicitTarget) {
+        continue;
+      }
+
+      if (!isWinner) {
+        if (isExplicitTarget) {
+          console.warn(`⚠️  Skipping shadowed post "${fullSlug}" — "${routes?.[publicSlug]}" is served at that public URL.`);
+        }
         continue;
       }
 
@@ -233,6 +264,7 @@ export async function pushToWordPress({
       postsToPublish.push({
         localPath,
         slug: fullSlug,
+        publicSlug,
         title: page.title,
         date: page.date,
       });
@@ -328,6 +360,7 @@ export async function pushToWordPress({
       const noteReferences = await collectLocalNoteReferences({
         site,
         allIndices,
+        routes,
         markdown: bodyWithoutTitle,
       });
 
@@ -359,7 +392,8 @@ export async function pushToWordPress({
       const wordpressBlockContent = serializeHtmlToWordPressBlocks(htmlContent);
 
       // Replace slashes with hyphens to match WordPress's sanitization behavior
-      const wpSlug = post.slug.replace(/\//g, '-');
+      const wpSlug = hyphenateSlug({ slug: post.publicSlug });
+      const legacyWpSlug = hyphenateSlug({ slug: post.slug });
 
       const payload: WordPressPostPayload = {
         title: post.title,
@@ -389,15 +423,25 @@ export async function pushToWordPress({
         continue;
       }
 
-      // Search WordPress to see if the post already exists by slug
-      const existingPosts = await wpFetch({
-        endpoint,
-        credentials,
-        path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
-      });
+      const ExistingPostListSchema = z.array(z.object({ id: z.number() }));
+      const lookupSlugs = wpSlug === legacyWpSlug ? [wpSlug] : [wpSlug, legacyWpSlug];
+      let existingPost: { id: number } | null = null;
+      for (const lookupSlug of lookupSlugs) {
+        const existingResult = ExistingPostListSchema.safeParse(
+          await wpFetch({
+            endpoint,
+            credentials,
+            path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(lookupSlug)}&status=any`,
+          })
+        );
+        if (existingResult.success && existingResult.data.length > 0) {
+          existingPost = existingResult.data[0];
+          break;
+        }
+      }
 
-      const wpPostExists = existingPosts && existingPosts.length > 0;
-      const wpPostId = wpPostExists ? existingPosts[0].id : null;
+      const wpPostExists = Boolean(existingPost);
+      const wpPostId = existingPost?.id ?? null;
 
       if (wpPostExists) {
         if (dryRun) {
@@ -501,6 +545,28 @@ interface WpPost {
   categories?: number[];
   tags?: number[];
 }
+
+const WpPostSchema = z.object({
+  id: z.number(),
+  date: z.string(),
+  date_gmt: z.string().optional(),
+  modified: z.string(),
+  modified_gmt: z.string().optional(),
+  slug: z.string(),
+  title: z.object({
+    rendered: z.string(),
+    raw: z.string().optional(),
+  }),
+  content: z.object({
+    rendered: z.string(),
+    raw: z.string().optional(),
+  }),
+  status: z.string(),
+  categories: z.array(z.number()).optional(),
+  tags: z.array(z.number()).optional(),
+});
+
+const WpPostArraySchema = z.array(WpPostSchema);
 
 export function decodeHtmlEntities(str: string): string {
   return str
@@ -936,15 +1002,42 @@ export function htmlToMarkdown(
 interface PullFromWordPressArgs {
   site: Site;
   registry: Registry;
-  allIndices: Map<string, VaultDirectoryIndex>;
   slugOrId: string;
   dryRun: boolean;
+}
+
+function findLocalPullTarget({
+  site,
+  slugOrId,
+  wpSlug,
+}: {
+  site: Site;
+  slugOrId: string;
+  wpSlug: string;
+}): { localPath: string; canonicalSlug: string; matchedExisting: boolean } {
+  const candidates = listVaultFullSlugCandidates({
+    slugOrId,
+    wpSlug,
+    rules: site.rewrites,
+  });
+
+  for (const fullSlug of candidates) {
+    const localPath = path.join(site.vaultPath, 'content', `${fullSlug}.md`);
+    if (existsSync(localPath)) {
+      return { localPath, canonicalSlug: fullSlug, matchedExisting: true };
+    }
+  }
+
+  return {
+    localPath: path.join(site.vaultPath, 'content', `${wpSlug}.md`),
+    canonicalSlug: wpSlug,
+    matchedExisting: false,
+  };
 }
 
 export async function pullFromWordPress({
   site,
   registry,
-  allIndices,
   slugOrId,
   dryRun,
 }: PullFromWordPressArgs) {
@@ -964,41 +1057,55 @@ export async function pullFromWordPress({
   console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Pull\n`);
 
   let wpPost: WpPost | null = null;
-
-  // 1. Try to fetch by slug first (WordPress uses hyphens instead of slashes)
-  const wpSlug = slugOrId.replace(/\//g, '-');
-  try {
-    const posts = (await wpFetch({
-      endpoint,
-      credentials,
-      path: `/wp/v2/posts?slug=${encodeURIComponent(wpSlug)}&status=any&context=edit`,
-    })) as WpPost[];
-    
-    if (posts && posts.length > 0) {
-      wpPost = posts[0];
-    }
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (errMsg.includes('401') || errMsg.includes('403')) {
-      throw new Error(`⨯ WordPress authentication failed: ${errMsg}`);
-    }
-    console.log(`  (Slug lookup for "${wpSlug}" failed: ${errMsg}. Checking ID...)`);
+  const fetchSlugs = [hyphenateSlug({ slug: slugOrId })];
+  const rewrittenPublicSlug = applyRewrites({
+    fullSlug: slugOrId.replace(/^\//, ''),
+    rules: site.rewrites,
+  });
+  const rewrittenWpSlug = hyphenateSlug({ slug: rewrittenPublicSlug });
+  if (!fetchSlugs.includes(rewrittenWpSlug)) {
+    fetchSlugs.push(rewrittenWpSlug);
   }
 
-  // 2. Try to fetch by ID if slug lookup didn't yield a post
-  if (!wpPost && /^\d+$/.test(slugOrId)) {
+  for (const fetchSlug of fetchSlugs) {
     try {
-      wpPost = (await wpFetch({
-        endpoint,
-        credentials,
-        path: `/wp/v2/posts/${slugOrId}?context=edit`,
-      })) as WpPost;
+      const postsResult = WpPostArraySchema.safeParse(
+        await wpFetch({
+          endpoint,
+          credentials,
+          path: `/wp/v2/posts?slug=${encodeURIComponent(fetchSlug)}&status=any&context=edit`,
+        })
+      );
+      if (postsResult.success && postsResult.data.length > 0) {
+        wpPost = postsResult.data[0];
+        break;
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (errMsg.includes('401') || errMsg.includes('403')) {
         throw new Error(`⨯ WordPress authentication failed: ${errMsg}`);
       }
-      // Failed to find by ID
+      console.log(`  (Slug lookup for "${fetchSlug}" failed: ${errMsg}. Checking ID...)`);
+    }
+  }
+
+  if (!wpPost && /^\d+$/.test(slugOrId)) {
+    try {
+      const postResult = WpPostSchema.safeParse(
+        await wpFetch({
+          endpoint,
+          credentials,
+          path: `/wp/v2/posts/${slugOrId}?context=edit`,
+        })
+      );
+      if (postResult.success) {
+        wpPost = postResult.data;
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes('401') || errMsg.includes('403')) {
+        throw new Error(`⨯ WordPress authentication failed: ${errMsg}`);
+      }
     }
   }
 
@@ -1010,14 +1117,22 @@ export async function pullFromWordPress({
 
   console.log(`✅ Found post: "${rawTitle}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
 
-  // Convert the authoritative raw block document when edit context provides it.
-  // Classic posts and older WordPress responses fall back to rendered HTML.
+  const pullTarget = findLocalPullTarget({ site, slugOrId, wpSlug: wpPost.slug });
+  const imageFolder = pullTarget.matchedExisting
+    ? getContentImageFolder({ fullSlug: pullTarget.canonicalSlug })
+    : wpPost.slug;
+  if (!pullTarget.matchedExisting && site.rewrites && site.rewrites.length > 0) {
+    console.warn(
+      `⚠️  No local Markdown file matched this WordPress post. Creating it at content root because rewrite folders cannot be inferred from WordPress.`
+    );
+  }
+
   const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
   const convertHtml = ({ html }: { html: string }) => htmlToMarkdown(
     html,
     site,
     registry,
-    wpPost.slug,
+    imageFolder,
     collectedImages
   );
   let markdownBody: string;
@@ -1071,25 +1186,8 @@ export async function pullFromWordPress({
     ``,
   ].join('\n');
 
-  // Find local path from indices
-  let targetLocalPath = '';
-  let canonicalSlug = '';
-  for (const [dirKey, dirIndex] of allIndices.entries()) {
-    for (const page of dirIndex.pages) {
-      const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
-      if (fullSlug.replace(/\//g, '-') === wpPost.slug) {
-        targetLocalPath = path.join(site.vaultPath, 'content', dirKey, `${page.slug}.md`);
-        canonicalSlug = fullSlug;
-        break;
-      }
-    }
-    if (targetLocalPath) break;
-  }
-
-  if (!targetLocalPath) {
-    targetLocalPath = path.join(site.vaultPath, 'content', `${wpPost.slug}.md`);
-    canonicalSlug = wpPost.slug;
-  }
+  const targetLocalPath = pullTarget.localPath;
+  const canonicalSlug = pullTarget.canonicalSlug;
 
   if (dryRun) {
     console.log(`  [DRY RUN] Would write Markdown post for "${wpPost.title.rendered}" to:`);

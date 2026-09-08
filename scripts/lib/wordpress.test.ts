@@ -1059,23 +1059,6 @@ describe('WordPress Deployment Library', () => {
   });
 
   describe('pullFromWordPress', () => {
-    const mockIndices = new Map<string, VaultDirectoryIndex>([
-      [
-        '',
-        {
-          version: 1,
-          pages: [
-            {
-              title: 'Post One',
-              slug: 'post-one',
-              date: '2026-06-16T12:00:00.000Z',
-              excerpt: 'An excerpt.',
-            },
-          ],
-        },
-      ],
-    ]);
-
     it('should pull a post by slug from wordpress, convert content, and write markdown file to the correct local path', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts?slug=post-one') && options.method === 'GET') {
@@ -1101,7 +1084,6 @@ describe('WordPress Deployment Library', () => {
       await pullFromWordPress({
         site: mockSite,
         registry: mockRegistry,
-        allIndices: mockIndices,
         slugOrId: 'post-one',
         dryRun: false,
       });
@@ -1166,7 +1148,6 @@ describe('WordPress Deployment Library', () => {
       await pullFromWordPress({
         site: mockSite,
         registry: mockRegistry,
-        allIndices: mockIndices,
         slugOrId: 'post-one',
         dryRun: false,
       });
@@ -1208,7 +1189,6 @@ describe('WordPress Deployment Library', () => {
         await pullFromWordPress({
           site: mockSite,
           registry: mockRegistry,
-          allIndices: mockIndices,
           slugOrId: 'post-one',
           dryRun: true,
         });
@@ -1253,7 +1233,6 @@ describe('WordPress Deployment Library', () => {
       await pullFromWordPress({
         site: mockSite,
         registry: mockRegistry,
-        allIndices: mockIndices,
         slugOrId: '123',
         dryRun: false,
       });
@@ -1262,6 +1241,44 @@ describe('WordPress Deployment Library', () => {
         '/mock/vault/content/pulled-post-slug.md',
         expect.stringContaining('---\nFetched by ID.'),
         'utf-8'
+      );
+    });
+
+    it('writes a rewritten post to the matching vault path instead of creating a root duplicate', async () => {
+      vi.mocked(existsSync).mockImplementation((filePath) => filePath === '/mock/vault/content/guides/vpn.md');
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{
+          id: 55,
+          date: '2026-06-30T10:00:00',
+          modified: '2026-06-30T11:00:00',
+          slug: 'vpn',
+          title: { rendered: 'VPN Guide' },
+          content: { rendered: '<p>Body</p><img src="https://cdn.testsite.com/photo.png" alt="Photo">' },
+          status: 'publish',
+        }],
+      });
+      global.fetch = mockFetch;
+
+      await pullFromWordPress({
+        site: {
+          ...mockSite,
+          rewrites: [{ source: 'guides/:path*', destination: '/:path*' }],
+        },
+        registry: mockRegistry,
+        slugOrId: 'vpn',
+        dryRun: false,
+      });
+
+      expect(writeFile).toHaveBeenCalledWith(
+        '/mock/vault/content/guides/vpn.md',
+        expect.stringContaining('title: "VPN Guide"'),
+        'utf-8'
+      );
+      expect(writeFile).not.toHaveBeenCalledWith(
+        '/mock/vault/content/vpn.md',
+        expect.anything(),
+        expect.anything()
       );
     });
   });

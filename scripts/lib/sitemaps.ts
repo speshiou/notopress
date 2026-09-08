@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { INDEX_SLUG, SITEMAP_PAGES_XML, SITEMAP_XML } from '../../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex } from '../../src/lib/vault';
+import { composeFullSlug, getNoteHref, isRouteWinner, toPublicSlug } from '../../src/lib/rewrites';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -61,17 +62,25 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
     pages,
     domain,
     relDir = '',
+    routes,
   }: {
     pages: PageMetadata[];
     domain: string;
     relDir?: string;
+    routes?: Record<string, string>;
   }) {
-    return pages.map((page) => {
-      const urlPath = page.slug === deps.indexSlug ? relDir : relDir ? `${relDir}/${page.slug}` : page.slug;
-      return {
+    return pages.flatMap((page) => {
+      const fullSlug = composeFullSlug({ directory: relDir, slug: page.slug });
+      const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
+      if (routes && !isRouteWinner({ routes, publicSlug, fullSlug })) {
+        return [];
+      }
+      const href = getNoteHref({ publicSlug });
+      const urlPath = href === '/' ? '' : href.slice(1);
+      return [{
         loc: `https://${domain}/${urlPath}`,
         lastmod: page.updatedAt || page.date,
-      };
+      }];
     });
   }
 
@@ -103,18 +112,22 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
     allIndices,
     vaultPath,
     dryRun,
+    routes,
   }: {
     domain: string;
     allIndices: Map<string, VaultDirectoryIndex>;
     vaultPath: string;
     dryRun: boolean;
+    routes?: Record<string, string>;
   }): Promise<string[]> {
     const subSitemaps: string[] = [];
     for (const [relDir, indexData] of allIndices.entries()) {
       if (relDir === '') continue;
       if (indexData.pages.length === 0) continue;
 
-      const sitemapUrls = mapPagesToSitemapUrls({ pages: indexData.pages, domain, relDir });
+      const sitemapUrls = mapPagesToSitemapUrls({ pages: indexData.pages, domain, relDir, routes });
+      if (sitemapUrls.length === 0) continue;
+
       const sitemapContent = generateSitemapXml(sitemapUrls);
       const sitemapPath = deps.joinPath(vaultPath, 'public', relDir, deps.sitemapXml);
       const relSitemapPath = `public/${relDir}/${deps.sitemapXml}`;
@@ -140,12 +153,14 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
       domain,
       rootContentIndex,
       allIndices,
+      routes,
       dryRun,
     }: {
       vaultPath: string;
       domain: string | undefined;
       rootContentIndex: VaultDirectoryIndex;
       allIndices: Map<string, VaultDirectoryIndex>;
+      routes?: Record<string, string>;
       dryRun: boolean;
     }) {
       if (!domain) {
@@ -154,9 +169,9 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
       }
 
       const publicBaseDir = deps.joinPath(vaultPath, 'public');
-      const subSitemaps = await generateAllSitemaps({ domain, allIndices, vaultPath, dryRun });
+      const subSitemaps = await generateAllSitemaps({ domain, allIndices, vaultPath, dryRun, routes });
       const rootPages = rootContentIndex.pages;
-      const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls({ pages: rootPages, domain }) : [];
+      const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls({ pages: rootPages, domain, routes }) : [];
 
       if (subSitemaps.length === 0) {
         if (sitemapUrls.length > 0) {

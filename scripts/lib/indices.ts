@@ -9,6 +9,7 @@ import { isGeneratedThumbnailPath, normalizeThumbnailSizes } from '../../src/lib
 import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from './files';
 import { generateImageThumbnails } from './thumbnails';
 import { parseContentTaxonomies } from '../../src/lib/content-metadata';
+import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../src/lib/rewrites';
 
 type Logger = Pick<typeof console, 'log' | 'warn' | 'error'>;
 type MatterResult = {
@@ -236,14 +237,6 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       pages,
     };
 
-    const indexPath = deps.joinPath(dir, INDEX_JSON);
-    const relDirName = relDir || 'root';
-
-    if (!dryRun) {
-      await deps.writeFile(indexPath, JSON.stringify(indexData, null, 2));
-      deps.logger.log(`✨ Generated index for "${relDirName}"`);
-    }
-
     allIndices.set(relDir, indexData);
 
     return { index: indexData, allDirs };
@@ -255,11 +248,13 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       vaultPath,
       thumbnailSizes,
       noteIncludePaths,
+      rewrites,
       dryRun = false,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
       noteIncludePaths?: readonly string[];
+      rewrites?: readonly RewriteRule[];
       dryRun?: boolean;
     }): Promise<{
       rootContentIndex: VaultDirectoryIndex;
@@ -279,6 +274,38 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         dryRun,
         allIndices,
       });
+
+      const fullSlugs: string[] = [];
+      for (const [directory, dirIndex] of allIndices.entries()) {
+        for (const page of dirIndex.pages) {
+          fullSlugs.push(composeFullSlug({ directory, slug: page.slug }));
+        }
+      }
+
+      const routeTable = buildRouteTable({ fullSlugs, rules: rewrites });
+      for (const shadow of routeTable.shadows) {
+        deps.logger.warn(
+          `⚠️  Rewrite shadow: "${shadow.shadowedFullSlug}" maps to "/${shadow.publicSlug === 'page' ? '' : shadow.publicSlug}" but "${shadow.winnerFullSlug}" is served first.`
+        );
+      }
+
+      for (const [directory, dirIndex] of allIndices.entries()) {
+        for (const page of dirIndex.pages) {
+          const fullSlug = composeFullSlug({ directory, slug: page.slug });
+          page.publicSlug = routeTable.publicSlugByFullSlug[fullSlug] || page.slug;
+        }
+      }
+
+      for (const [relDir, indexData] of allIndices.entries()) {
+        const indexPath = relDir
+          ? deps.joinPath(contentDir, relDir, INDEX_JSON)
+          : deps.joinPath(contentDir, INDEX_JSON);
+        const relDirName = relDir || 'root';
+        if (!dryRun) {
+          await deps.writeFile(indexPath, JSON.stringify(indexData, null, 2));
+          deps.logger.log(`✨ Generated index for "${relDirName}"`);
+        }
+      }
 
       const publicBaseDir = deps.joinPath(vaultPath, 'public');
       if (!dryRun) {
@@ -313,6 +340,8 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         assetFiles,
         noteIncludes,
         thumbnailSizes: deps.normalizeThumbnailSizes(thumbnailSizes),
+        routes: routeTable.routes,
+        publicDirectories: routeTable.publicDirectories,
       };
 
       if (dryRun) {
