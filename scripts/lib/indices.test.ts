@@ -16,12 +16,12 @@ describe('createIndexGenerator', () => {
     const tree: Record<string, FileEntry[]> = {
       'vault/content': [file('page.md'), directory('blog'), file('hero.png')],
       'vault/content/blog': [file('post.md')],
-      'vault/_includes': [file('vpn-promotion-for-games.md')],
+      'vault/_includes': [file('example-note.md')],
     };
     const fileContent: Record<string, string> = {
       'vault/content/page.md': 'home',
       'vault/content/blog/post.md': 'post',
-      'vault/_includes/vpn-promotion-for-games.md': 'include',
+      'vault/_includes/example-note.md': 'include',
     };
     const writes: Record<string, string> = {};
     const generateImageThumbnails = vi.fn(async () => undefined);
@@ -52,7 +52,7 @@ describe('createIndexGenerator', () => {
               content: '# Home\nIntro text',
             }
           : content === 'include'
-          ? { data: { title: 'VPN Promotion' }, content: '# VPN Promotion\nPrivate body' }
+          ? { data: { title: 'Example Include' }, content: '# Example Include\nPrivate body' }
           : { data: {}, content: '# Post\nPost excerpt' },
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => ['sitemap.xml', '_thumbnails/logo-320.webp']),
@@ -84,9 +84,9 @@ describe('createIndexGenerator', () => {
       publicDirectories: ['blog'],
       noteIncludes: [
         {
-          fullSlug: 'vpn-promotion-for-games',
-          title: 'VPN Promotion',
-          filePath: '_includes/vpn-promotion-for-games.md',
+          fullSlug: 'example-note',
+          title: 'Example Include',
+          filePath: '_includes/example-note.md',
           linkable: false,
         },
       ],
@@ -208,5 +208,47 @@ describe('createIndexGenerator', () => {
     expect(result.allIndices.get('guides')?.pages[0].publicSlug).toBe('vpn');
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('reviews/vpn'));
     expect(JSON.parse(writes['vault/root.json']).publicDirectories).toEqual([]);
+  });
+
+  it('warns about unescaped wikilink aliases in Markdown tables', async () => {
+    const tree: Record<string, FileEntry[]> = {
+      'vault/content': [file('article.md')],
+    };
+    const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const markdown = [
+      '---',
+      'title: Article',
+      '---',
+      '',
+      '| Feature | Link |',
+      '| --- | --- |',
+      '| Docs | [[note-slug|Display label]] |',
+    ].join('\n');
+
+    const generator = createIndexGenerator({
+      exists: vi.fn(async (filePath: string) => filePath === 'vault/content'),
+      mkdir: vi.fn(async () => undefined),
+      readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
+      readFile: vi.fn(async () => markdown),
+      stat: vi.fn(async () => ({ mtime: new Date('2024-01-03T00:00:00.000Z') })),
+      writeFile: vi.fn(async () => undefined),
+      joinPath: path.posix.join,
+      relativePath: path.posix.relative,
+      parseMatter: () => ({
+        data: { title: 'Article', date: '2024-01-02' },
+        content: markdown,
+      }),
+      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
+      scanPublicFiles: vi.fn(async () => []),
+      scanContentAssetFiles: vi.fn(async () => []),
+      generateImageThumbnails: vi.fn(async () => undefined),
+      logger,
+    });
+
+    await generator.generateIndices({ vaultPath: 'vault', thumbnailSizes: [], dryRun: false });
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('article.md:7'));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[[note-slug|Display label]]'));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[[target\\|label]]'));
   });
 });

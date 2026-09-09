@@ -30,6 +30,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Always use **relative paths** for internal links and documentation.
 - If an absolute path is required for local configuration, use placeholder strings or rely strictly on environment variables.
 - Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
+- In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
 
 # WordPress Integration & Projects
 - **Sync & Push Commands**:

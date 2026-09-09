@@ -51,13 +51,13 @@ describe("createMarkdownRenderer", () => {
   it("resolves standard markdown image references through known asset files", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({
-      markdown: "![Cable status](/Pasted%20image%2020260630150256.png)",
+      markdown: "![Example alt](/Pasted%20image%20example.png)",
       thumbnailSizes: [320],
-      assetFiles: ["attachments/Pasted image 20260630150256.png"],
+      assetFiles: ["attachments/Pasted image example.png"],
     });
 
-    expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp"');
-    expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%2020260630150256-320.webp 320w"');
+    expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/Pasted%20image%20example-320.webp"');
+    expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%20example-320.webp 320w"');
   });
 
   it("uses the original absolute asset URL for GIFs without responsive thumbnails", async () => {
@@ -100,9 +100,9 @@ describe("createMarkdownRenderer", () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({
       markdown: [
-        "| VPN 品牌 | 裝置限制 |",
+        "| Feature | Limit |",
         "| :--- | :---: |",
-        "| **[NordVPN](https://example.com/nord)** | 10 台裝置 |",
+        "| **[Example](https://example.com/nord)** | 10 devices |",
       ].join("\n"),
       thumbnailSizes: [320],
     });
@@ -111,9 +111,9 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain("<table>");
     expect(html).toContain("</table>\n</figure>");
     expect(html).not.toContain("wp-block-table");
-    expect(html).toContain("<th align=\"left\">VPN 品牌</th>");
-    expect(html).toContain("<td align=\"center\">10 台裝置</td>");
-    expect(html).toContain("<strong><a href=\"https://example.com/nord\">NordVPN</a></strong>");
+    expect(html).toContain("<th align=\"left\">Feature</th>");
+    expect(html).toContain("<td align=\"center\">10 devices</td>");
+    expect(html).toContain("<strong><a href=\"https://example.com/nord\">Example</a></strong>");
   });
 
   it("applies custom table figure properties when provided", async () => {
@@ -175,22 +175,22 @@ describe("createMarkdownRenderer", () => {
       markdown: [
         "| Country | Code |",
         "| --- | --- |",
-        "| Jamaica | +1-876 |",
+        "| Example | +1-555 |",
         "",
-        "*Reminder:* prepare an eSIM before leaving.",
+        "*Reminder:* prepare a note before leaving.",
         "",
-        "| eSIM service | Link |",
+        "| Service | Link |",
         "| --- | --- |",
-        "| Airalo | [Deal](https://example.com) |",
+        "| Example | [Deal](https://example.com) |",
         "",
-        "*Traveler eSIM recommendations.*",
+        "*Service comparison table.*",
       ].join("\n"),
       thumbnailSizes: [320],
       getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
     });
 
-    expect(html).toContain('<p><em>Reminder:</em> prepare an eSIM before leaving.</p>');
-    expect(html).toContain('<figcaption>Traveler eSIM recommendations.</figcaption>');
+    expect(html).toContain('<p><em>Reminder:</em> prepare a note before leaving.</p>');
+    expect(html).toContain('<figcaption>Service comparison table.</figcaption>');
     expect(html).not.toContain('<figcaption>Reminder:');
   });
 
@@ -200,32 +200,32 @@ describe("createMarkdownRenderer", () => {
       markdown: [
         "| Country | Code |",
         "| --- | --- |",
-        "| Jamaica | +1-876 |",
+        "| Example | +1-555 |",
         "",
-        "![[traveler-esim-promotion]]",
+        "![[related-note]]",
       ].join("\n"),
       thumbnailSizes: [320],
       noteReferences: [
         {
-          fullSlug: "traveler-esim-promotion",
-          title: "Traveler eSIM Promotion",
-          href: "/traveler-esim-promotion",
+          fullSlug: "related-note",
+          title: "Related Note",
+          href: "/related-note",
           content: [
-            "*Reminder:* prepare an eSIM before leaving.",
+            "*Reminder:* prepare a note before leaving.",
             "",
-            "| eSIM service | Link |",
+            "| Service | Link |",
             "| --- | --- |",
-            "| Airalo | [Deal](https://example.com) |",
+            "| Example | [Deal](https://example.com) |",
             "",
-            "*Traveler eSIM recommendations.*",
+            "*Service comparison table.*",
           ].join("\n"),
         },
       ],
       getTableFigureProperties: () => ({ class: 'wp-block-table is-style-stripes' }),
     });
 
-    expect(html).toContain('<p><em>Reminder:</em> prepare an eSIM before leaving.</p>');
-    expect(html).toContain('<figcaption>Traveler eSIM recommendations.</figcaption>');
+    expect(html).toContain('<p><em>Reminder:</em> prepare a note before leaving.</p>');
+    expect(html).toContain('<figcaption>Service comparison table.</figcaption>');
     expect(html).not.toContain('<figcaption>Reminder:');
   });
 
@@ -313,27 +313,27 @@ describe("preprocessWikilinks", () => {
   });
 
   it("converts note wikilinks to Markdown links using note titles", () => {
-    const result = preprocessWikilinks("Read [[vpn-promotion-for-games]].", [], [
+    const result = preprocessWikilinks("Read [[example-note]].", [], [
       {
-        fullSlug: "vpn-promotion-for-games",
-        title: "Best VPN Promotions for Games",
-        href: "/vpn-promotion-for-games",
+        fullSlug: "example-note",
+        title: "Example Note",
+        href: "/example-note",
       },
     ]);
 
-    expect(result).toBe("Read [Best VPN Promotions for Games](/vpn-promotion-for-games).");
+    expect(result).toBe("Read [Example Note](/example-note).");
   });
 
   it("keeps nested note paths when rendering wikilink URLs", () => {
-    const result = preprocessWikilinks("Read [[gaming/vpn-promotion-for-games]].", [], [
+    const result = preprocessWikilinks("Read [[guides/example-note]].", [], [
       {
-        fullSlug: "gaming/vpn-promotion-for-games",
-        title: "Best VPN Promotions for Games",
-        href: "/gaming/vpn-promotion-for-games",
+        fullSlug: "guides/example-note",
+        title: "Example Note",
+        href: "/guides/example-note",
       },
     ]);
 
-    expect(result).toBe("Read [Best VPN Promotions for Games](/gaming/vpn-promotion-for-games).");
+    expect(result).toBe("Read [Example Note](/guides/example-note).");
   });
 
   it("renders escaped table wikilinks alongside regular Markdown links", async () => {
@@ -342,35 +342,35 @@ describe("preprocessWikilinks", () => {
       markdown: [
         "| Type | Link |",
         "| --- | --- |",
-        "| Wiki | [[zelda-guide\\|12 座空島石碑位置攻略]] |",
+        "| Wiki | [[note-slug\\|Display label]] |",
         "| Markdown | [Regular guide](https://example.com/guide) |",
       ].join("\n"),
       thumbnailSizes: [],
       noteReferences: [
         {
-          fullSlug: "zelda-guide",
-          title: "Zelda Guide",
-          href: "/zelda-guide",
+          fullSlug: "note-slug",
+          title: "Note title",
+          href: "/note-slug",
         },
       ],
     });
 
-    expect(rendered).toContain('<a href="/zelda-guide">12 座空島石碑位置攻略</a>');
+    expect(rendered).toContain('<a href="/note-slug">Display label</a>');
     expect(rendered).toContain('<a href="https://example.com/guide">Regular guide</a>');
     expect(rendered).not.toContain("[[");
   });
 
   it("renders note embeds as content without adding the embedded note title", () => {
-    const result = preprocessWikilinks("Before\n![[vpn-promotion-for-games]]\nAfter", [], [
+    const result = preprocessWikilinks("Before\n![[example-note]]\nAfter", [], [
       {
-        fullSlug: "vpn-promotion-for-games",
-        title: "Best VPN Promotions for Games",
-        href: "/vpn-promotion-for-games",
-        content: "This is the promotion body.",
+        fullSlug: "example-note",
+        title: "Example Note",
+        href: "/example-note",
+        content: "This is the embedded body.",
       },
     ]);
 
-    expect(result).toBe("Before\n\n\nThis is the promotion body.\n\n\nAfter");
+    expect(result).toBe("Before\n\n\nThis is the embedded body.\n\n\nAfter");
   });
 
   it("recursively renders note embeds and note links inside embedded note content", () => {

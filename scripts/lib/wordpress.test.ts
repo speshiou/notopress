@@ -54,17 +54,17 @@ describe('WordPress Deployment Library', () => {
       const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
 
       const result = htmlToMarkdown(
-        '<figure><img src="https://testsite.com/wp-content/uploads/2020/02/%E6%88%AA%E5%9C%96-2020-02-13-%E4%B8%8A%E5%8D%8810.36.11-1024x521.png" alt="" /></figure>',
+        '<figure><img src="https://testsite.com/wp-content/uploads/2020/02/%E7%A4%BA%E4%BE%8B-image-1024x521.png" alt="" /></figure>',
         mockSite,
         mockRegistry,
-        'zelda-map',
+        'article-map',
         collectedImages
       );
 
-      expect(result).toContain('![](<zelda-map/截圖-2020-02-13-上午10.36.11.png>)');
-      expect(collectedImages[0]?.localPath).toBe('/mock/vault/content/zelda-map/截圖-2020-02-13-上午10.36.11.png');
+      expect(result).toContain('![](<article-map/示例-image.png>)');
+      expect(collectedImages[0]?.localPath).toBe('/mock/vault/content/article-map/示例-image.png');
       expect(collectedImages[0]?.tryHighResUrl).toBe(
-        'https://testsite.com/wp-content/uploads/2020/02/截圖-2020-02-13-上午10.36.11.png'
+        'https://testsite.com/wp-content/uploads/2020/02/示例-image.png'
       );
     });
   });

@@ -26,7 +26,7 @@ describe('getNoteHref', () => {
   it('maps public slugs to route hrefs', () => {
     expect(getNoteHref({ publicSlug: 'page' })).toBe('/');
     expect(getNoteHref({ publicSlug: 'blog' })).toBe('/blog');
-    expect(getNoteHref({ publicSlug: 'guides/vpn-promotion-for-games' })).toBe('/guides/vpn-promotion-for-games');
+    expect(getNoteHref({ publicSlug: 'guides/example-note' })).toBe('/guides/example-note');
   });
 });
 

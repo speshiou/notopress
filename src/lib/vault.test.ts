@@ -164,23 +164,23 @@ describe("Vault Resolution (Unit Tests)", () => {
   it("should resolve note links and embedded note content from nested directory indices", async () => {
     const mockRoot = {
       version: 1,
-      pages: [{ title: "Root VPN", slug: "root-vpn", date: "2024-01-01", excerpt: "" }],
-      directories: ["gaming"],
+      pages: [{ title: "Root Note", slug: "root-note", date: "2024-01-01", excerpt: "" }],
+      directories: ["guides"],
       publicFiles: [],
     };
-    const mockGamingIndex = {
+    const mockGuidesIndex = {
       version: 1,
-      pages: [{ title: "Gaming VPN Promotion", slug: "vpn-promotion-for-games", date: "2024-01-02", excerpt: "" }],
+      pages: [{ title: "Example Note", slug: "example-note", date: "2024-01-02", excerpt: "" }],
     };
 
     vi.mocked(s3.getFileFromS3)
-      .mockResolvedValueOnce(JSON.stringify(mockGamingIndex))
+      .mockResolvedValueOnce(JSON.stringify(mockGuidesIndex))
       .mockResolvedValueOnce(
         [
           "---",
-          'title: "Gaming VPN Promotion"',
+          'title: "Example Note"',
           "---",
-          "# Gaming VPN Promotion",
+          "# Example Note",
           "",
           "Embedded body only.",
         ].join("\n")
@@ -188,29 +188,29 @@ describe("Vault Resolution (Unit Tests)", () => {
 
     const references = await fetchNoteReferencesForMarkdown({
       config: mockConfig,
-      markdown: "Read [[root-vpn]] and embed ![[vpn-promotion-for-games]].",
+      markdown: "Read [[root-note]] and embed ![[example-note]].",
       rootIndex: mockRoot,
     });
 
     expect(references).toContainEqual({
-      fullSlug: "root-vpn",
-      title: "Root VPN",
-      href: "/root-vpn",
-      publicSlug: "root-vpn",
+      fullSlug: "root-note",
+      title: "Root Note",
+      href: "/root-note",
+      publicSlug: "root-note",
       shadowed: false,
     });
     expect(references).toContainEqual({
-      fullSlug: "gaming/vpn-promotion-for-games",
-      title: "Gaming VPN Promotion",
-      href: "/gaming/vpn-promotion-for-games",
-      publicSlug: "gaming/vpn-promotion-for-games",
+      fullSlug: "guides/example-note",
+      title: "Example Note",
+      href: "/guides/example-note",
+      publicSlug: "guides/example-note",
       shadowed: false,
       content: "Embedded body only.",
     });
-    expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/content/gaming/index.json");
+    expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/content/guides/index.json");
     expect(s3.getFileFromS3).toHaveBeenCalledWith(
       "test-bucket",
-      "test-vault/content/gaming/vpn-promotion-for-games.md"
+      "test-vault/content/guides/example-note.md"
     );
   });
 
@@ -286,9 +286,9 @@ describe("Vault Resolution (Unit Tests)", () => {
   it("should resolve private note includes for embeds without making them linkable", async () => {
     const privateIncludes: VaultRootIndex["noteIncludes"] = [
       {
-        fullSlug: "vpn-promotion-for-games",
-        title: "VPN Promotion",
-        filePath: "_includes/vpn-promotion-for-games.md",
+        fullSlug: "example-note",
+        title: "Example Include",
+        filePath: "_includes/example-note.md",
         linkable: false,
       },
     ];
@@ -303,27 +303,27 @@ describe("Vault Resolution (Unit Tests)", () => {
     vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(
       [
         "---",
-        'title: "VPN Promotion"',
+        'title: "Example Include"',
         "---",
-        "# VPN Promotion",
+        "# Example Include",
         "",
-        "Private promotion body with [[public-note]].",
+        "Private include body with [[public-note]].",
       ].join("\n")
     );
 
     const references = await fetchNoteReferencesForMarkdown({
       config: mockConfig,
-      markdown: "Embed ![[vpn-promotion-for-games]] and link [[vpn-promotion-for-games]].",
+      markdown: "Embed ![[example-note]] and link [[example-note]].",
       rootIndex: mockRoot,
     });
 
     expect(references).toContainEqual(expect.objectContaining({
-      fullSlug: "vpn-promotion-for-games",
-      title: "VPN Promotion",
-      href: "/vpn-promotion-for-games",
+      fullSlug: "example-note",
+      title: "Example Include",
+      href: "/example-note",
       linkable: false,
-      publicSlug: "vpn-promotion-for-games",
-      content: "Private promotion body with [[public-note]].",
+      publicSlug: "example-note",
+      content: "Private include body with [[public-note]].",
     }));
     expect(references).toContainEqual({
       fullSlug: "public-note",
@@ -334,7 +334,7 @@ describe("Vault Resolution (Unit Tests)", () => {
     });
     expect(s3.getFileFromS3).toHaveBeenCalledWith(
       "test-bucket",
-      "test-vault/_includes/vpn-promotion-for-games.md"
+      "test-vault/_includes/example-note.md"
     );
   });
 

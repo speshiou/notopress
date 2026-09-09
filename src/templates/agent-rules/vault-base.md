@@ -20,6 +20,8 @@ Use an ISO 8601 timestamp for `date`. Set `published: false` to exclude a draft 
 
 For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: `*Feature comparison table.*`. Plain paragraphs are treated as normal article text, not captions.
 
+In Markdown tables, escape the alias separator in Obsidian wikilinks: `[[note-slug\|Display label]]`. An unescaped `|` is treated as a new table column and breaks the table. Outside tables, normal aliased wikilinks (`[[note-slug|Display label]]`) are fine. Keep wikilinks in vault source instead of rewriting them to standard Markdown links. Notopress sync warns when it finds unescaped table wikilinks.
+
 # Notopress Commands
 - **Sync Vault**:
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}}`: Syncs content vault, generates indices and thumbnails.
