@@ -99,11 +99,11 @@ describe("serializeHtmlToWordPressBlocks", () => {
 
   it("adds empty alt text and self-closes image tags for WordPress validation", () => {
     const result = serializeHtmlToWordPressBlocks(
-      '<figure class="wp-block-image"><img src="/zelda-map.webp"><figcaption>Map caption</figcaption></figure>'
+      '<figure class="wp-block-image"><img src="/map.webp"><figcaption>Map caption</figcaption></figure>'
     );
 
     expect(result).toContain('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->');
-    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/zelda-map.webp" alt="" /><figcaption class="wp-element-caption">Map caption</figcaption></figure>');
+    expect(result).toContain('<figure class="size-large wp-block-image"><img src="/map.webp" alt="" /><figcaption class="wp-element-caption">Map caption</figcaption></figure>');
   });
 
   it("normalizes existing self-closed image tags to WordPress spacing", () => {

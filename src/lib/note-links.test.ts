@@ -5,52 +5,52 @@ describe("note link helpers", () => {
   it("maps public slugs to route hrefs", () => {
     expect(getNoteHref({ publicSlug: "page" })).toBe("/");
     expect(getNoteHref({ publicSlug: "guides" })).toBe("/guides");
-    expect(getNoteHref({ publicSlug: "guides/vpn-promotion-for-games" })).toBe("/guides/vpn-promotion-for-games");
+    expect(getNoteHref({ publicSlug: "guides/example-note" })).toBe("/guides/example-note");
   });
 
   it("resolves unique leaf slugs to their nested full paths", () => {
     const resolver = createNoteReferenceResolver({
       notes: [
         {
-          fullSlug: "guides/vpn-promotion-for-games",
-          title: "Best VPN Promotions for Games",
+          fullSlug: "guides/example-note",
+          title: "Example Note",
         },
       ],
     });
 
-    expect(resolver.resolve({ target: "vpn-promotion-for-games" })?.href).toBe("/guides/vpn-promotion-for-games");
+    expect(resolver.resolve({ target: "example-note" })?.href).toBe("/guides/example-note");
   });
 
   it("uses rewritten public hrefs when publicSlug is provided", () => {
     const resolver = createNoteReferenceResolver({
       notes: [
         {
-          fullSlug: "guides/vpn-promotion-for-games",
-          title: "Best VPN Promotions for Games",
-          publicSlug: "vpn-promotion-for-games",
+          fullSlug: "guides/example-note",
+          title: "Example Note",
+          publicSlug: "example-note",
         },
       ],
     });
 
-    expect(resolver.resolve({ target: "guides/vpn-promotion-for-games" })?.href).toBe("/vpn-promotion-for-games");
-    expect(resolver.resolve({ target: "vpn-promotion-for-games" })?.href).toBe("/vpn-promotion-for-games");
+    expect(resolver.resolve({ target: "guides/example-note" })?.href).toBe("/example-note");
+    expect(resolver.resolve({ target: "example-note" })?.href).toBe("/example-note");
   });
 
   it("leaves ambiguous leaf slugs unresolved", () => {
     const resolver = createNoteReferenceResolver({
       notes: [
-        { fullSlug: "games/vpn", title: "Gaming VPN" },
-        { fullSlug: "privacy/vpn", title: "Privacy VPN" },
+        { fullSlug: "guides/note", title: "Guide Note" },
+        { fullSlug: "reviews/note", title: "Review Note" },
       ],
     });
 
-    expect(resolver.resolve({ target: "vpn" })).toBeNull();
+    expect(resolver.resolve({ target: "note" })).toBeNull();
   });
 
   it("extracts note link and embed targets separately", () => {
-    expect(extractWikilinkTargets("Read [[vpn]] and embed ![[promo-card]].")).toEqual({
-      links: ["vpn"],
-      embeds: ["promo-card"],
+    expect(extractWikilinkTargets("Read [[note-slug]] and embed ![[embed-note]].")).toEqual({
+      links: ["note-slug"],
+      embeds: ["embed-note"],
     });
   });
 

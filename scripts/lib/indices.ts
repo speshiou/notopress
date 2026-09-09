@@ -10,6 +10,7 @@ import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from '
 import { generateImageThumbnails } from './thumbnails';
 import { parseContentTaxonomies } from '../../src/lib/content-metadata';
 import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../src/lib/rewrites';
+import { findUnescapedWikilinksInTables, formatUnescapedTableWikilinkWarning } from '../../src/lib/table-wikilinks';
 
 type Logger = Pick<typeof console, 'log' | 'warn' | 'error'>;
 type MatterResult = {
@@ -177,6 +178,11 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
         const fileContent = await deps.readFile(fullPath, 'utf-8');
         const fileStats = await deps.stat(fullPath);
+        const relPath = deps.relativePath(baseDir, fullPath).replace(/\\/g, '/');
+
+        for (const issue of findUnescapedWikilinksInTables({ markdown: fileContent })) {
+          deps.logger.warn(formatUnescapedTableWikilinkWarning({ filePath: relPath, issue }));
+        }
 
         const { data, content } = deps.parseMatter(fileContent);
         const taxonomies = parseContentTaxonomies({ frontmatter: data });
@@ -193,7 +199,6 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
             ? titleMatch[1].trim()
             : entry.name;
 
-        const relPath = deps.relativePath(baseDir, fullPath).replace(/\\/g, '/');
         const slug = deps.relativePath(dir, fullPath).replace(/\.md$/, '').replace(/\\/g, '/');
 
         const date = parseSafeDate({

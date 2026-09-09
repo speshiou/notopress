@@ -22,7 +22,9 @@ tags:
 
 Use an ISO 8601 timestamp for \`date\`. Set \`published: false\` to exclude a draft from generated indexes. \`categories\` and \`tags\` are optional arrays of taxonomy slugs. When present, keep each slug as a separate list item; omit either field when the article does not manage that taxonomy.
 
-For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: \`*Feature comparison table.*\`. Plain paragraphs are treated as normal article text, not captions.`;
+For captions, use a single italic paragraph immediately after the media or table. For table captions, place the caption directly after the Markdown table, for example: \`*Feature comparison table.*\`. Plain paragraphs are treated as normal article text, not captions.
+
+In Markdown tables, escape the alias separator in Obsidian wikilinks: \`[[note-slug\\|Display label]]\`. An unescaped \`|\` is treated as a new table column and breaks the table. Outside tables, normal aliased wikilinks (\`[[note-slug|Display label]]\`) are fine. Keep wikilinks in vault source instead of rewriting them to standard Markdown links. Notopress sync warns when it finds unescaped table wikilinks.`;
 
 const MOCK_WORDPRESS_TEMPLATE = `# WordPress Integration & Commands
 - **Sync & Push Commands**:
@@ -87,6 +89,9 @@ describe('createAgentRulesWriter', () => {
     expect(writes['vault/AGENTS.md']).toContain('published: false');
     expect(writes['vault/AGENTS.md']).toContain('`categories` and `tags` are optional arrays of taxonomy slugs');
     expect(writes['vault/AGENTS.md']).toContain('Plain paragraphs are treated as normal article text, not captions.');
+    expect(writes['vault/AGENTS.md']).toContain('[[note-slug\\|Display label]]');
+    expect(writes['vault/AGENTS.md']).toContain('Keep wikilinks in vault source');
+    expect(writes['vault/AGENTS.md']).toContain('Notopress sync warns');
     expect(writes['vault/AGENTS.md']).not.toContain('WordPress Integration & Commands');
     expect(writes['vault/AGENTS.md'].endsWith('\n')).toBe(true);
   });

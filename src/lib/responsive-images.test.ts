@@ -21,13 +21,13 @@ describe("createResponsiveImageHelpers", () => {
   it("builds encoded responsive image attributes", () => {
     expect(
       helpers.getResponsiveImageAttributes({
-        src: "/attachments/截圖 2026.png",
+        src: "/attachments/示例 image.png",
         thumbnailSizes: [320, 640],
       })
     ).toEqual({
-      src: "/api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-640.webp",
+      src: "/api/vault-public/_thumbnails/attachments/%E7%A4%BA%E4%BE%8B%20image-640.webp",
       srcSet:
-        "/api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-320.webp 320w, /api/vault-public/_thumbnails/attachments/%E6%88%AA%E5%9C%96%202026-640.webp 640w",
+        "/api/vault-public/_thumbnails/attachments/%E7%A4%BA%E4%BE%8B%20image-320.webp 320w, /api/vault-public/_thumbnails/attachments/%E7%A4%BA%E4%BE%8B%20image-640.webp 640w",
       sizes: "100vw",
     });
   });

@@ -8,7 +8,7 @@ import {
 
 describe("local image helpers", () => {
   const availableFiles = [
-    "attachments/Pasted image 20260630150256.png",
+    "attachments/Pasted image example.png",
     "images/logo.png",
     "direct.png",
   ];
@@ -24,10 +24,10 @@ describe("local image helpers", () => {
   it("resolves root-level references to known attachment files", () => {
     expect(
       resolveLocalImagePath({
-        src: "/Pasted%2520image%252020260630150256.png",
+        src: "/Pasted%2520image%2520example.png",
         availableFiles,
       })
-    ).toBe("attachments/Pasted image 20260630150256.png");
+    ).toBe("attachments/Pasted image example.png");
   });
 
   it("keeps direct known paths unchanged", () => {
@@ -49,10 +49,10 @@ describe("local image helpers", () => {
   });
 
   it("rewrites local markdown image references while leaving external images alone", () => {
-    const markdown = "![A](/Pasted%20image%2020260630150256.png)\n![Remote](https://example.com/image.png)";
+    const markdown = "![A](/Pasted%20image%20example.png)\n![Remote](https://example.com/image.png)";
 
     expect(resolveMarkdownImagePaths({ markdown, availableFiles })).toBe(
-      "![A](<attachments/Pasted image 20260630150256.png>)\n![Remote](https://example.com/image.png)"
+      "![A](<attachments/Pasted image example.png>)\n![Remote](https://example.com/image.png)"
     );
   });
 });
