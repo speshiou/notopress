@@ -902,6 +902,33 @@ describe('WordPress Deployment Library', () => {
       expect(savedState.wordpress['post-one']).toBeDefined();
       expect(savedState.wordpress['blog/post-two']).toBeDefined();
     });
+
+    it('should not resolve taxonomies when marking posts as synced', async () => {
+      const indicesWithTaxonomies = new Map<string, VaultDirectoryIndex>([
+        ['', {
+          version: 1,
+          pages: [{
+            title: 'Post One',
+            slug: 'post-one',
+            date: '2026-06-16T12:00:00.000Z',
+            excerpt: 'An excerpt.',
+            categories: ['engineering'],
+            tags: ['publishing'],
+          }],
+        }],
+      ]);
+      global.fetch = vi.fn();
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: indicesWithTaxonomies,
+        markSynced: true,
+        dryRun: false,
+      });
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('restoreLocalImagePath', () => {

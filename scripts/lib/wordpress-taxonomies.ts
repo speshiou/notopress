@@ -26,6 +26,7 @@ export type WordPressTaxonomyPayload = {
 };
 
 const TAXONOMY_FIELDS: readonly (keyof ContentTaxonomies)[] = ['categories', 'tags'];
+const TERM_LOOKUP_BATCH_SIZE = 100;
 
 function parseTerms({ value, taxonomy }: { value: unknown; taxonomy: WordPressTaxonomyRestBase }) {
   const result = WordPressTermsSchema.safeParse(value);
@@ -121,6 +122,30 @@ export function createWordPressTaxonomyResolver({
     return ids;
   }
 
+  async function preloadSlugs({
+    taxonomy,
+    slugs,
+  }: {
+    taxonomy: WordPressTaxonomyRestBase;
+    slugs: readonly string[];
+  }): Promise<void> {
+    const uncachedSlugs = [...new Set(slugs)].filter(
+      (slug) => !termIdCache.has(`${taxonomy}:${slug}`)
+    );
+
+    for (let offset = 0; offset < uncachedSlugs.length; offset += TERM_LOOKUP_BATCH_SIZE) {
+      const batch = uncachedSlugs.slice(offset, offset + TERM_LOOKUP_BATCH_SIZE);
+      const slugQuery = batch.map(encodeURIComponent).join(',');
+      const response = await request({
+        path: `/wp/v2/${taxonomy}?slug=${slugQuery}&per_page=${TERM_LOOKUP_BATCH_SIZE}`,
+      });
+      const terms = parseTerms({ value: response, taxonomy });
+      for (const term of terms) {
+        termIdCache.set(`${taxonomy}:${term.slug}`, term.id);
+      }
+    }
+  }
+
   async function resolveIds({
     taxonomy,
     ids,
@@ -146,6 +171,19 @@ export function createWordPressTaxonomyResolver({
   }
 
   return {
+    async preloadPayloads({
+      taxonomies,
+    }: {
+      taxonomies: readonly ContentTaxonomies[];
+    }): Promise<void> {
+      const categories = taxonomies.flatMap((value) => value.categories || []);
+      const tags = taxonomies.flatMap((value) => value.tags || []);
+      await Promise.all([
+        preloadSlugs({ taxonomy: 'categories', slugs: categories }),
+        preloadSlugs({ taxonomy: 'tags', slugs: tags }),
+      ]);
+    },
+
     async resolvePayload({
       taxonomies,
     }: {

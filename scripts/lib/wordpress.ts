@@ -120,26 +120,21 @@ function buildNoteReferenceInputs({
 }
 
 async function collectLocalNoteReferences({
-  site,
-  allIndices,
-  routes,
+  publicNoteReferences,
+  privateNoteReferences,
+  vaultPath,
   markdown,
 }: {
-  site: Site;
-  allIndices: Map<string, VaultDirectoryIndex>;
-  routes?: Record<string, string>;
+  publicNoteReferences: readonly NoteReferenceInput[];
+  privateNoteReferences: readonly NoteReferenceInput[];
+  vaultPath: string;
   markdown: string;
 }) {
-  const privateNoteReferences = await collectPrivateNoteIncludes({
-    vaultPath: site.vaultPath,
-    includePaths: site.noteIncludePaths,
-  });
-
   return collectNoteReferencesForLocalMarkdown({
-    publicNoteReferences: buildNoteReferenceInputs({ allIndices, routes }),
+    publicNoteReferences,
     privateNoteReferences,
     markdown,
-    readPublicNote: ({ fullSlug }) => readFile(path.join(site.vaultPath, 'content', `${fullSlug}.md`), 'utf-8'),
+    readPublicNote: ({ fullSlug }) => readFile(path.join(vaultPath, 'content', `${fullSlug}.md`), 'utf-8'),
   });
 }
 
@@ -240,7 +235,14 @@ export async function pushToWordPress({
     // If root.json is not found or not yet generated, fallback to empty array
   }
 
-  const postsToPublish: { localPath: string; slug: string; publicSlug: string; title: string; date: string }[] = [];
+  const postsToPublish: {
+    localPath: string;
+    slug: string;
+    publicSlug: string;
+    title: string;
+    date: string;
+    taxonomies: ReturnType<typeof parseContentTaxonomies>;
+  }[] = [];
 
   for (const [dirKey, dirIndex] of allIndices.entries()) {
     for (const page of dirIndex.pages) {
@@ -267,6 +269,10 @@ export async function pushToWordPress({
         publicSlug,
         title: page.title,
         date: page.date,
+        taxonomies: {
+          categories: page.categories,
+          tags: page.tags,
+        },
       });
     }
   }
@@ -310,6 +316,15 @@ export async function pushToWordPress({
     console.log(`\n✅ Successfully marked ${markedCount} post(s) as synced in .notopress-sync.json.`);
     return;
   }
+
+  const publicNoteReferences = buildNoteReferenceInputs({ allIndices, routes });
+  const privateNoteReferences = await collectPrivateNoteIncludes({
+    vaultPath: site.vaultPath,
+    includePaths: site.noteIncludePaths,
+  });
+  await taxonomyResolver.preloadPayloads({
+    taxonomies: postsToPublish.map((post) => post.taxonomies),
+  });
 
   const updatedPosts: WordPressSyncItemResult[] = [];
   const createdPosts: WordPressSyncItemResult[] = [];
@@ -358,9 +373,9 @@ export async function pushToWordPress({
       }
       const bodyWithoutTitle = lines.join('\n').trim();
       const noteReferences = await collectLocalNoteReferences({
-        site,
-        allIndices,
-        routes,
+        publicNoteReferences,
+        privateNoteReferences,
+        vaultPath: site.vaultPath,
         markdown: bodyWithoutTitle,
       });
 

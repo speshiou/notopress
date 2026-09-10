@@ -28,6 +28,29 @@ describe('createWordPressTaxonomyResolver', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('preloads taxonomy slugs in one request per taxonomy', async () => {
+    const request = vi.fn(async ({ path }: { path: string }) => {
+      if (path.includes('/categories?')) return [{ id: 12, slug: 'engineering' }];
+      return [
+        { id: 34, slug: 'nextjs' },
+        { id: 56, slug: 'publishing' },
+      ];
+    });
+    const resolver = createWordPressTaxonomyResolver({ request });
+
+    await resolver.preloadPayloads({
+      taxonomies: [
+        { categories: ['engineering'], tags: ['nextjs'] },
+        { categories: ['engineering'], tags: ['publishing'] },
+      ],
+    });
+    await expect(resolver.resolvePayload({
+      taxonomies: { categories: ['engineering'], tags: ['nextjs', 'publishing'] },
+    })).resolves.toEqual({ categories: [12], tags: [34, 56] });
+
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('fails with an actionable error for unknown slugs', async () => {
     const resolver = createWordPressTaxonomyResolver({ request: vi.fn(async () => []) });
 
