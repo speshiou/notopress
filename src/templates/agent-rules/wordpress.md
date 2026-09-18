@@ -6,7 +6,7 @@
   - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
 - **Import and State Commands**:
   - `npm --prefix {{notopressPath}} run import -- <publisher-id> <slug-or-id> --site {{siteId}}`: Imports one remote resource through the adapter.
-  - `npm --prefix {{notopressPath}} run publisher:init -- <publisher-id> --site {{siteId}}`: Initializes the adapter-owned sync state without publishing.
+  - `npm --prefix {{notopressPath}} run publisher:init -- <publisher-id> --site {{siteId}}`: Marks current locally rendered payloads as synced without publishing or verifying remote content. Use it only when deliberately adopting or resetting the remote baseline.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.

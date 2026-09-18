@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeResolvedWordPressPayloadHash,
   computeWordPressPayloadHash,
   createWordPressPublishPayload,
 } from './publish-payload';
@@ -54,11 +53,5 @@ describe('WordPress publish intent', () => {
       categories: [12],
       tags: [34, 56],
     });
-    expect(computeResolvedWordPressPayloadHash({ contentType: 'post', payload })).toBe(
-      computeResolvedWordPressPayloadHash({ contentType: 'post', payload })
-    );
-    expect(computeResolvedWordPressPayloadHash({ contentType: 'post', payload })).not.toBe(
-      computeWordPressPayloadHash({ contentType: 'post', intent })
-    );
   });
 });

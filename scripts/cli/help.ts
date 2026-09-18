@@ -43,11 +43,12 @@ Options:
   --registry, -r     Use another registry file`,
   publisher: `Usage: notopress publisher init <publisher> [options]
 
-Initialize adapter-owned state without publishing.
+Mark the adapter's current rendered payloads as synced without publishing.
+This trusts local output as the remote baseline and performs no remote verification.
 
 Options:
   --site, -s <id>    Select a site
-  --dry-run          Preview state initialization
+  --dry-run          Preview the local synced baseline
   --verbose, -v      Show diagnostics
   --registry, -r     Use another registry file`,
   configure: `Usage: notopress configure [site] [options]
@@ -68,7 +69,7 @@ Commands:
   deploy [site]                       Synchronize and deploy to Vercel
   publish <publisher> [slug...]       Publish through an adapter
   import <publisher> <resource>       Import one remote resource
-  publisher init <publisher>          Initialize adapter state
+  publisher init <publisher>          Mark current adapter payloads as synced
   configure [site]                    Configure local development
 
 Run "notopress help <command>" for command details.`;

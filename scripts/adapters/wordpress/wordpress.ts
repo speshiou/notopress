@@ -34,7 +34,6 @@ import {
 } from './publication-state';
 import {
   computeWordPressPayloadHash,
-  computeResolvedWordPressPayloadHash,
   createWordPressPublishPayload,
 } from './publish-payload';
 import { computeWordPressPublicationInputHash } from './publication-input';
@@ -311,22 +310,6 @@ export async function prepareWordPressPublication({
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
 
-  if (initializeState) {
-    console.log(`\n📝 Initializing WordPress publication state...`);
-    let markedCount = 0;
-    for (const post of postsToPublish) {
-      setWordPressPublicationStateEntry(syncState, post.slug, { contentHash: post.document.sourceHash });
-      markedCount += 1;
-      console.log(`  ✓ Initialized "${post.title}" (slug: ${post.slug}).`);
-    }
-
-    if (!dryRun && markedCount > 0) {
-      await saveSyncState({ vaultPath: site.vaultPath, syncState });
-    }
-    console.log(`\n✅ Initialized publication state for ${markedCount} post(s) in .notopress-sync.json.`);
-    return null;
-  }
-
   const publicNoteReferences = buildWordPressNoteReferenceInputs({ contentSnapshot: snapshot });
   const privateNoteReferences = await collectPrivateNoteIncludes({
     vaultPath: site.vaultPath,
@@ -337,18 +320,6 @@ export async function prepareWordPressPublication({
   const failedPosts: WordPressPublicationErrorResult[] = [];
   const plannedOperations: WordPressPublishOperation[] = [];
   let syncStateChanged = false;
-  const planningTaxonomyResolver = createWordPressTaxonomyResolver({
-    request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
-  });
-  await planningTaxonomyResolver.preloadPayloads({
-    taxonomies: postsToPublish
-      .filter((post) => {
-        const entry = wordpressPublicationState[post.slug];
-        return Boolean(entry?.payloadHash && !entry.inputHash);
-      })
-      .map((post) => post.document.taxonomies),
-  });
-
   const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
   const localOperations = await mapWithConcurrency({
     items: postsToPublish,
@@ -438,21 +409,7 @@ export async function prepareWordPressPublication({
           contentType: wordpressResource.contentType,
           intent,
         });
-        let payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
-        if (!payloadIsUnchanged && publicationEntry?.payloadHash && !publicationEntry.inputHash) {
-          try {
-            const taxonomyPayload = wordpressResource.contentType === 'post'
-              ? await planningTaxonomyResolver.resolvePayload({ taxonomies: intent.taxonomies })
-              : {};
-            const resolvedPayloadHash = computeResolvedWordPressPayloadHash({
-              contentType: wordpressResource.contentType,
-              payload: createWordPressPublishPayload({ intent, taxonomyPayload }),
-            });
-            payloadIsUnchanged = publicationEntry.payloadHash === resolvedPayloadHash;
-          } catch {
-            // A missing taxonomy cannot match a previously published resolved payload.
-          }
-        }
+        const payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
         if (!force && !isExplicitTarget && publicationEntry && payloadIsUnchanged) {
           return { ...baseOperation, payloadHash, skip: true };
         }
@@ -460,7 +417,9 @@ export async function prepareWordPressPublication({
         const changeReason = publicationEntry?.contentHash === sourceHash
           ? 'rendered publication changed'
           : 'source changed';
-        console.log(`\nPlanning "${post.title}" (slug: ${post.slug}) — ${changeReason}...`);
+        if (!initializeState) {
+          console.log(`\nPlanning "${post.title}" (slug: ${post.slug}) — ${changeReason}...`);
+        }
         return { ...baseOperation, payloadHash, intent, skip: false };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -471,6 +430,40 @@ export async function prepareWordPressPublication({
       }
     },
   });
+
+  if (initializeState) {
+    if (failedPosts.length > 0) {
+      throw new Error(
+        `WordPress publication state initialization is incomplete because ${failedPosts.length} post(s) failed during planning.`
+      );
+    }
+
+    console.log(`\n📝 Initializing WordPress publication state from current rendered payloads...`);
+    let markedCount = 0;
+    for (const operation of localOperations) {
+      if (!operation) continue;
+      const publicationEntry = operation.publicationEntry;
+      setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
+        contentHash: operation.sourceHash,
+        inputHash: operation.inputHash,
+        payloadHash: operation.payloadHash,
+        remoteId: publicationEntry?.remoteId,
+        remoteSlug: publicationEntry?.remoteSlug,
+        contentType: publicationEntry?.contentType,
+      });
+      markedCount += 1;
+      if (verbose) {
+        console.log(`  ✓ Initialized "${operation.title}" (slug: ${operation.sourceSlug}).`);
+      }
+    }
+
+    if (!dryRun && markedCount > 0) {
+      await saveSyncState({ vaultPath: site.vaultPath, syncState });
+    }
+    const action = dryRun ? 'Would initialize' : 'Initialized';
+    console.log(`\n✅ ${action} publication state for ${markedCount} post(s) in .notopress-sync.json.`);
+    return null;
+  }
 
   const remoteLookups = localOperations
     .filter((operation): operation is LocallyPreparedWordPressOperation => Boolean(operation && !operation.skip))

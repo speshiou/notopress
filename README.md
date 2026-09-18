@@ -204,6 +204,8 @@ npm run publisher:init -- \
   --site example-blog
 ```
 
+`publisher:init` trusts the adapter's current locally rendered payloads as the remote baseline. It does not publish or verify remote content. Use it deliberately when adopting a publisher or resetting state, then explicitly publish any known remote differences.
+
 ## Generated artifacts
 
 NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets.

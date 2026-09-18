@@ -1074,8 +1074,61 @@ describe('WordPress Deployment Library', () => {
       expect(mockFetch).not.toHaveBeenCalled();
       expect(writes['/mock/vault/.notopress-sync.json']).toBeDefined();
       const savedState = JSON.parse(writes['/mock/vault/.notopress-sync.json']);
-      expect(savedState.wordpress['post-one']).toBeDefined();
-      expect(savedState.wordpress['blog/post-two']).toBeDefined();
+      expect(savedState.wordpress['post-one']).toEqual(expect.objectContaining({
+        contentHash: expect.any(String),
+        inputHash: expect.any(String),
+        payloadHash: expect.any(String),
+      }));
+      expect(savedState.wordpress['blog/post-two']).toEqual(expect.objectContaining({
+        contentHash: expect.any(String),
+        inputHash: expect.any(String),
+        payloadHash: expect.any(String),
+      }));
+    });
+
+    it('preserves known remote identity when initializing rendered publication state', async () => {
+      const writes: Record<string, string> = {};
+      vi.mocked(existsSync).mockImplementation((p) => String(p).endsWith('.notopress-sync.json'));
+      vi.mocked(readFile).mockImplementation(async (p) => {
+        if (String(p).endsWith('.notopress-sync.json')) {
+          return JSON.stringify({
+            wordpress: {
+              'post-one': {
+                contentHash: 'old-source',
+                payloadHash: 'old-payload',
+                remoteId: 456,
+                remoteSlug: 'post-one',
+                contentType: 'post',
+                syncedAt: '2026-07-27T00:00:00.000Z',
+              },
+            },
+          });
+        }
+        return '# Post content';
+      });
+      vi.mocked(writeFile).mockImplementation(async (filePath, content) => {
+        writes[String(filePath)] = String(content);
+      });
+      global.fetch = vi.fn();
+
+      await publishToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockRootOnlyIndices,
+        initializeState: true,
+        dryRun: false,
+      });
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(JSON.parse(writes['/mock/vault/.notopress-sync.json']).wordpress['post-one']).toEqual(
+        expect.objectContaining({
+          inputHash: expect.any(String),
+          payloadHash: expect.any(String),
+          remoteId: 456,
+          remoteSlug: 'post-one',
+          contentType: 'post',
+        })
+      );
     });
 
     it('should not resolve taxonomies when marking posts as synced', async () => {
