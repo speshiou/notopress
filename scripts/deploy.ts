@@ -382,7 +382,7 @@ async function buildContent({
   });
   const contentSnapshot = await buildContentSnapshot({ vaultPath: site.vaultPath, allIndices });
 
-  await generateRenderedContent({
+  const renderedContent = await generateRenderedContent({
     vaultPath: site.vaultPath,
     siteId: site.siteId,
     imageHost: site.imageHost || registry.imageHost,
@@ -403,7 +403,7 @@ async function buildContent({
     dryRun: isDryRun,
   });
 
-  return { allIndices, contentSnapshot, vaultRootIndex };
+  return { allIndices, contentSnapshot, vaultRootIndex, renderedContent };
 }
 
 async function applyNativeSite({
@@ -524,7 +524,7 @@ async function main() {
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
 
-    const { allIndices, contentSnapshot, vaultRootIndex } = await buildContent({
+    const { allIndices, contentSnapshot, vaultRootIndex, renderedContent } = await buildContent({
       site,
       registry,
       isDryRun,
@@ -556,6 +556,7 @@ async function main() {
     const corePlan = createCoreBuildPlan({
       contentSnapshot,
       rootIndex: vaultRootIndex,
+      renderedArtifacts: renderedContent.artifacts,
       deleteRemoteFiles,
     });
     const publicationPlan = createPublicationPlan({ corePlan, publishers: preparedPublishers });

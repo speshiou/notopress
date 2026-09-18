@@ -11,10 +11,20 @@ import {
   findSnapshotDocument,
   type ContentSnapshot,
 } from './content-snapshot';
+import { computeContentHash } from './sync-state';
 
 type Logger = Pick<typeof console, 'log'>;
 
 type RenderedContentChange = 'create' | 'update' | null;
+
+export type RenderedContentArtifact = {
+  path: string;
+  contentHash: string;
+};
+
+export type RenderedContentResult = {
+  artifacts: readonly RenderedContentArtifact[];
+};
 
 function buildPublicNoteReferences({
   contentSnapshot,
@@ -81,13 +91,14 @@ export async function generateRenderedContent({
   noteIncludePaths?: readonly string[];
   dryRun: boolean;
   logger?: Logger;
-}): Promise<void> {
+}): Promise<RenderedContentResult> {
   const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath, allIndices });
   const assetFiles = rootIndex.assetFiles || rootIndex.publicFiles;
   const publicNoteReferences = buildPublicNoteReferences({ contentSnapshot: snapshot, routes: rootIndex.routes });
   const privateNoteReferences = await collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths });
   let renderedCount = 0;
   let changedCount = 0;
+  const artifacts: RenderedContentArtifact[] = [];
 
   for (const document of snapshot.documents) {
     const renderedPath = path.join(vaultPath, getRenderedContentPath({ fullSlug: document.sourceSlug }));
@@ -116,6 +127,10 @@ export async function generateRenderedContent({
         mode: imageHost ? 'absolute' : 'app-relative',
       },
     });
+    artifacts.push({
+      path: getRenderedContentPath({ fullSlug: document.sourceSlug }),
+      contentHash: computeContentHash(html),
+    });
 
     if (dryRun) {
       const change = await getRenderedContentChange({ renderedPath, renderedHtml: html });
@@ -135,4 +150,6 @@ export async function generateRenderedContent({
   } else {
     logger.log(`[DRY RUN] ${changedCount} of ${renderedCount} rendered HTML file(s) would change`);
   }
+
+  return { artifacts };
 }

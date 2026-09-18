@@ -30,24 +30,37 @@ const rootIndex = {
   responsiveImageWidths: { 'hero.png': [320] },
 };
 
+const renderedArtifacts = [{
+  path: '_rendered/content/guides/example.html',
+  contentHash: 'rendered-hash',
+}];
+
 describe('publication plan', () => {
   it('changes when core source content or deletion policy changes', () => {
-    const first = createCoreBuildPlan({ contentSnapshot, rootIndex, deleteRemoteFiles: false });
+    const first = createCoreBuildPlan({ contentSnapshot, rootIndex, renderedArtifacts, deleteRemoteFiles: false });
     const changedSource = createCoreBuildPlan({
       contentSnapshot: {
         documents: [{ ...contentSnapshot.documents[0], sourceHash: 'changed-hash' }],
       },
       rootIndex,
+      renderedArtifacts,
       deleteRemoteFiles: false,
     });
-    const withDeletion = createCoreBuildPlan({ contentSnapshot, rootIndex, deleteRemoteFiles: true });
+    const withDeletion = createCoreBuildPlan({ contentSnapshot, rootIndex, renderedArtifacts, deleteRemoteFiles: true });
+    const changedRender = createCoreBuildPlan({
+      contentSnapshot,
+      rootIndex,
+      renderedArtifacts: [{ ...renderedArtifacts[0], contentHash: 'changed-rendered-hash' }],
+      deleteRemoteFiles: false,
+    });
 
     expect(changedSource.fingerprint).not.toBe(first.fingerprint);
     expect(withDeletion.fingerprint).not.toBe(first.fingerprint);
+    expect(changedRender.fingerprint).not.toBe(first.fingerprint);
   });
 
   it('combines core and adapter fingerprints into one reviewed publication', () => {
-    const corePlan = createCoreBuildPlan({ contentSnapshot, rootIndex, deleteRemoteFiles: false });
+    const corePlan = createCoreBuildPlan({ contentSnapshot, rootIndex, renderedArtifacts, deleteRemoteFiles: false });
     const adapterPlan = createOperationPlan({
       kind: 'example-publish',
       operations: [{ action: 'update' }],

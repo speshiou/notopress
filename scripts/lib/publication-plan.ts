@@ -6,6 +6,7 @@ import {
   type OperationPlan,
 } from './operation-plan';
 import type { PreparedPublisher } from './publisher';
+import type { RenderedContentArtifact } from './rendered-content';
 
 type CoreBuildOperation = {
   deleteRemoteFiles: boolean;
@@ -17,6 +18,7 @@ type CoreBuildOperation = {
   routes: Readonly<Record<string, string>>;
   assets: readonly string[];
   responsiveImageWidths: Readonly<Record<string, readonly number[]>>;
+  renderedArtifacts: readonly RenderedContentArtifact[];
 };
 
 export type CoreBuildPlan = OperationPlan<CoreBuildOperation>;
@@ -32,10 +34,12 @@ export type PublicationPlan = OperationPlan<PublicationSection>;
 export function createCoreBuildPlan({
   contentSnapshot,
   rootIndex,
+  renderedArtifacts,
   deleteRemoteFiles,
 }: {
   contentSnapshot: ContentSnapshot;
   rootIndex: VaultRootIndex;
+  renderedArtifacts: readonly RenderedContentArtifact[];
   deleteRemoteFiles: boolean;
 }): CoreBuildPlan {
   const operation: CoreBuildOperation = {
@@ -48,6 +52,7 @@ export function createCoreBuildPlan({
     routes: rootIndex.routes || {},
     assets: rootIndex.assetFiles || rootIndex.publicFiles,
     responsiveImageWidths: rootIndex.responsiveImageWidths || {},
+    renderedArtifacts,
   };
   return createOperationPlan({
     kind: 'notopress-core-build',

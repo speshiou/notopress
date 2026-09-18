@@ -285,7 +285,7 @@ Use `--publisher <id>` to select a configured publishing adapter. `--wp` remains
 
 NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it. Targeted `--push` arguments still use the full vault slug so NotoPress can select the correct source file.
 
-Dry-runs print a composite NotoPress publication fingerprint covering the core content build, routing and asset manifest, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility gate for the WordPress section only:
+Dry-runs print a composite NotoPress publication fingerprint covering source content, rendered HTML artifact hashes, routing and asset manifests, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility gate for the WordPress section only:
 
 ```bash
 npm run sync -- --site example-blog --wp --push guides/example-guide --dry-run

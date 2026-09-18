@@ -56,7 +56,7 @@ describe('rendered content generator', () => {
         ],
       };
 
-      await generateRenderedContent({
+      const renderedResult = await generateRenderedContent({
         vaultPath,
         siteId: 'test-blog',
         allIndices,
@@ -74,6 +74,10 @@ describe('rendered content generator', () => {
       expect(rendered).toContain('src="/api/vault-public/_thumbnails/hero-320.webp"');
       expect(rendered).not.toContain('![[promo-note]]');
       expect(rendered).not.toContain('<h1>Post One</h1>');
+      expect(renderedResult.artifacts).toEqual([{
+        path: '_rendered/content/post-one.html',
+        contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }]);
 
       const unchangedLogger = { log: vi.fn() };
       await generateRenderedContent({
