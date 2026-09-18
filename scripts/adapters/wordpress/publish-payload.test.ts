@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { computeWordPressPayloadHash, createWordPressPublishPayload } from './publish-payload';
+import {
+  computeResolvedWordPressPayloadHash,
+  computeWordPressPayloadHash,
+  createWordPressPublishPayload,
+} from './publish-payload';
 
 describe('WordPress publish intent', () => {
   const intent = {
@@ -38,10 +42,11 @@ describe('WordPress publish intent', () => {
   });
 
   it('resolves taxonomy IDs only when creating the REST payload', () => {
-    expect(createWordPressPublishPayload({
+    const payload = createWordPressPublishPayload({
       intent,
       taxonomyPayload: { categories: [12], tags: [34, 56] },
-    })).toEqual({
+    });
+    expect(payload).toEqual({
       title: 'Post title',
       content: '<!-- wp:paragraph --><p>Body</p><!-- /wp:paragraph -->',
       slug: 'post-title',
@@ -49,5 +54,11 @@ describe('WordPress publish intent', () => {
       categories: [12],
       tags: [34, 56],
     });
+    expect(computeResolvedWordPressPayloadHash({ contentType: 'post', payload })).toBe(
+      computeResolvedWordPressPayloadHash({ contentType: 'post', payload })
+    );
+    expect(computeResolvedWordPressPayloadHash({ contentType: 'post', payload })).not.toBe(
+      computeWordPressPayloadHash({ contentType: 'post', intent })
+    );
   });
 });

@@ -20,8 +20,9 @@ export type WordPressPublishOperation = {
   restBase: 'posts' | 'pages';
   existingPostId: number | null;
   sourceHash: string;
+  inputHash: string;
   payloadHash: string;
-  intent: WordPressPublishIntent;
+  intent?: WordPressPublishIntent;
 };
 
 export type WordPressPublishPlan = OperationPlan<WordPressPublishOperation>;
@@ -53,18 +54,28 @@ export function toSerializableWordPressPublishOperation(
     restBase: operation.restBase,
     existingPostId: operation.existingPostId,
     sourceHash: operation.sourceHash,
+    inputHash: operation.inputHash,
     payloadHash: operation.payloadHash,
   };
 }
 
 export function formatWordPressPublishPlan({
   plan,
+  verbose = false,
 }: {
   plan: WordPressPublishPlan;
+  verbose?: boolean;
 }): string {
+  const visibleOperations = verbose
+    ? plan.operations
+    : plan.operations.filter((operation) => operation.action !== 'skip');
+  const visiblePlan: WordPressPublishPlan = { ...plan, operations: visibleOperations };
+  const skippedCount = plan.operations.length - visibleOperations.length;
   return formatOperationPlan({
-    label: 'WordPress publish plan',
-    plan,
+    label: verbose || skippedCount === 0
+      ? 'WordPress publish plan'
+      : `WordPress publish plan (${skippedCount} unchanged operation(s) omitted; use --verbose to show them)`,
+    plan: visiblePlan,
     serializeOperation: toSerializableWordPressPublishOperation,
   });
 }

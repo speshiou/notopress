@@ -41,6 +41,24 @@ export function computeWordPressPayloadHash({
   return computeContentHash(canonicalPayload);
 }
 
+export function computeResolvedWordPressPayloadHash({
+  contentType,
+  payload,
+}: {
+  contentType: WordPressPublishContentType;
+  payload: WordPressPublishPayload;
+}): string {
+  return computeContentHash(JSON.stringify({
+    contentType,
+    title: payload.title,
+    content: payload.content,
+    slug: payload.slug,
+    status: payload.status,
+    categories: payload.categories ?? null,
+    tags: payload.tags ?? null,
+  }));
+}
+
 export function createWordPressPublishPayload({
   intent,
   taxonomyPayload,

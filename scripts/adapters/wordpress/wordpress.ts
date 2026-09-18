@@ -29,12 +29,16 @@ import { computeContentHash, loadSyncState, saveSyncState } from '../../core/sta
 import {
   getWordPressPublicationStateFromObject,
   setWordPressPublicationStateEntry,
+  type WordPressPublicationStateEntry,
   updateWordPressPublicationState,
 } from './publication-state';
 import {
   computeWordPressPayloadHash,
+  computeResolvedWordPressPayloadHash,
   createWordPressPublishPayload,
 } from './publish-payload';
+import { computeWordPressPublicationInputHash } from './publication-input';
+import { findWordPressPostIds, getWordPressPostId } from './remote-posts';
 import {
   createWordPressPublishPlan,
   formatWordPressPublishPlan,
@@ -56,6 +60,7 @@ import {
   assertPublicationTargetFingerprint,
   type PreparedPublication,
 } from '../../core/publishing/platform-adapter';
+import { mapWithConcurrency } from '../../core/concurrency';
 
 
 
@@ -71,9 +76,15 @@ interface PublishToWordPressInput {
   initializeState?: boolean;
   expectedPlanFingerprint?: string;
   dryRun: boolean;
+  verbose?: boolean;
 }
 
 type PrepareWordPressPublicationInput = Omit<PublishToWordPressInput, 'expectedPlanFingerprint'>;
+
+type LocallyPreparedWordPressOperation = Omit<WordPressPublishOperation, 'action' | 'existingPostId'> & {
+  publicationEntry: WordPressPublicationStateEntry | undefined;
+  skip: boolean;
+};
 
 interface WpFetchArgs {
   endpoint: string;
@@ -207,6 +218,7 @@ export async function prepareWordPressPublication({
   force,
   initializeState,
   dryRun,
+  verbose = false,
 }: PrepareWordPressPublicationInput): Promise<PreparedPublication<WordPressPublishOperation> | null> {
   const credentials = site.wordpress;
   if (!credentials) {
@@ -325,133 +337,188 @@ export async function prepareWordPressPublication({
   const failedPosts: WordPressPublicationErrorResult[] = [];
   const plannedOperations: WordPressPublishOperation[] = [];
   let syncStateChanged = false;
+  const planningTaxonomyResolver = createWordPressTaxonomyResolver({
+    request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+  });
+  await planningTaxonomyResolver.preloadPayloads({
+    taxonomies: postsToPublish
+      .filter((post) => {
+        const entry = wordpressPublicationState[post.slug];
+        return Boolean(entry?.payloadHash && !entry.inputHash);
+      })
+      .map((post) => post.document.taxonomies),
+  });
 
-  for (const post of postsToPublish) {
-    try {
-      const sourceHash = post.document.sourceHash;
-
-      const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
-
-      console.log(`\nPlanning "${post.title}" (slug: ${post.slug})...`);
-
-      const wordpressResource = getWordPressRestResource({ frontmatter: post.document.frontmatter });
-      const noteReferences = await collectLocalNoteReferences({
-        publicNoteReferences,
-        privateNoteReferences,
-        contentSnapshot: snapshot,
-        markdown: post.document.markdown,
-      });
-
-      // Render Markdown content to HTML
-      const htmlContent = await renderMarkdownContent({
-        markdown: post.document.markdown,
-        thumbnailSizes: sizes,
-        assetFiles,
-        responsiveImageWidths,
-        noteReferences,
-        assetUrlConfig: {
-          imageHost,
+  const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
+  const localOperations = await mapWithConcurrency({
+    items: postsToPublish,
+    concurrency: 8,
+    worker: async (post): Promise<LocallyPreparedWordPressOperation | null> => {
+      try {
+        const sourceHash = post.document.sourceHash;
+        const wordpressResource = getWordPressRestResource({ frontmatter: post.document.frontmatter });
+        const noteReferences = await collectLocalNoteReferences({
+          publicNoteReferences,
+          privateNoteReferences,
+          contentSnapshot: snapshot,
+          markdown: post.document.markdown,
+        });
+        const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
+        const publicationEntry = wordpressPublicationState[post.slug];
+        const inputHash = computeWordPressPublicationInputHash({
+          sourceHash,
+          markdown: post.document.markdown,
+          title: post.title,
+          wordpressSlug: wpSlug,
+          contentType: wordpressResource.contentType,
+          taxonomies: post.document.taxonomies,
+          noteReferences,
           siteId: site.siteId,
-          s3SubDir: 'content',
-          mode: 'absolute',
-        },
-        getFigureProperties: () => {
-          return {
-            class: 'wp-block-image',
-            style: 'height: auto !important;',
-          };
-        },
-        getTableFigureProperties: () => {
-          return {
-            class: 'wp-block-table is-style-stripes',
-          };
-        },
-      });
-
-      const wordpressBlockContent = serializeHtmlToWordPressBlocks(htmlContent);
-
-      // Replace slashes with hyphens to match WordPress's sanitization behavior
-      const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
-
-      const intent = {
-        title: post.title,
-        content: wordpressBlockContent,
-        slug: wpSlug,
-        status: 'publish' as const,
-        taxonomies: wordpressResource.contentType === 'post' ? post.document.taxonomies : {},
-      };
-      const payloadHash = computeWordPressPayloadHash({
-        contentType: wordpressResource.contentType,
-        intent,
-      });
-      const publicationEntry = wordpressPublicationState[post.slug];
-      const payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
-
-      if (!force && !isExplicitTarget && publicationEntry && payloadIsUnchanged) {
-        plannedOperations.push({
-          action: 'skip',
+          imageHost,
+          thumbnailSizes: sizes,
+          assetFiles,
+          responsiveImageWidths,
+        });
+        const baseOperation = {
           sourceSlug: post.slug,
           wordpressSlug: wpSlug,
           title: post.title,
           date: post.date,
           contentType: wordpressResource.contentType,
           restBase: wordpressResource.restBase,
-          existingPostId: null,
           sourceHash,
-          payloadHash,
+          inputHash,
+          publicationEntry,
+        };
+
+        if (
+          !force
+          && !isExplicitTarget
+          && publicationEntry?.inputHash === inputHash
+          && publicationEntry.payloadHash
+        ) {
+          if (verbose) {
+            console.log(`  ⏭️  Skipping "${post.title}" (slug: ${post.slug}) - publication inputs unchanged.`);
+          }
+          return {
+            ...baseOperation,
+            payloadHash: publicationEntry.payloadHash,
+            skip: true,
+          };
+        }
+
+        const htmlContent = await renderMarkdownContent({
+          markdown: post.document.markdown,
+          thumbnailSizes: sizes,
+          assetFiles,
+          responsiveImageWidths,
+          noteReferences,
+          assetUrlConfig: {
+            imageHost,
+            siteId: site.siteId,
+            s3SubDir: 'content',
+            mode: 'absolute',
+          },
+          getFigureProperties: () => ({
+            class: 'wp-block-image',
+            style: 'height: auto !important;',
+          }),
+          getTableFigureProperties: () => ({
+            class: 'wp-block-table is-style-stripes',
+          }),
+        });
+        const intent = {
+          title: post.title,
+          content: serializeHtmlToWordPressBlocks(htmlContent),
+          slug: wpSlug,
+          status: 'publish' as const,
+          taxonomies: wordpressResource.contentType === 'post' ? post.document.taxonomies : {},
+        };
+        const payloadHash = computeWordPressPayloadHash({
+          contentType: wordpressResource.contentType,
           intent,
         });
-        continue;
-      }
-
-      const ExistingPostListSchema = z.array(z.object({ id: z.number() }));
-      const cachedRemoteMatches = publicationEntry?.remoteId
-        && (!publicationEntry.remoteSlug || publicationEntry.remoteSlug === wpSlug)
-        && (!publicationEntry.contentType || publicationEntry.contentType === wordpressResource.contentType);
-      let existingPost: { id: number } | null = cachedRemoteMatches && publicationEntry?.remoteId
-        ? { id: publicationEntry.remoteId }
-        : null;
-      if (!existingPost) {
-        const existingResult = ExistingPostListSchema.safeParse(
-          await wpFetch({
-            endpoint,
-            credentials,
-            path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
-          })
-        );
-        if (existingResult.success && existingResult.data.length > 0) {
-          existingPost = existingResult.data[0];
+        let payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
+        if (!payloadIsUnchanged && publicationEntry?.payloadHash && !publicationEntry.inputHash) {
+          try {
+            const taxonomyPayload = wordpressResource.contentType === 'post'
+              ? await planningTaxonomyResolver.resolvePayload({ taxonomies: intent.taxonomies })
+              : {};
+            const resolvedPayloadHash = computeResolvedWordPressPayloadHash({
+              contentType: wordpressResource.contentType,
+              payload: createWordPressPublishPayload({ intent, taxonomyPayload }),
+            });
+            payloadIsUnchanged = publicationEntry.payloadHash === resolvedPayloadHash;
+          } catch {
+            // A missing taxonomy cannot match a previously published resolved payload.
+          }
         }
-      }
+        if (!force && !isExplicitTarget && publicationEntry && payloadIsUnchanged) {
+          return { ...baseOperation, payloadHash, skip: true };
+        }
 
-      const wpPostExists = Boolean(existingPost);
-      const wpPostId = existingPost?.id ?? null;
-      plannedOperations.push({
-        action: wpPostExists ? 'update' : 'create',
-        sourceSlug: post.slug,
-        wordpressSlug: wpSlug,
-        title: post.title,
-        date: post.date,
-        contentType: wordpressResource.contentType,
-        restBase: wordpressResource.restBase,
-        existingPostId: wpPostId,
-        sourceHash,
-        payloadHash,
-        intent,
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`  ❌ Failed to plan post "${post.title}":`, errMsg);
-      failedPosts.push({
-        title: post.title,
-        slug: post.slug,
-        error: errMsg,
-      });
-      // We don't want to crash the whole sync if one post fails, but if target slugs are specified, we bubble up
-      if (targetSlugs && targetSlugs.length > 0) {
-        throw err;
+        const changeReason = publicationEntry?.contentHash === sourceHash
+          ? 'rendered publication changed'
+          : 'source changed';
+        console.log(`\nPlanning "${post.title}" (slug: ${post.slug}) — ${changeReason}...`);
+        return { ...baseOperation, payloadHash, intent, skip: false };
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`  ❌ Failed to plan post "${post.title}":`, errMsg);
+        failedPosts.push({ title: post.title, slug: post.slug, error: errMsg });
+        if (isExplicitTarget) throw err;
+        return null;
       }
+    },
+  });
+
+  const remoteLookups = localOperations
+    .filter((operation): operation is LocallyPreparedWordPressOperation => Boolean(operation && !operation.skip))
+    .filter((operation) => {
+      const entry = operation.publicationEntry;
+      return !(entry?.remoteId
+        && (!entry.remoteSlug || entry.remoteSlug === operation.wordpressSlug)
+        && (!entry.contentType || entry.contentType === operation.contentType));
+    })
+    .map((operation) => ({ restBase: operation.restBase, slug: operation.wordpressSlug }));
+  let discoveredPostIds: ReadonlyMap<string, number>;
+  try {
+    discoveredPostIds = await findWordPressPostIds({
+      locators: remoteLookups,
+      request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`WordPress publish plan is incomplete because remote discovery failed: ${message}`);
+  }
+
+  for (const operation of localOperations) {
+    if (!operation) continue;
+    const { publicationEntry, skip: shouldSkip, ...preparedOperation } = operation;
+    if (shouldSkip) {
+      plannedOperations.push({
+        ...preparedOperation,
+        action: 'skip',
+        existingPostId: null,
+      });
+      continue;
     }
+
+    const entry = publicationEntry;
+    const cachedRemoteMatches = entry?.remoteId
+      && (!entry.remoteSlug || entry.remoteSlug === operation.wordpressSlug)
+      && (!entry.contentType || entry.contentType === operation.contentType);
+    const existingPostId = cachedRemoteMatches && entry?.remoteId
+      ? entry.remoteId
+      : getWordPressPostId({
+        ids: discoveredPostIds,
+        locator: { restBase: operation.restBase, slug: operation.wordpressSlug },
+      }) ?? null;
+    plannedOperations.push({
+      ...preparedOperation,
+      action: existingPostId === null ? 'create' : 'update',
+      existingPostId,
+    });
   }
 
   if (failedPosts.length > 0) {
@@ -461,7 +528,7 @@ export async function prepareWordPressPublication({
   }
 
   const publishPlan = createWordPressPublishPlan({ operations: plannedOperations });
-  console.log(`\n${formatWordPressPublishPlan({ plan: publishPlan })}`);
+  console.log(`\n${formatWordPressPublishPlan({ plan: publishPlan, verbose })}`);
 
   const apply = async ({ dryRun: applyDryRun }: { dryRun: boolean }): Promise<void> => {
     const taxonomyResolver = createWordPressTaxonomyResolver({
@@ -477,8 +544,8 @@ export async function prepareWordPressPublication({
     if (!applyDryRun) {
       await taxonomyResolver.preloadPayloads({
         taxonomies: publishPlan.operations
-          .filter((operation) => operation.action !== 'skip' && operation.contentType === 'post')
-          .map((operation) => operation.intent.taxonomies),
+          .filter((operation) => operation.action !== 'skip' && operation.contentType === 'post' && operation.intent)
+          .map((operation) => operation.intent?.taxonomies || {}),
       });
     }
 
@@ -486,9 +553,13 @@ export async function prepareWordPressPublication({
       try {
         if (operation.action === 'skip') {
           const publicationEntry = wordpressPublicationState[operation.sourceSlug];
-          if (publicationEntry && publicationEntry.contentHash !== operation.sourceHash) {
+          if (publicationEntry && (
+            publicationEntry.contentHash !== operation.sourceHash
+            || publicationEntry.inputHash !== operation.inputHash
+          )) {
             setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
               contentHash: operation.sourceHash,
+              inputHash: operation.inputHash,
               payloadHash: operation.payloadHash,
               remoteId: publicationEntry.remoteId,
               remoteSlug: publicationEntry.remoteSlug,
@@ -497,10 +568,16 @@ export async function prepareWordPressPublication({
             });
             syncStateChanged = true;
           }
-          console.log(
-            `  ⏭️  Skipping "${operation.title}" (slug: ${operation.sourceSlug}) - publish payload unchanged.`
-          );
+          if (verbose) {
+            console.log(
+              `  ⏭️  Skipping "${operation.title}" (slug: ${operation.sourceSlug}) - publication inputs unchanged.`
+            );
+          }
           continue;
+        }
+
+        if (!operation.intent) {
+          throw new Error(`Invalid WordPress publish plan: ${operation.action} "${operation.sourceSlug}" has no intent.`);
         }
 
         let appliedRemoteId = operation.existingPostId;
@@ -578,6 +655,7 @@ export async function prepareWordPressPublication({
 
         setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
           contentHash: operation.sourceHash,
+          inputHash: operation.inputHash,
           payloadHash: operation.payloadHash,
           remoteId: appliedRemoteId ?? undefined,
           remoteSlug: operation.wordpressSlug,

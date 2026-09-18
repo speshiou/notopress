@@ -18,6 +18,7 @@ function createOperation(
     restBase: 'posts',
     existingPostId: 456,
     sourceHash: 'source-hash',
+    inputHash: 'input-hash',
     payloadHash: 'payload-hash',
     intent: {
       title: 'Example Guide',
@@ -66,5 +67,20 @@ describe('formatWordPressPublishPlan', () => {
       }],
     });
     expect(output).not.toContain('<!-- wp:paragraph -->');
+  });
+
+  it('omits unchanged operations unless verbose output is requested', () => {
+    const skipped = createOperation({ action: 'skip', sourceSlug: 'unchanged' });
+    const changed = createOperation({ sourceSlug: 'changed' });
+    const plan = createWordPressPublishPlan({ operations: [skipped, changed] });
+
+    const conciseOutput = formatWordPressPublishPlan({ plan });
+    expect(conciseOutput).toContain('"sourceSlug": "changed"');
+    expect(conciseOutput).not.toContain('"sourceSlug": "unchanged"');
+    expect(conciseOutput).toContain('1 unchanged operation(s) omitted');
+
+    const verboseOutput = formatWordPressPublishPlan({ plan, verbose: true });
+    expect(verboseOutput).toContain('"sourceSlug": "unchanged"');
+    expect(verboseOutput).not.toContain('operation(s) omitted');
   });
 });

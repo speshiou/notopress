@@ -702,7 +702,7 @@ describe('WordPress Deployment Library', () => {
 
     it('should not mutate any posts when a bulk publish plan is incomplete', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
-        if (url.includes('slug=post-one') && options.method === 'GET') {
+        if (url.includes('slug%5B%5D=post-one') && options.method === 'GET') {
           throw new Error('lookup failed');
         }
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
@@ -788,19 +788,15 @@ describe('WordPress Deployment Library', () => {
         dryRun: false,
       });
 
-      // Verify it queried both slug endpoints
+      // Verify it queried both slugs in one batched discovery request.
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=post-one'),
-        expect.objectContaining({ method: 'GET' })
-      );
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=post-two'),
+        expect.stringMatching(/\/wp\/v2\/posts\?.*slug%5B%5D=post-one.*slug%5B%5D=post-two/),
         expect.objectContaining({ method: 'GET' })
       );
       // Verify two POST calls occurred
       const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
       expect(postCalls.length).toBe(2);
-      expect(requestMethods).toEqual(['GET', 'GET', 'POST', 'POST']);
+      expect(requestMethods).toEqual(['GET', 'POST', 'POST']);
     });
 
     it('should throw an error if none of the target slugs are found', async () => {
@@ -895,6 +891,7 @@ describe('WordPress Deployment Library', () => {
       );
       expect(JSON.parse(savedSyncState).wordpress['post-one']).toEqual({
         contentHash: hash,
+        inputHash: expect.any(String),
         payloadHash: expect.any(String),
         remoteId: 456,
         remoteSlug: 'post-one',

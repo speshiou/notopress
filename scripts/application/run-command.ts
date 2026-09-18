@@ -84,6 +84,7 @@ async function runStateInitialization({ command, site, registry }: {
     contentSnapshot: build.contentSnapshot,
     rootIndex: build.vaultRootIndex,
     dryRun: command.dryRun,
+    verbose: command.verbose,
   });
 }
 
@@ -107,6 +108,7 @@ async function runPublication({ command, site, registry }: {
       targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
       force: command.kind === 'publish' && command.force,
       dryRun: command.dryRun,
+      verbose: command.verbose,
     });
     if (prepared) preparedPublications.push(prepared);
   }

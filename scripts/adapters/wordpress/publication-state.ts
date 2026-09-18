@@ -7,6 +7,7 @@ import {
 
 export interface WordPressPublicationStateEntry {
   contentHash: string;
+  inputHash?: string;
   payloadHash?: string;
   remoteId?: number;
   remoteSlug?: string;
@@ -16,6 +17,7 @@ export interface WordPressPublicationStateEntry {
 
 const WordPressPublicationStateEntrySchema = z.object({
   contentHash: z.string(),
+  inputHash: z.string().optional(),
   payloadHash: z.string().optional(),
   remoteId: z.number().int().positive().optional(),
   remoteSlug: z.string().optional(),
@@ -27,6 +29,7 @@ const WordPressPublicationStateSchema = z.record(z.string(), WordPressPublicatio
 export type WordPressPublicationState = Record<string, WordPressPublicationStateEntry>;
 export type WordPressPublicationStateEntryInput = {
   contentHash: string;
+  inputHash?: string;
   payloadHash?: string;
   remoteId?: number;
   remoteSlug?: string;
@@ -95,6 +98,7 @@ export function setWordPressPublicationStateEntry(
 ): WordPressPublicationStateEntry {
   const publicationEntry: WordPressPublicationStateEntry = {
     contentHash: entry.contentHash,
+    ...(entry.inputHash ? { inputHash: entry.inputHash } : {}),
     ...(entry.payloadHash ? { payloadHash: entry.payloadHash } : {}),
     ...(entry.remoteId ? { remoteId: entry.remoteId } : {}),
     ...(entry.remoteSlug ? { remoteSlug: entry.remoteSlug } : {}),
@@ -113,6 +117,7 @@ export async function updateWordPressPublicationState({
   vaultPath,
   slug,
   contentHash,
+  inputHash,
   payloadHash,
   remoteId,
   remoteSlug,
@@ -122,6 +127,7 @@ export async function updateWordPressPublicationState({
   vaultPath: string;
   slug: string;
   contentHash: string;
+  inputHash?: string;
   payloadHash?: string;
   remoteId?: number;
   remoteSlug?: string;
@@ -131,6 +137,7 @@ export async function updateWordPressPublicationState({
   const syncState = await loadSyncState({ vaultPath });
   setWordPressPublicationStateEntry(syncState, slug, {
     contentHash,
+    inputHash,
     payloadHash,
     remoteId,
     remoteSlug,

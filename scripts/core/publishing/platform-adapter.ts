@@ -19,6 +19,7 @@ export type PreparePublicationContext = {
   targetSlugs?: string[];
   force?: boolean;
   dryRun: boolean;
+  verbose: boolean;
 };
 
 export type ImportContentContext = {
