@@ -1,4 +1,4 @@
-export type PullValidationInput = {
+export type ImportValidationInput = {
   sourceContent: string;
   markdown: string;
 };
@@ -21,15 +21,15 @@ function findDetachedTableRow(markdown: string): number | null {
   return null;
 }
 
-export function validatePulledMarkdown({ sourceContent, markdown }: PullValidationInput): void {
+export function validateImportedMarkdown({ sourceContent, markdown }: ImportValidationInput): void {
   if (sourceContent.trim().length > 0 && markdown.trim().length === 0) {
-    throw new Error('WordPress pull validation failed: non-empty source content converted to empty Markdown.');
+    throw new Error('WordPress import validation failed: non-empty source content converted to empty Markdown.');
   }
 
   const detachedTableRow = findDetachedTableRow(markdown);
   if (detachedTableRow !== null) {
     throw new Error(
-      `WordPress pull validation failed: Markdown table row at line ${detachedTableRow} is detached by a blank line.`
+      `WordPress import validation failed: Markdown table row at line ${detachedTableRow} is detached by a blank line.`
     );
   }
 }

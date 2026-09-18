@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Site } from '../../../src/domain/registry';
 import {
-  createWordPressPublisherAdapters,
-  hasWordPressPublisher,
-  LEGACY_WORDPRESS_PUBLISHER_ID,
+  createWordPressPlatformAdapters,
+  LEGACY_WORDPRESS_PLATFORM_ID,
 } from './adapter';
 
 describe('WordPress publisher adapter configuration', () => {
@@ -14,10 +13,9 @@ describe('WordPress publisher adapter configuration', () => {
       wordpress: { username: 'editor', applicationPassword: 'secret' },
     };
 
-    expect(createWordPressPublisherAdapters({ site }).map((adapter) => adapter.id)).toEqual([
-      LEGACY_WORDPRESS_PUBLISHER_ID,
+    expect(createWordPressPlatformAdapters({ site }).map((adapter) => adapter.id)).toEqual([
+      LEGACY_WORDPRESS_PLATFORM_ID,
     ]);
-    expect(hasWordPressPublisher({ site })).toBe(true);
   });
 
   it('creates independently named adapters from generic publisher definitions', () => {
@@ -35,9 +33,8 @@ describe('WordPress publisher adapter configuration', () => {
       }],
     };
 
-    expect(createWordPressPublisherAdapters({ site }).map((adapter) => adapter.id)).toEqual([
+    expect(createWordPressPlatformAdapters({ site }).map((adapter) => adapter.id)).toEqual([
       'wordpress-primary',
     ]);
-    expect(hasWordPressPublisher({ site })).toBe(true);
   });
 });

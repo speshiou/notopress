@@ -1,6 +1,6 @@
 import type { Registry, Site } from '../../src/domain/registry';
 import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
-import { hasConfiguredPublisherType } from '../adapters/catalog';
+import { hasConfiguredPlatformType } from '../adapters/catalog';
 import { buildContentSnapshot } from '../core/content/content-snapshot';
 import { generateRenderedContent } from '../core/content/rendered-content';
 import { ensureVaultAgentRules } from './agent-rules';
@@ -22,7 +22,7 @@ export async function buildSite({
   await ensureVaultAgentRules({
     vaultPath: site.vaultPath,
     siteId: site.siteId,
-    isWordPressEnabled: hasConfiguredPublisherType({ site, type: 'wordpress' }),
+    isWordPressEnabled: hasConfiguredPlatformType({ site, type: 'wordpress' }),
     dryRun,
   });
 

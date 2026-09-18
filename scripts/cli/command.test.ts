@@ -50,7 +50,7 @@ describe('CLI command parser', () => {
     expect(parseCliCommand({
       argv: ['publisher', 'init', 'wordpress-main', '--site', 'example-blog'],
     })).toMatchObject({
-      kind: 'initialize-publisher-state',
+      kind: 'initialize-platform-state',
       publisherId: 'wordpress-main',
       siteId: 'example-blog',
     });

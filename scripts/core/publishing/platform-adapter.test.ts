@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createOperationPlan } from './operation-plan';
 import {
-  applyPreparedPublisher,
-  assertPublisherPlanFingerprint,
-  createPublisherRegistry,
+  applyPreparedPublication,
+  assertPublicationTargetFingerprint,
+  createPlatformRegistry,
   executePublication,
-  type PublisherAdapter,
-} from './publisher';
+  type ContentPlatformAdapter,
+} from './platform-adapter';
 
 function createPublisher() {
   const apply = vi.fn(async () => undefined);
@@ -23,19 +23,19 @@ function createPublisher() {
 
 describe('prepared publisher lifecycle', () => {
   it('registers adapters by stable publisher id', () => {
-    const adapter = { id: 'example-main', type: 'example', preparePublication: vi.fn() } satisfies PublisherAdapter;
-    const registry = createPublisherRegistry({ adapters: [adapter] });
+    const adapter = { id: 'example-main', type: 'example', preparePublication: vi.fn() } satisfies ContentPlatformAdapter;
+    const registry = createPlatformRegistry({ adapters: [adapter] });
 
     expect(registry.get({ id: 'example-main' })).toBe(adapter);
     expect(() => registry.get({ id: 'missing' })).toThrow('Publisher "missing" is not configured');
-    expect(() => createPublisherRegistry({ adapters: [adapter, adapter] })).toThrow('Duplicate publisher id');
+    expect(() => createPlatformRegistry({ adapters: [adapter, adapter] })).toThrow('Duplicate publisher id');
   });
 
   it('rejects a changed plan before apply', async () => {
     const { publisher, apply } = createPublisher();
 
-    expect(() => assertPublisherPlanFingerprint({
-      publisher,
+    expect(() => assertPublicationTargetFingerprint({
+      publication: publisher,
       expectedFingerprint: 'different-fingerprint',
     })).toThrow('Example plan changed');
     expect(apply).not.toHaveBeenCalled();
@@ -44,8 +44,8 @@ describe('prepared publisher lifecycle', () => {
   it('applies a validated publisher in the requested mode', async () => {
     const { publisher, apply } = createPublisher();
 
-    assertPublisherPlanFingerprint({ publisher, expectedFingerprint: publisher.plan.fingerprint });
-    await applyPreparedPublisher({ publisher, dryRun: true });
+    assertPublicationTargetFingerprint({ publication: publisher, expectedFingerprint: publisher.plan.fingerprint });
+    await applyPreparedPublication({ publication: publisher, dryRun: true });
 
     expect(apply).toHaveBeenCalledWith({ dryRun: true });
   });
@@ -55,8 +55,8 @@ describe('prepared publisher lifecycle', () => {
     const applyCore = vi.fn(async () => undefined);
 
     await expect(executePublication({
-      publishers: [{ publisher, expectedFingerprint: 'different-fingerprint' }],
-      applyCore,
+      targets: [{ publication: publisher, expectedFingerprint: 'different-fingerprint' }],
+      applyNativeSite: applyCore,
       dryRun: false,
     })).rejects.toThrow('Example plan changed');
 
@@ -68,17 +68,17 @@ describe('prepared publisher lifecycle', () => {
     const calls: string[] = [];
     const { publisher } = createPublisher();
     publisher.apply = vi.fn(async () => {
-      calls.push('publisher');
+      calls.push('platform');
     });
 
     await executePublication({
-      publishers: [{ publisher, expectedFingerprint: publisher.plan.fingerprint }],
-      applyCore: async () => {
+      targets: [{ publication: publisher, expectedFingerprint: publisher.plan.fingerprint }],
+      applyNativeSite: async () => {
         calls.push('core');
       },
       dryRun: false,
     });
 
-    expect(calls).toEqual(['core', 'publisher']);
+    expect(calls).toEqual(['core', 'platform']);
   });
 });

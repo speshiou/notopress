@@ -1,23 +1,23 @@
 import type { Site } from '../../src/domain/registry';
-import type { PublisherAdapter } from '../core/publishing/publisher';
+import type { ContentPlatformAdapter } from '../core/publishing/platform-adapter';
 import {
-  createWordPressPublisherAdapters,
-  WORDPRESS_PUBLISHER_TYPE,
+  createWordPressPlatformAdapters,
+  WORDPRESS_PLATFORM_TYPE,
 } from './wordpress/adapter';
 
-export function createConfiguredPublisherAdapters({ site }: { site: Site }): PublisherAdapter[] {
+export function createConfiguredPlatformAdapters({ site }: { site: Site }): ContentPlatformAdapter[] {
   return [
-    ...createWordPressPublisherAdapters({ site }),
+    ...createWordPressPlatformAdapters({ site }),
   ];
 }
 
-export function hasConfiguredPublisherType({
+export function hasConfiguredPlatformType({
   site,
   type,
 }: {
   site: Site;
   type: string;
 }): boolean {
-  if (type === WORDPRESS_PUBLISHER_TYPE && site.wordpress) return true;
-  return Boolean(site.publishers?.some((publisher) => publisher.type === type));
+  if (type === WORDPRESS_PLATFORM_TYPE && site.wordpress) return true;
+  return Boolean(site.publishers?.some((platform) => platform.type === type));
 }

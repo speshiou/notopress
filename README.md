@@ -16,10 +16,10 @@ indices · routes · rendered HTML · sitemaps · responsive images
     ↓
 reviewable publication plan
     ├── native site → S3-compatible storage → Next.js runtime
-    └── publishers  → WordPress or future adapters
+    └── publishers  → configured publication targets
 ```
 
-The native site and publisher adapters share content discovery and publication planning, but they do not share target behavior. URL rewrites belong to the NotoPress site. A WordPress adapter renders Gutenberg-compatible HTML, chooses WordPress slugs, and owns its remote state independently.
+The native site and platform adapters share content discovery and publication planning, but they do not share target behavior. URL rewrites belong to the NotoPress site. A WordPress adapter renders Gutenberg-compatible HTML, chooses WordPress slugs, and owns its remote state independently.
 
 ## Getting started
 
@@ -121,7 +121,7 @@ Rewrites let the vault stay organized without exposing those folders in the publ
 }
 ```
 
-With this rule, `content/guides/first-guide.md` is served at `/first-guide`. Rewrites apply only to the native NotoPress site. Publisher adapters receive the canonical source document and choose their own target slug behavior.
+With this rule, `content/guides/first-guide.md` is served at `/first-guide`. Rewrites apply only to the native NotoPress site. Platform adapters receive the canonical source document and choose their own target slug behavior.
 
 ## Sync and deployment
 
@@ -147,9 +147,9 @@ npm run deploy -- example-blog
 
 Use `--registry <path>` to select another registry. The `REGISTRY_PATH` environment variable provides the same override.
 
-## Publisher adapters
+## Platform adapters
 
-Publishers are named in the site configuration. WordPress is currently the built-in adapter:
+Publication targets are named in the site configuration. WordPress is currently the built-in platform adapter:
 
 ```json
 {
@@ -169,7 +169,7 @@ Publishers are named in the site configuration. WordPress is currently the built
 
 The deprecated top-level `wordpress` configuration remains readable as publisher ID `wordpress`, but new configurations should use `publishers`.
 
-The publisher and source documents are command operands. Use full vault slugs, even when a NotoPress rewrite changes the public URL:
+The publication target and source documents are command operands. Use full vault slugs, even when a NotoPress rewrite changes the public URL:
 
 ```bash
 npm run publish -- \
@@ -179,7 +179,7 @@ npm run publish -- \
   --dry-run
 ```
 
-The dry-run prints one composite fingerprint for the core build and all selected publisher plans. Pass that fingerprint to the corresponding live run:
+The dry-run prints one composite fingerprint for the native site and all selected platform plans. Pass that fingerprint to the corresponding live run:
 
 ```bash
 npm run publish -- \
@@ -189,7 +189,7 @@ npm run publish -- \
   --expect <reviewed-fingerprint>
 ```
 
-If content, rendered output, routes, assets, deletion policy, remote target identity, or publisher intent changes, the fingerprint changes and the live run stops before remote mutation. Publisher planning may perform narrowly targeted remote reads. Avoid unbounded WordPress planning merely for verification.
+If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. Avoid unbounded WordPress planning merely for verification.
 
 Adapters may also provide import and state-initialization capabilities:
 
@@ -223,9 +223,9 @@ scripts/
 └── cli/             typed command parsing and dispatch
 ```
 
-Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic publisher contract. Architecture tests enforce these boundaries.
+Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic `ContentPlatformAdapter` contract. Architecture tests enforce these boundaries.
 
-A publisher adapter prepares a read-only typed plan and returns an apply operation. NotoPress prepares every selected plan, builds the composite fingerprint, validates any reviewed fingerprint, and only then starts native storage or publisher mutations. Adapter-owned state, rendering, remote lookups, imports, and platform payloads stay inside the adapter package.
+A platform adapter prepares a read-only typed plan and returns an apply operation. NotoPress prepares every selected plan, builds the composite fingerprint, validates any reviewed fingerprint, and only then starts native storage or platform mutations. Adapter-owned state, rendering, remote lookups, imports, and platform payloads stay inside the adapter package.
 
 ## Configuration and credentials
 

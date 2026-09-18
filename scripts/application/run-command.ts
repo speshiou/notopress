@@ -1,18 +1,18 @@
 import { select } from '@inquirer/prompts';
 import type { Registry, Site } from '../../src/domain/registry';
-import { createConfiguredPublisherAdapters } from '../adapters/catalog';
-import type { OperationalCommand, PublishCommand, SyncCommand } from '../cli/command';
+import { createConfiguredPlatformAdapters } from '../adapters/catalog';
+import type { ExecutableCommand, PublishCommand, SyncCommand } from '../cli/command';
 import {
-  createCoreBuildPlan,
+  createNativeSitePlan,
   createPublicationPlan,
   formatPublicationPlan,
 } from '../core/publishing/publication-plan';
 import {
-  createPublisherRegistry,
+  createPlatformRegistry,
   executePublication,
-  type PreparedPublisher,
-  type SelectedPublisher,
-} from '../core/publishing/publisher';
+  type PreparedPublication,
+  type PublicationTarget,
+} from '../core/publishing/platform-adapter';
 import { assertOperationPlanFingerprint } from '../core/publishing/operation-plan';
 import { exists } from '../core/files';
 import { applyNativeSite } from '../infrastructure/native/storage';
@@ -24,7 +24,7 @@ async function selectSite({
   command,
 }: {
   registry: Registry;
-  command: OperationalCommand;
+  command: ExecutableCommand;
 }): Promise<Site> {
   if (registry.sites.length === 0) throw new Error('No sites are configured in registry.json.');
 
@@ -46,16 +46,16 @@ async function selectSite({
   return site;
 }
 
-function publisherRegistryFor(site: Site) {
-  return createPublisherRegistry({ adapters: createConfiguredPublisherAdapters({ site }) });
+function platformRegistryFor(site: Site) {
+  return createPlatformRegistry({ adapters: createConfiguredPlatformAdapters({ site }) });
 }
 
 async function runImport({ command, site, registry }: {
-  command: Extract<OperationalCommand, { kind: 'import' }>;
+  command: Extract<ExecutableCommand, { kind: 'import' }>;
   site: Site;
   registry: Registry;
 }): Promise<void> {
-  const adapter = publisherRegistryFor(site).get({ id: command.publisherId });
+  const adapter = platformRegistryFor(site).get({ id: command.publisherId });
   if (!adapter.importResource) {
     throw new Error(`Publisher "${adapter.id}" does not support imports.`);
   }
@@ -68,11 +68,11 @@ async function runImport({ command, site, registry }: {
 }
 
 async function runStateInitialization({ command, site, registry }: {
-  command: Extract<OperationalCommand, { kind: 'initialize-publisher-state' }>;
+  command: Extract<ExecutableCommand, { kind: 'initialize-platform-state' }>;
   site: Site;
   registry: Registry;
 }): Promise<void> {
-  const adapter = publisherRegistryFor(site).get({ id: command.publisherId });
+  const adapter = platformRegistryFor(site).get({ id: command.publisherId });
   if (!adapter.initializeState) {
     throw new Error(`Publisher "${adapter.id}" does not support state initialization.`);
   }
@@ -93,11 +93,11 @@ async function runPublication({ command, site, registry }: {
   registry: Registry;
 }): Promise<void> {
   const build = await buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose });
-  const publisherRegistry = publisherRegistryFor(site);
-  const preparedPublishers: PreparedPublisher<unknown>[] = [];
+  const platformRegistry = platformRegistryFor(site);
+  const preparedPublications: PreparedPublication<unknown>[] = [];
   const publisherIds = command.kind === 'publish' ? [command.publisherId] : [];
   for (const publisherId of publisherIds) {
-    const adapter = publisherRegistry.get({ id: publisherId });
+    const adapter = platformRegistry.get({ id: publisherId });
     const prepared = await adapter.preparePublication({
       site,
       registry,
@@ -108,16 +108,16 @@ async function runPublication({ command, site, registry }: {
       force: command.kind === 'publish' && command.force,
       dryRun: command.dryRun,
     });
-    if (prepared) preparedPublishers.push(prepared);
+    if (prepared) preparedPublications.push(prepared);
   }
 
-  const corePlan = createCoreBuildPlan({
+  const nativeSitePlan = createNativeSitePlan({
     contentSnapshot: build.contentSnapshot,
     rootIndex: build.vaultRootIndex,
     renderedArtifacts: build.renderedContent.artifacts,
     deleteRemoteFiles: command.deleteRemoteFiles,
   });
-  const publicationPlan = createPublicationPlan({ corePlan, publishers: preparedPublishers });
+  const publicationPlan = createPublicationPlan({ nativeSitePlan, publications: preparedPublications });
   console.log(`\n${formatPublicationPlan({ plan: publicationPlan })}`);
   assertOperationPlanFingerprint({
     label: 'NotoPress publication',
@@ -128,10 +128,10 @@ async function runPublication({ command, site, registry }: {
     console.log(`✅ NotoPress publication plan fingerprint matched: ${publicationPlan.fingerprint}`);
   }
 
-  const selectedPublishers: SelectedPublisher[] = preparedPublishers.map((publisher) => ({ publisher }));
+  const targets: PublicationTarget[] = preparedPublications.map((publication) => ({ publication }));
   await executePublication({
-    publishers: selectedPublishers,
-    applyCore: () => applyNativeSite({
+    targets,
+    applyNativeSite: () => applyNativeSite({
       site,
       registry,
       dryRun: command.dryRun,
@@ -151,7 +151,7 @@ async function runPublication({ command, site, registry }: {
   if (command.kind === 'deploy') await deployApplication({ site, registry });
 }
 
-export async function runCommand({ command, registry }: { command: OperationalCommand; registry: Registry }): Promise<void> {
+export async function runCommand({ command, registry }: { command: ExecutableCommand; registry: Registry }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
   if (command.kind === 'configure') {
@@ -162,7 +162,7 @@ export async function runCommand({ command, registry }: { command: OperationalCo
     await runImport({ command, site, registry });
     return;
   }
-  if (command.kind === 'initialize-publisher-state') {
+  if (command.kind === 'initialize-platform-state') {
     await runStateInitialization({ command, site, registry });
     return;
   }

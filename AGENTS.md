@@ -16,7 +16,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 # Architecture
 - Keep main entrance files clean as orchestrators. Move feature logic, parsing, file scanning, rendering transforms, and other reusable behavior into focused modules instead of letting scripts or page files grow bloated.
 - Treat dry-run planning and fingerprinting as core NotoPress infrastructure. Build stages and publishing adapters should contribute typed operations to a shared plan/apply boundary; do not implement a separate approximation of live behavior inside an integration. Keep integration-specific gates explicitly named until the core plan includes every affected stage.
-- Keep publishing platforms behind `PublisherAdapter`: core owns the canonical content snapshot, selection, plan validation, and apply ordering; adapters own target rendering, remote discovery, mutations, and namespaced state. Prepare every selected plan before the first remote mutation.
+- Keep publishing platforms behind `ContentPlatformAdapter`: core owns the canonical content snapshot, selection, plan validation, and apply ordering; adapters own target rendering, remote discovery, mutations, and namespaced state. Prepare every selected plan before the first remote mutation.
 - Module functions should strictly follow dependency injection patterns: pass filesystem, network, parser, logger, process, and other side-effect dependencies through explicit factory inputs or function parameters so modules stay extensible and testable.
 - Add unit tests beside the module file at the same directory level whenever creating or substantially changing a module.
 - **Single Source of Truth**: Strictly avoid duplicating code, logic, data structures, configurations, patterns (such as URL/path composition, file/folder resolution, parsing, etc.), or abstractions across the codebase. Consolidate runtime helpers in `src/lib/` and script-side behavior in its owning `scripts/core/`, `scripts/application/`, `scripts/infrastructure/`, or `scripts/adapters/` module.
@@ -34,7 +34,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
 - In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
 
-# Publisher Adapters & WordPress
+# Platform Adapters & WordPress
 - **Publisher Commands**:
   - `notopress publish <publisher-id> [slug...] --site <site-id>`: Syncs the native site and publishes through a configured adapter. Slugs are optional full vault slugs.
   - `notopress import <publisher-id> <slug-or-id> --site <site-id>`: Imports one remote resource through an adapter that supports imports.

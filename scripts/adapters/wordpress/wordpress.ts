@@ -18,7 +18,7 @@ import {
 } from '../../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from '../../core/content/note-includes';
 import { createRawBlockConverter } from './raw-blocks';
-import { validatePulledMarkdown } from './pull-validation';
+import { validateImportedMarkdown } from './import-validation';
 import {
   createWordPressTaxonomyResolver,
   formatTaxonomyFrontmatterLines,
@@ -26,7 +26,11 @@ import {
 
 
 import { computeContentHash, loadSyncState, saveSyncState } from '../../core/state/sync-state';
-import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './sync-state';
+import {
+  getWordPressPublicationStateFromObject,
+  setWordPressPublicationStateEntry,
+  updateWordPressPublicationState,
+} from './publication-state';
 import {
   computeWordPressPayloadHash,
   createWordPressPublishPayload,
@@ -37,10 +41,10 @@ import {
   type WordPressPublishOperation,
 } from './publish-plan';
 import {
-  formatWordPressSyncSummary,
-  type WordPressSyncErrorResult,
-  type WordPressSyncItemResult,
-} from './sync-log';
+  formatWordPressPublicationSummary,
+  type WordPressPublicationErrorResult,
+  type WordPressPublicationItemResult,
+} from './publication-summary';
 import {
   buildContentSnapshot,
   findSnapshotDocument,
@@ -48,15 +52,15 @@ import {
   type ContentSnapshotDocument,
 } from '../../core/content/content-snapshot';
 import {
-  applyPreparedPublisher,
-  assertPublisherPlanFingerprint,
-  type PreparedPublisher,
-} from '../../core/publishing/publisher';
+  applyPreparedPublication,
+  assertPublicationTargetFingerprint,
+  type PreparedPublication,
+} from '../../core/publishing/platform-adapter';
 
 
 
 
-interface PushToWordPressArgs {
+interface PublishToWordPressInput {
   site: Site;
   registry: Registry;
   allIndices: Map<string, VaultDirectoryIndex>;
@@ -64,12 +68,12 @@ interface PushToWordPressArgs {
   rootIndex?: VaultRootIndex;
   targetSlugs?: string[];
   force?: boolean;
-  markSynced?: boolean;
+  initializeState?: boolean;
   expectedPlanFingerprint?: string;
   dryRun: boolean;
 }
 
-type PrepareWordPressPublisherArgs = Omit<PushToWordPressArgs, 'expectedPlanFingerprint'>;
+type PrepareWordPressPublicationInput = Omit<PublishToWordPressInput, 'expectedPlanFingerprint'>;
 
 interface WpFetchArgs {
   endpoint: string;
@@ -193,7 +197,7 @@ async function wpFetch({
 /**
  * Iterates through the Markdown posts in the vault and publishes them to WordPress.
  */
-export async function prepareWordPressPublisher({
+export async function prepareWordPressPublication({
   site,
   registry,
   allIndices,
@@ -201,9 +205,9 @@ export async function prepareWordPressPublisher({
   rootIndex,
   targetSlugs,
   force,
-  markSynced,
+  initializeState,
   dryRun,
-}: PrepareWordPressPublisherArgs): Promise<PreparedPublisher<WordPressPublishOperation> | null> {
+}: PrepareWordPressPublicationInput): Promise<PreparedPublication<WordPressPublishOperation> | null> {
   const credentials = site.wordpress;
   if (!credentials) {
     throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
@@ -226,10 +230,10 @@ export async function prepareWordPressPublisher({
   if (force) {
     console.log(`- Force Mode: ENABLED (Bypassing publish payload hash checks)`);
   }
-  console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Sync\n`);
+  console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Publication\n`);
 
   const syncState = await loadSyncState({ vaultPath: site.vaultPath });
-  const wpSyncState = getWordPressSyncStateFromObject(syncState);
+  const wordpressPublicationState = getWordPressPublicationStateFromObject(syncState);
   const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath: site.vaultPath, allIndices });
 
   let assetFiles = rootIndex?.assetFiles || rootIndex?.publicFiles || [];
@@ -295,19 +299,19 @@ export async function prepareWordPressPublisher({
 
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
 
-  if (markSynced) {
-    console.log(`\n📝 Initializing WordPress Sync State (marking vault posts as synced)...`);
+  if (initializeState) {
+    console.log(`\n📝 Initializing WordPress publication state...`);
     let markedCount = 0;
     for (const post of postsToPublish) {
-      setWordPressEntry(syncState, post.slug, { contentHash: post.document.sourceHash });
+      setWordPressPublicationStateEntry(syncState, post.slug, { contentHash: post.document.sourceHash });
       markedCount += 1;
-      console.log(`  ✓ Marked "${post.title}" (slug: ${post.slug}) as synced.`);
+      console.log(`  ✓ Initialized "${post.title}" (slug: ${post.slug}).`);
     }
 
     if (!dryRun && markedCount > 0) {
       await saveSyncState({ vaultPath: site.vaultPath, syncState });
     }
-    console.log(`\n✅ Successfully marked ${markedCount} post(s) as synced in .notopress-sync.json.`);
+    console.log(`\n✅ Initialized publication state for ${markedCount} post(s) in .notopress-sync.json.`);
     return null;
   }
 
@@ -316,9 +320,9 @@ export async function prepareWordPressPublisher({
     vaultPath: site.vaultPath,
     includePaths: site.noteIncludePaths,
   });
-  const updatedPosts: WordPressSyncItemResult[] = [];
-  const createdPosts: WordPressSyncItemResult[] = [];
-  const failedPosts: WordPressSyncErrorResult[] = [];
+  const updatedPosts: WordPressPublicationItemResult[] = [];
+  const createdPosts: WordPressPublicationItemResult[] = [];
+  const failedPosts: WordPressPublicationErrorResult[] = [];
   const plannedOperations: WordPressPublishOperation[] = [];
   let syncStateChanged = false;
 
@@ -328,7 +332,7 @@ export async function prepareWordPressPublisher({
 
       const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
 
-      console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
+      console.log(`\nPlanning "${post.title}" (slug: ${post.slug})...`);
 
       const wordpressResource = getWordPressRestResource({ frontmatter: post.document.frontmatter });
       const noteReferences = await collectLocalNoteReferences({
@@ -380,10 +384,10 @@ export async function prepareWordPressPublisher({
         contentType: wordpressResource.contentType,
         intent,
       });
-      const syncEntry = wpSyncState[post.slug];
-      const payloadIsUnchanged = syncEntry?.payloadHash === payloadHash;
+      const publicationEntry = wordpressPublicationState[post.slug];
+      const payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
 
-      if (!force && !isExplicitTarget && syncEntry && payloadIsUnchanged) {
+      if (!force && !isExplicitTarget && publicationEntry && payloadIsUnchanged) {
         plannedOperations.push({
           action: 'skip',
           sourceSlug: post.slug,
@@ -401,11 +405,11 @@ export async function prepareWordPressPublisher({
       }
 
       const ExistingPostListSchema = z.array(z.object({ id: z.number() }));
-      const cachedRemoteMatches = syncEntry?.remoteId
-        && (!syncEntry.remoteSlug || syncEntry.remoteSlug === wpSlug)
-        && (!syncEntry.contentType || syncEntry.contentType === wordpressResource.contentType);
-      let existingPost: { id: number } | null = cachedRemoteMatches && syncEntry?.remoteId
-        ? { id: syncEntry.remoteId }
+      const cachedRemoteMatches = publicationEntry?.remoteId
+        && (!publicationEntry.remoteSlug || publicationEntry.remoteSlug === wpSlug)
+        && (!publicationEntry.contentType || publicationEntry.contentType === wordpressResource.contentType);
+      let existingPost: { id: number } | null = cachedRemoteMatches && publicationEntry?.remoteId
+        ? { id: publicationEntry.remoteId }
         : null;
       if (!existingPost) {
         const existingResult = ExistingPostListSchema.safeParse(
@@ -437,7 +441,7 @@ export async function prepareWordPressPublisher({
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`  ❌ Failed to sync post "${post.title}":`, errMsg);
+      console.error(`  ❌ Failed to plan post "${post.title}":`, errMsg);
       failedPosts.push({
         title: post.title,
         slug: post.slug,
@@ -481,15 +485,15 @@ export async function prepareWordPressPublisher({
     for (const operation of publishPlan.operations) {
       try {
         if (operation.action === 'skip') {
-          const syncEntry = wpSyncState[operation.sourceSlug];
-          if (syncEntry && syncEntry.contentHash !== operation.sourceHash) {
-            setWordPressEntry(syncState, operation.sourceSlug, {
+          const publicationEntry = wordpressPublicationState[operation.sourceSlug];
+          if (publicationEntry && publicationEntry.contentHash !== operation.sourceHash) {
+            setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
               contentHash: operation.sourceHash,
               payloadHash: operation.payloadHash,
-              remoteId: syncEntry.remoteId,
-              remoteSlug: syncEntry.remoteSlug,
-              contentType: syncEntry.contentType,
-              syncedAt: syncEntry.syncedAt,
+              remoteId: publicationEntry.remoteId,
+              remoteSlug: publicationEntry.remoteSlug,
+              contentType: publicationEntry.contentType,
+              syncedAt: publicationEntry.syncedAt,
             });
             syncStateChanged = true;
           }
@@ -572,7 +576,7 @@ export async function prepareWordPressPublisher({
           });
         }
 
-        setWordPressEntry(syncState, operation.sourceSlug, {
+        setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
           contentHash: operation.sourceHash,
           payloadHash: operation.payloadHash,
           remoteId: appliedRemoteId ?? undefined,
@@ -602,7 +606,7 @@ export async function prepareWordPressPublisher({
 
     console.log(
       `\n` +
-        formatWordPressSyncSummary({
+        formatWordPressPublicationSummary({
           updated: updatedPosts,
           created: createdPosts,
           failed: failedPosts,
@@ -621,21 +625,21 @@ export async function prepareWordPressPublisher({
   };
 }
 
-export async function pushToWordPress(args: PushToWordPressArgs): Promise<void> {
-  const preparedPublisher = await prepareWordPressPublisher(args);
-  if (!preparedPublisher) return;
+export async function publishToWordPress(args: PublishToWordPressInput): Promise<void> {
+  const preparedPublication = await prepareWordPressPublication(args);
+  if (!preparedPublication) return;
 
-  assertPublisherPlanFingerprint({
-    publisher: preparedPublisher,
+  assertPublicationTargetFingerprint({
+    publication: preparedPublication,
     expectedFingerprint: args.expectedPlanFingerprint,
   });
   if (args.expectedPlanFingerprint) {
-    console.log(`✅ WordPress publish plan fingerprint matched: ${preparedPublisher.plan.fingerprint}`);
+    console.log(`✅ WordPress publish plan fingerprint matched: ${preparedPublication.plan.fingerprint}`);
   }
-  await applyPreparedPublisher({ publisher: preparedPublisher, dryRun: args.dryRun });
+  await applyPreparedPublication({ publication: preparedPublication, dryRun: args.dryRun });
 }
 
-interface WpPost {
+interface WordPressPostResponse {
   id: number;
   date: string;
   date_gmt?: string;
@@ -655,7 +659,7 @@ interface WpPost {
   tags?: number[];
 }
 
-const WpPostSchema = z.object({
+const WordPressPostResponseSchema = z.object({
   id: z.number(),
   date: z.string(),
   date_gmt: z.string().optional(),
@@ -675,7 +679,7 @@ const WpPostSchema = z.object({
   tags: z.array(z.number()).optional(),
 });
 
-const WpPostArraySchema = z.array(WpPostSchema);
+const WordPressPostResponseArraySchema = z.array(WordPressPostResponseSchema);
 
 export function decodeHtmlEntities(str: string): string {
   return str
@@ -1092,14 +1096,14 @@ export function htmlToMarkdown(
     .trim();
 }
 
-interface PullFromWordPressArgs {
+interface ImportFromWordPressInput {
   site: Site;
   registry: Registry;
   slugOrId: string;
   dryRun: boolean;
 }
 
-function findLocalPullTarget({
+function findLocalImportTarget({
   site,
   slugOrId,
   wpSlug,
@@ -1128,12 +1132,12 @@ function findLocalPullTarget({
   };
 }
 
-export async function pullFromWordPress({
+export async function importFromWordPress({
   site,
   registry,
   slugOrId,
   dryRun,
-}: PullFromWordPressArgs) {
+}: ImportFromWordPressInput) {
   const credentials = site.wordpress;
   if (!credentials) {
     throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
@@ -1143,13 +1147,13 @@ export async function pullFromWordPress({
   const taxonomyResolver = createWordPressTaxonomyResolver({
     request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
   });
-  console.log(`\n📥 Preparing WordPress Pull...`);
+  console.log(`\n📥 Preparing WordPress Import...`);
   console.log(`- Target Endpoint: ${endpoint}`);
   console.log(`- Authenticated As: ${credentials.username}`);
   console.log(`- Target Post Slug/ID: ${slugOrId}`);
-  console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Pull\n`);
+  console.log(dryRun ? `- Mode: DRY RUN (No changes will be written)\n` : `- Mode: Live Import\n`);
 
-  let wpPost: WpPost | null = null;
+  let wpPost: WordPressPostResponse | null = null;
   const fetchSlugs = [hyphenateSlug({ slug: slugOrId })];
   const rewrittenPublicSlug = applyRewrites({
     fullSlug: slugOrId.replace(/^\//, ''),
@@ -1162,7 +1166,7 @@ export async function pullFromWordPress({
 
   for (const fetchSlug of fetchSlugs) {
     try {
-      const postsResult = WpPostArraySchema.safeParse(
+      const postsResult = WordPressPostResponseArraySchema.safeParse(
         await wpFetch({
           endpoint,
           credentials,
@@ -1184,7 +1188,7 @@ export async function pullFromWordPress({
 
   if (!wpPost && /^\d+$/.test(slugOrId)) {
     try {
-      const postResult = WpPostSchema.safeParse(
+      const postResult = WordPressPostResponseSchema.safeParse(
         await wpFetch({
           endpoint,
           credentials,
@@ -1210,11 +1214,11 @@ export async function pullFromWordPress({
 
   console.log(`✅ Found post: "${rawTitle}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
 
-  const pullTarget = findLocalPullTarget({ site, slugOrId, wpSlug: wpPost.slug });
-  const imageFolder = pullTarget.matchedExisting
-    ? getContentImageFolder({ fullSlug: pullTarget.canonicalSlug })
+  const importTarget = findLocalImportTarget({ site, slugOrId, wpSlug: wpPost.slug });
+  const imageFolder = importTarget.matchedExisting
+    ? getContentImageFolder({ fullSlug: importTarget.canonicalSlug })
     : wpPost.slug;
-  if (!pullTarget.matchedExisting && site.rewrites && site.rewrites.length > 0) {
+  if (!importTarget.matchedExisting && site.rewrites && site.rewrites.length > 0) {
     console.warn(
       `⚠️  No local Markdown file matched this WordPress post. Creating it at content root because rewrite folders cannot be inferred from WordPress.`
     );
@@ -1245,7 +1249,7 @@ export async function pullFromWordPress({
   } else {
     markdownBody = convertHtml({ html: wpPost.content.rendered });
   }
-  validatePulledMarkdown({
+  validateImportedMarkdown({
     sourceContent: wpPost.content.raw ?? wpPost.content.rendered,
     markdown: markdownBody,
   });
@@ -1279,8 +1283,8 @@ export async function pullFromWordPress({
     ``,
   ].join('\n');
 
-  const targetLocalPath = pullTarget.localPath;
-  const canonicalSlug = pullTarget.canonicalSlug;
+  const targetLocalPath = importTarget.localPath;
+  const canonicalSlug = importTarget.canonicalSlug;
 
   if (dryRun) {
     console.log(`  [DRY RUN] Would write Markdown post for "${wpPost.title.rendered}" to:`);
@@ -1328,9 +1332,9 @@ export async function pullFromWordPress({
     }
 
     await writeFile(targetLocalPath, frontmatter, 'utf-8');
-    console.log(`\n  💾 Successfully pulled and saved post to: ${targetLocalPath}`);
+    console.log(`\n  💾 Successfully imported and saved post to: ${targetLocalPath}`);
 
-    await updateWordPressSyncState({
+    await updateWordPressPublicationState({
       vaultPath: site.vaultPath,
       slug: canonicalSlug,
       contentHash: computeContentHash(frontmatter),

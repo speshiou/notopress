@@ -5,10 +5,10 @@ import {
   formatOperationPlan,
   type OperationPlan,
 } from './operation-plan';
-import type { PreparedPublisher } from './publisher';
+import type { PreparedPublication } from './platform-adapter';
 import type { RenderedContentArtifact } from '../content/rendered-content';
 
-type CoreBuildOperation = {
+type NativeSiteManifest = {
   deleteRemoteFiles: boolean;
   documents: readonly {
     sourceSlug: string;
@@ -21,17 +21,17 @@ type CoreBuildOperation = {
   renderedArtifacts: readonly RenderedContentArtifact[];
 };
 
-export type CoreBuildPlan = OperationPlan<CoreBuildOperation>;
+export type NativeSitePlan = OperationPlan<NativeSiteManifest>;
 
-type PublicationSection = {
+type PlanComponent = {
   id: string;
   kind: string;
   fingerprint: string;
 };
 
-export type PublicationPlan = OperationPlan<PublicationSection>;
+export type PublicationPlan = OperationPlan<PlanComponent>;
 
-export function createCoreBuildPlan({
+export function createNativeSitePlan({
   contentSnapshot,
   rootIndex,
   renderedArtifacts,
@@ -41,8 +41,8 @@ export function createCoreBuildPlan({
   rootIndex: VaultRootIndex;
   renderedArtifacts: readonly RenderedContentArtifact[];
   deleteRemoteFiles: boolean;
-}): CoreBuildPlan {
-  const operation: CoreBuildOperation = {
+}): NativeSitePlan {
+  const manifest: NativeSiteManifest = {
     deleteRemoteFiles,
     documents: contentSnapshot.documents.map((document) => ({
       sourceSlug: document.sourceSlug,
@@ -56,30 +56,30 @@ export function createCoreBuildPlan({
   };
   return createOperationPlan({
     kind: 'notopress-core-build',
-    operations: [operation],
+    operations: [manifest],
     serializeOperation: (value) => value,
   });
 }
 
 export function createPublicationPlan({
-  corePlan,
-  publishers,
+  nativeSitePlan,
+  publications,
 }: {
-  corePlan: CoreBuildPlan;
-  publishers: readonly PreparedPublisher<unknown>[];
+  nativeSitePlan: NativeSitePlan;
+  publications: readonly PreparedPublication<unknown>[];
 }): PublicationPlan {
-  const sections: PublicationSection[] = [
-    { id: 'notopress', kind: corePlan.kind, fingerprint: corePlan.fingerprint },
-    ...publishers.map((publisher) => ({
-      id: publisher.id,
-      kind: publisher.plan.kind,
-      fingerprint: publisher.plan.fingerprint,
+  const components: PlanComponent[] = [
+    { id: 'notopress', kind: nativeSitePlan.kind, fingerprint: nativeSitePlan.fingerprint },
+    ...publications.map((publication) => ({
+      id: publication.id,
+      kind: publication.plan.kind,
+      fingerprint: publication.plan.fingerprint,
     })),
   ];
   return createOperationPlan({
     kind: 'notopress-publication',
-    operations: sections,
-    serializeOperation: (section) => section,
+    operations: components,
+    serializeOperation: (component) => component,
   });
 }
 
@@ -87,6 +87,6 @@ export function formatPublicationPlan({ plan }: { plan: PublicationPlan }): stri
   return formatOperationPlan({
     label: 'NotoPress publication plan',
     plan,
-    serializeOperation: (section) => section,
+    serializeOperation: (component) => component,
   });
 }

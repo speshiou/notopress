@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { formatWordPressSyncSummary } from './sync-log';
+import { formatWordPressPublicationSummary } from './publication-summary';
 
-describe('formatWordPressSyncSummary', () => {
+describe('formatWordPressPublicationSummary', () => {
   it('formats summary when all posts are up to date', () => {
-    const output = formatWordPressSyncSummary({
+    const output = formatWordPressPublicationSummary({
       updated: [],
       created: [],
       failed: [],
@@ -11,14 +11,14 @@ describe('formatWordPressSyncSummary', () => {
       totalProcessed: 15,
     });
 
-    expect(output).toContain('📊 WordPress Sync Summary');
+    expect(output).toContain('📊 WordPress Publication Summary');
     expect(output).toContain('✨ All 15 post(s) are up to date! (0 modified)');
     expect(output).not.toContain('Updated Posts');
     expect(output).not.toContain('Created Posts');
   });
 
   it('formats summary for updated and created posts in live sync mode', () => {
-    const output = formatWordPressSyncSummary({
+    const output = formatWordPressPublicationSummary({
       updated: [
         {
           title: 'Existing Post',
@@ -50,7 +50,7 @@ describe('formatWordPressSyncSummary', () => {
   });
 
   it('formats summary for dry run mode', () => {
-    const output = formatWordPressSyncSummary({
+    const output = formatWordPressPublicationSummary({
       updated: [
         {
           title: 'Updated Post',
@@ -74,14 +74,14 @@ describe('formatWordPressSyncSummary', () => {
       isDryRun: true,
     });
 
-    expect(output).toContain('📊 WordPress Sync Summary (DRY RUN)');
+    expect(output).toContain('📊 WordPress Publication Summary (DRY RUN)');
     expect(output).toContain('✨ Would process 2 post(s) (1 updated, 1 created), 5 post(s) skipped (unchanged).');
     expect(output).toContain('• 🔄 [DRY RUN UPDATE] "Updated Post" (slug: updated-post, ID: 50)');
     expect(output).toContain('• 🆕 [DRY RUN CREATE] "Created Post" (slug: created-post)');
   });
 
   it('formats summary with failed items', () => {
-    const output = formatWordPressSyncSummary({
+    const output = formatWordPressPublicationSummary({
       updated: [],
       created: [],
       failed: [

@@ -29,20 +29,20 @@ export type ImportCommand = SharedCommandOptions & {
   resource: string;
 };
 
-export type InitializePublisherStateCommand = SharedCommandOptions & {
-  kind: 'initialize-publisher-state';
+export type InitializePlatformStateCommand = SharedCommandOptions & {
+  kind: 'initialize-platform-state';
   publisherId: string;
 };
 
-export type OperationalCommand =
+export type ExecutableCommand =
   | SyncCommand
   | PublishCommand
   | ConfigureCommand
   | ImportCommand
-  | InitializePublisherStateCommand;
+  | InitializePlatformStateCommand;
 
 export type CliInvocation =
-  | OperationalCommand
+  | ExecutableCommand
   | { kind: 'help'; topic?: string }
   | { kind: 'version' };
 
@@ -251,7 +251,7 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
     }
     return {
       ...sharedOptions(arguments_),
-      kind: 'initialize-publisher-state',
+      kind: 'initialize-platform-state',
       publisherId: arguments_.positionals[1],
     };
   }

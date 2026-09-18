@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
+import { publishToWordPress, restoreLocalImagePath, htmlToMarkdown, importFromWordPress } from './wordpress';
 import { Site, Registry } from '../../../src/domain/registry';
 import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
 
@@ -69,7 +69,7 @@ describe('WordPress Deployment Library', () => {
     });
   });
 
-  describe('pushToWordPress', () => {
+  describe('publishToWordPress', () => {
     const mockIndices = new Map<string, VaultDirectoryIndex>([
       [
         '',
@@ -140,7 +140,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: rewrittenIndices,
@@ -179,7 +179,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -223,7 +223,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -275,7 +275,7 @@ describe('WordPress Deployment Library', () => {
         'Page body.',
       ].join('\n'));
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -329,7 +329,7 @@ describe('WordPress Deployment Library', () => {
         'Body.',
       ].join('\n'));
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -373,7 +373,7 @@ describe('WordPress Deployment Library', () => {
         'Body.',
       ].join('\n'));
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -407,7 +407,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -447,7 +447,7 @@ describe('WordPress Deployment Library', () => {
         '| A | B |',
       ].join('\n'));
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -499,7 +499,7 @@ describe('WordPress Deployment Library', () => {
         ].join('\n');
       });
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -593,7 +593,7 @@ describe('WordPress Deployment Library', () => {
         ],
       ]);
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: { ...mockSite, noteIncludePaths: ['_includes'] },
         registry: mockRegistry,
         allIndices: indicesWithEmbed,
@@ -617,7 +617,7 @@ describe('WordPress Deployment Library', () => {
 
     it('should require imageHost for WordPress publishing', async () => {
       await expect(
-        pushToWordPress({
+        publishToWordPress({
           site: { ...mockSite, imageHost: undefined },
           registry: { ...mockRegistry, imageHost: undefined },
           allIndices: mockIndices,
@@ -639,7 +639,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -666,7 +666,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await expect(pushToWordPress({
+      await expect(publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -691,7 +691,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await expect(pushToWordPress({
+      await expect(publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -712,7 +712,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await expect(pushToWordPress({
+      await expect(publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -744,7 +744,7 @@ describe('WordPress Deployment Library', () => {
       // Mock markdown content with a code comment at the top, and a real title later
       vi.mocked(readFile).mockResolvedValue('```bash\n# This is a comment\necho "hello"\n```\n# Real Title\nThis is actual content.');
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -780,7 +780,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -805,7 +805,7 @@ describe('WordPress Deployment Library', () => {
 
     it('should throw an error if none of the target slugs are found', async () => {
       await expect(
-        pushToWordPress({
+        publishToWordPress({
           site: mockSite,
           registry: mockRegistry,
           allIndices: mockIndices,
@@ -834,7 +834,7 @@ describe('WordPress Deployment Library', () => {
       global.fetch = mockFetch;
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -882,7 +882,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockRootOnlyIndices,
@@ -903,7 +903,7 @@ describe('WordPress Deployment Library', () => {
       });
 
       mockFetch.mockClear();
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockRootOnlyIndices,
@@ -943,7 +943,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockRootOnlyIndices,
@@ -1000,7 +1000,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockRootOnlyIndices,
@@ -1044,7 +1044,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
@@ -1055,7 +1055,7 @@ describe('WordPress Deployment Library', () => {
       expect(mockFetch).toHaveBeenCalled();
     });
 
-    it('should mark all posts as synced without calling WordPress REST API when markSynced is true', async () => {
+    it('initializes all publication state without calling the WordPress REST API', async () => {
       const writes: Record<string, string> = {};
       vi.mocked(existsSync).mockReturnValue(false);
       vi.mocked(readFile).mockResolvedValue('# Post content');
@@ -1066,11 +1066,11 @@ describe('WordPress Deployment Library', () => {
       const mockFetch = vi.fn();
       global.fetch = mockFetch;
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: mockIndices,
-        markSynced: true,
+        initializeState: true,
         dryRun: false,
       });
 
@@ -1097,11 +1097,11 @@ describe('WordPress Deployment Library', () => {
       ]);
       global.fetch = vi.fn();
 
-      await pushToWordPress({
+      await publishToWordPress({
         site: mockSite,
         registry: mockRegistry,
         allIndices: indicesWithTaxonomies,
-        markSynced: true,
+        initializeState: true,
         dryRun: false,
       });
 
@@ -1263,7 +1263,7 @@ describe('WordPress Deployment Library', () => {
     });
   });
 
-  describe('pullFromWordPress', () => {
+  describe('importFromWordPress', () => {
     it('should pull a post by slug from wordpress, convert content, and write markdown file to the correct local path', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts?slug=post-one') && options.method === 'GET') {
@@ -1286,7 +1286,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pullFromWordPress({
+      await importFromWordPress({
         site: mockSite,
         registry: mockRegistry,
         slugOrId: 'post-one',
@@ -1350,7 +1350,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pullFromWordPress({
+      await importFromWordPress({
         site: mockSite,
         registry: mockRegistry,
         slugOrId: 'post-one',
@@ -1391,7 +1391,7 @@ describe('WordPress Deployment Library', () => {
       let output = '';
 
       try {
-        await pullFromWordPress({
+        await importFromWordPress({
           site: mockSite,
           registry: mockRegistry,
           slugOrId: 'post-one',
@@ -1435,7 +1435,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pullFromWordPress({
+      await importFromWordPress({
         site: mockSite,
         registry: mockRegistry,
         slugOrId: '123',
@@ -1465,7 +1465,7 @@ describe('WordPress Deployment Library', () => {
       });
       global.fetch = mockFetch;
 
-      await pullFromWordPress({
+      await importFromWordPress({
         site: {
           ...mockSite,
           rewrites: [{ source: 'guides/:path*', destination: '/:path*' }],

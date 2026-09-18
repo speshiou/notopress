@@ -5,7 +5,7 @@ import {
   VaultSyncState,
 } from '../../core/state/sync-state';
 
-export interface WordPressSyncEntry {
+export interface WordPressPublicationStateEntry {
   contentHash: string;
   payloadHash?: string;
   remoteId?: number;
@@ -14,7 +14,7 @@ export interface WordPressSyncEntry {
   syncedAt: string;
 }
 
-const WordPressSyncEntrySchema = z.object({
+const WordPressPublicationStateEntrySchema = z.object({
   contentHash: z.string(),
   payloadHash: z.string().optional(),
   remoteId: z.number().int().positive().optional(),
@@ -22,10 +22,10 @@ const WordPressSyncEntrySchema = z.object({
   contentType: z.enum(['post', 'page']).optional(),
   syncedAt: z.string(),
 });
-const WordPressSyncMapSchema = z.record(z.string(), WordPressSyncEntrySchema);
+const WordPressPublicationStateSchema = z.record(z.string(), WordPressPublicationStateEntrySchema);
 
-export type WordPressSyncMap = Record<string, WordPressSyncEntry>;
-export type WordPressSyncEntryInput = {
+export type WordPressPublicationState = Record<string, WordPressPublicationStateEntry>;
+export type WordPressPublicationStateEntryInput = {
   contentHash: string;
   payloadHash?: string;
   remoteId?: number;
@@ -35,43 +35,43 @@ export type WordPressSyncEntryInput = {
 };
 
 /**
- * Safely extracts WordPress sync entries from a VaultSyncState object.
+ * Safely extracts WordPress publication entries from a VaultSyncState object.
  */
-export function getWordPressSyncStateFromObject(syncState: VaultSyncState): WordPressSyncMap {
-  const result = WordPressSyncMapSchema.safeParse(syncState.wordpress || {});
+export function getWordPressPublicationStateFromObject(syncState: VaultSyncState): WordPressPublicationState {
+  const result = WordPressPublicationStateSchema.safeParse(syncState.wordpress || {});
   return result.success ? result.data : {};
 }
 
 /**
- * Reads WordPress sync entries directly from a vault path.
+ * Reads WordPress publication entries directly from a vault path.
  */
-export async function getWordPressSyncState({
+export async function getWordPressPublicationState({
   vaultPath,
 }: {
   vaultPath: string;
-}): Promise<WordPressSyncMap> {
+}): Promise<WordPressPublicationState> {
   const syncState = await loadSyncState({ vaultPath });
-  return getWordPressSyncStateFromObject(syncState);
+  return getWordPressPublicationStateFromObject(syncState);
 }
 
 /**
- * Reads a single WordPress sync entry for a given post slug.
+ * Reads a single WordPress publication entry for a given post slug.
  */
-export async function getWordPressSyncEntry({
+export async function getWordPressPublicationStateEntry({
   vaultPath,
   slug,
 }: {
   vaultPath: string;
   slug: string;
-}): Promise<WordPressSyncEntry | undefined> {
-  const wpSyncState = await getWordPressSyncState({ vaultPath });
-  return wpSyncState[slug];
+}): Promise<WordPressPublicationStateEntry | undefined> {
+  const publicationState = await getWordPressPublicationState({ vaultPath });
+  return publicationState[slug];
 }
 
 /**
- * Checks if a post slug is already synced with a matching publish payload hash.
+ * Checks whether a post slug has already published a matching payload hash.
  */
-export async function isWordPressPayloadSynced({
+export async function isWordPressPayloadPublished({
   vaultPath,
   slug,
   payloadHash,
@@ -80,20 +80,20 @@ export async function isWordPressPayloadSynced({
   slug: string;
   payloadHash: string;
 }): Promise<boolean> {
-  const entry = await getWordPressSyncEntry({ vaultPath, slug });
+  const entry = await getWordPressPublicationStateEntry({ vaultPath, slug });
   return entry?.payloadHash === payloadHash;
 }
 
 /**
- * Mutates an in-memory VaultSyncState object to set a WordPress sync entry.
+ * Mutates an in-memory VaultSyncState object to set a WordPress publication entry.
  * Initializes `syncState.wordpress` if it is missing.
  */
-export function setWordPressEntry(
+export function setWordPressPublicationStateEntry(
   syncState: VaultSyncState,
   slug: string,
-  entry: WordPressSyncEntryInput
-): WordPressSyncEntry {
-  const syncEntry: WordPressSyncEntry = {
+  entry: WordPressPublicationStateEntryInput
+): WordPressPublicationStateEntry {
+  const publicationEntry: WordPressPublicationStateEntry = {
     contentHash: entry.contentHash,
     ...(entry.payloadHash ? { payloadHash: entry.payloadHash } : {}),
     ...(entry.remoteId ? { remoteId: entry.remoteId } : {}),
@@ -102,14 +102,14 @@ export function setWordPressEntry(
     syncedAt: entry.syncedAt ?? new Date().toISOString(),
   };
   syncState.wordpress = syncState.wordpress || {};
-  syncState.wordpress[slug] = syncEntry;
-  return syncEntry;
+  syncState.wordpress[slug] = publicationEntry;
+  return publicationEntry;
 }
 
 /**
- * Updates a single WordPress post sync entry in the vault's `.notopress-sync.json` file.
+ * Updates one WordPress publication entry in the vault's `.notopress-sync.json` file.
  */
-export async function updateWordPressSyncState({
+export async function updateWordPressPublicationState({
   vaultPath,
   slug,
   contentHash,
@@ -129,7 +129,7 @@ export async function updateWordPressSyncState({
   syncedAt?: string;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
-  setWordPressEntry(syncState, slug, {
+  setWordPressPublicationStateEntry(syncState, slug, {
     contentHash,
     payloadHash,
     remoteId,
@@ -142,18 +142,18 @@ export async function updateWordPressSyncState({
 }
 
 /**
- * Updates multiple WordPress post sync entries in batch in the vault's `.notopress-sync.json` file.
+ * Updates multiple WordPress publication entries in the vault's `.notopress-sync.json` file.
  */
-export async function updateWordPressSyncEntries({
+export async function updateWordPressPublicationStateEntries({
   vaultPath,
   entries,
 }: {
   vaultPath: string;
-  entries: Record<string, WordPressSyncEntryInput>;
+  entries: Record<string, WordPressPublicationStateEntryInput>;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
   for (const [slug, entry] of Object.entries(entries)) {
-    setWordPressEntry(syncState, slug, entry);
+    setWordPressPublicationStateEntry(syncState, slug, entry);
   }
   await saveSyncState({ vaultPath, syncState });
   return syncState;

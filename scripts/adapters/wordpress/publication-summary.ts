@@ -1,4 +1,4 @@
-export interface WordPressSyncItemResult {
+export interface WordPressPublicationItemResult {
   title: string;
   slug: string;
   action: 'updated' | 'created';
@@ -7,28 +7,28 @@ export interface WordPressSyncItemResult {
   isDryRun?: boolean;
 }
 
-export interface WordPressSyncErrorResult {
+export interface WordPressPublicationErrorResult {
   title: string;
   slug: string;
   error: string;
 }
 
-export interface WordPressSyncSummary {
-  updated: WordPressSyncItemResult[];
-  created: WordPressSyncItemResult[];
-  failed: WordPressSyncErrorResult[];
+export interface WordPressPublicationSummary {
+  updated: WordPressPublicationItemResult[];
+  created: WordPressPublicationItemResult[];
+  failed: WordPressPublicationErrorResult[];
   skippedCount: number;
   totalProcessed: number;
   isDryRun?: boolean;
 }
 
-export function formatWordPressSyncSummary(summary: WordPressSyncSummary): string {
+export function formatWordPressPublicationSummary(summary: WordPressPublicationSummary): string {
   const { updated, created, failed, skippedCount, totalProcessed, isDryRun } = summary;
   const changedCount = updated.length + created.length;
   const lines: string[] = [];
 
   lines.push('='.repeat(60));
-  lines.push(`📊 WordPress Sync Summary${isDryRun ? ' (DRY RUN)' : ''}`);
+  lines.push(`📊 WordPress Publication Summary${isDryRun ? ' (DRY RUN)' : ''}`);
   lines.push('='.repeat(60));
 
   if (changedCount === 0 && failed.length === 0) {

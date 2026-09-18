@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Site } from '../../src/domain/registry';
-import { createConfiguredPublisherAdapters, hasConfiguredPublisherType } from './catalog';
+import { createConfiguredPlatformAdapters, hasConfiguredPlatformType } from './catalog';
 
-describe('publisher adapter catalog', () => {
+describe('platform adapter catalog', () => {
   it('builds configured adapters without exposing platform details to the application layer', () => {
     const site: Site = {
       siteId: 'example',
@@ -14,10 +14,10 @@ describe('publisher adapter catalog', () => {
       }],
     };
 
-    expect(createConfiguredPublisherAdapters({ site }).map(({ id, type }) => ({ id, type }))).toEqual([
+    expect(createConfiguredPlatformAdapters({ site }).map(({ id, type }) => ({ id, type }))).toEqual([
       { id: 'wordpress-main', type: 'wordpress' },
     ]);
-    expect(hasConfiguredPublisherType({ site, type: 'wordpress' })).toBe(true);
-    expect(hasConfiguredPublisherType({ site, type: 'unknown' })).toBe(false);
+    expect(hasConfiguredPlatformType({ site, type: 'wordpress' })).toBe(true);
+    expect(hasConfiguredPlatformType({ site, type: 'unknown' })).toBe(false);
   });
 });
