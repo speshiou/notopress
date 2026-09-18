@@ -8,17 +8,31 @@ import {
 export interface WordPressSyncEntry {
   contentHash: string;
   payloadHash?: string;
+  remoteId?: number;
+  remoteSlug?: string;
+  contentType?: 'post' | 'page';
   syncedAt: string;
 }
 
 const WordPressSyncEntrySchema = z.object({
   contentHash: z.string(),
   payloadHash: z.string().optional(),
+  remoteId: z.number().int().positive().optional(),
+  remoteSlug: z.string().optional(),
+  contentType: z.enum(['post', 'page']).optional(),
   syncedAt: z.string(),
 });
 const WordPressSyncMapSchema = z.record(z.string(), WordPressSyncEntrySchema);
 
 export type WordPressSyncMap = Record<string, WordPressSyncEntry>;
+export type WordPressSyncEntryInput = {
+  contentHash: string;
+  payloadHash?: string;
+  remoteId?: number;
+  remoteSlug?: string;
+  contentType?: 'post' | 'page';
+  syncedAt?: string;
+};
 
 /**
  * Safely extracts WordPress sync entries from a VaultSyncState object.
@@ -77,11 +91,14 @@ export async function isWordPressPayloadSynced({
 export function setWordPressEntry(
   syncState: VaultSyncState,
   slug: string,
-  entry: { contentHash: string; payloadHash?: string; syncedAt?: string }
+  entry: WordPressSyncEntryInput
 ): WordPressSyncEntry {
   const syncEntry: WordPressSyncEntry = {
     contentHash: entry.contentHash,
     ...(entry.payloadHash ? { payloadHash: entry.payloadHash } : {}),
+    ...(entry.remoteId ? { remoteId: entry.remoteId } : {}),
+    ...(entry.remoteSlug ? { remoteSlug: entry.remoteSlug } : {}),
+    ...(entry.contentType ? { contentType: entry.contentType } : {}),
     syncedAt: entry.syncedAt ?? new Date().toISOString(),
   };
   syncState.wordpress = syncState.wordpress || {};
@@ -97,16 +114,29 @@ export async function updateWordPressSyncState({
   slug,
   contentHash,
   payloadHash,
+  remoteId,
+  remoteSlug,
+  contentType,
   syncedAt,
 }: {
   vaultPath: string;
   slug: string;
   contentHash: string;
   payloadHash?: string;
+  remoteId?: number;
+  remoteSlug?: string;
+  contentType?: 'post' | 'page';
   syncedAt?: string;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
-  setWordPressEntry(syncState, slug, { contentHash, payloadHash, syncedAt });
+  setWordPressEntry(syncState, slug, {
+    contentHash,
+    payloadHash,
+    remoteId,
+    remoteSlug,
+    contentType,
+    syncedAt,
+  });
   await saveSyncState({ vaultPath, syncState });
   return syncState;
 }
@@ -119,7 +149,7 @@ export async function updateWordPressSyncEntries({
   entries,
 }: {
   vaultPath: string;
-  entries: Record<string, { contentHash: string; payloadHash?: string; syncedAt?: string }>;
+  entries: Record<string, WordPressSyncEntryInput>;
 }): Promise<VaultSyncState> {
   const syncState = await loadSyncState({ vaultPath });
   for (const [slug, entry] of Object.entries(entries)) {

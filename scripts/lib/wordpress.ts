@@ -401,16 +401,23 @@ export async function prepareWordPressPublisher({
       }
 
       const ExistingPostListSchema = z.array(z.object({ id: z.number() }));
-      let existingPost: { id: number } | null = null;
-      const existingResult = ExistingPostListSchema.safeParse(
-        await wpFetch({
-          endpoint,
-          credentials,
-          path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
-        })
-      );
-      if (existingResult.success && existingResult.data.length > 0) {
-        existingPost = existingResult.data[0];
+      const cachedRemoteMatches = syncEntry?.remoteId
+        && (!syncEntry.remoteSlug || syncEntry.remoteSlug === wpSlug)
+        && (!syncEntry.contentType || syncEntry.contentType === wordpressResource.contentType);
+      let existingPost: { id: number } | null = cachedRemoteMatches && syncEntry?.remoteId
+        ? { id: syncEntry.remoteId }
+        : null;
+      if (!existingPost) {
+        const existingResult = ExistingPostListSchema.safeParse(
+          await wpFetch({
+            endpoint,
+            credentials,
+            path: `/wp/v2/${wordpressResource.restBase}?slug=${encodeURIComponent(wpSlug)}&status=any`,
+          })
+        );
+        if (existingResult.success && existingResult.data.length > 0) {
+          existingPost = existingResult.data[0];
+        }
       }
 
       const wpPostExists = Boolean(existingPost);
@@ -479,6 +486,9 @@ export async function prepareWordPressPublisher({
             setWordPressEntry(syncState, operation.sourceSlug, {
               contentHash: operation.sourceHash,
               payloadHash: operation.payloadHash,
+              remoteId: syncEntry.remoteId,
+              remoteSlug: syncEntry.remoteSlug,
+              contentType: syncEntry.contentType,
               syncedAt: syncEntry.syncedAt,
             });
             syncStateChanged = true;
@@ -489,6 +499,7 @@ export async function prepareWordPressPublisher({
           continue;
         }
 
+        let appliedRemoteId = operation.existingPostId;
         if (operation.action === 'update') {
           const wpPostId = operation.existingPostId;
           if (wpPostId === null) {
@@ -548,6 +559,7 @@ export async function prepareWordPressPublisher({
               throw new Error(`WordPress returned an invalid create response for "${operation.sourceSlug}".`);
             }
             createdId = newPostResult.data.id;
+            appliedRemoteId = createdId;
             console.log(`  🆕 Successfully CREATED new WordPress ${operation.contentType} (ID: ${createdId})`);
           }
           createdPosts.push({
@@ -563,6 +575,9 @@ export async function prepareWordPressPublisher({
         setWordPressEntry(syncState, operation.sourceSlug, {
           contentHash: operation.sourceHash,
           payloadHash: operation.payloadHash,
+          remoteId: appliedRemoteId ?? undefined,
+          remoteSlug: operation.wordpressSlug,
+          contentType: operation.contentType,
         });
         syncStateChanged = true;
       } catch (err) {

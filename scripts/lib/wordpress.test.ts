@@ -896,6 +896,9 @@ describe('WordPress Deployment Library', () => {
       expect(JSON.parse(savedSyncState).wordpress['post-one']).toEqual({
         contentHash: hash,
         payloadHash: expect.any(String),
+        remoteId: 456,
+        remoteSlug: 'post-one',
+        contentType: 'post',
         syncedAt: expect.any(String),
       });
 
@@ -908,6 +911,55 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reuse a cached remote post identity without a slug lookup', async () => {
+      const postContent = '# My Post Title\nThis is content.';
+
+      vi.mocked(existsSync).mockImplementation((path) => String(path).endsWith('.notopress-sync.json'));
+      vi.mocked(readFile).mockImplementation(async (path) => {
+        if (String(path).endsWith('.notopress-sync.json')) {
+          return JSON.stringify({
+            wordpress: {
+              'post-one': {
+                contentHash: 'previous-source-hash',
+                payloadHash: 'previous-payload-hash',
+                remoteId: 456,
+                remoteSlug: 'post-one',
+                contentType: 'post',
+                syncedAt: '2026-07-27T00:00:00.000Z',
+              },
+            },
+          });
+        }
+        return postContent;
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts/456') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 456 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockRootOnlyIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts/456'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug='),
+        expect.anything()
+      );
     });
 
     it('should republish when the final payload hash changes even if source markdown is unchanged', async () => {

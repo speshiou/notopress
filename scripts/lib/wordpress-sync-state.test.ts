@@ -115,13 +115,22 @@ describe('wordpress-sync-state', () => {
   describe('setWordPressEntry', () => {
     it('initializes wordpress object and sets entry', () => {
       const state: VaultSyncState = {};
-      const entry = setWordPressEntry(state, 'test-slug', { contentHash: 'abc', payloadHash: 'payload-abc' });
+      const entry = setWordPressEntry(state, 'test-slug', {
+        contentHash: 'abc',
+        payloadHash: 'payload-abc',
+        remoteId: 123,
+        remoteSlug: 'test-slug',
+        contentType: 'post',
+      });
       const wordpressState = getWordPressSyncStateFromObject(state);
 
       expect(state.wordpress).toBeDefined();
       expect(wordpressState['test-slug']).toBeDefined();
       expect(wordpressState['test-slug'].contentHash).toBe('abc');
       expect(wordpressState['test-slug'].payloadHash).toBe('payload-abc');
+      expect(wordpressState['test-slug'].remoteId).toBe(123);
+      expect(wordpressState['test-slug'].remoteSlug).toBe('test-slug');
+      expect(wordpressState['test-slug'].contentType).toBe('post');
       expect(entry.contentHash).toBe('abc');
       expect(entry.payloadHash).toBe('payload-abc');
       expect(entry.syncedAt).toBeDefined();
