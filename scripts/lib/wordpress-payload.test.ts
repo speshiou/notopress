@@ -1,34 +1,53 @@
 import { describe, expect, it } from 'vitest';
-import { computeWordPressPayloadHash } from './wordpress-payload';
+import { computeWordPressPayloadHash, createWordPressPublishPayload } from './wordpress-payload';
 
-describe('computeWordPressPayloadHash', () => {
-  const payload = {
+describe('WordPress publish intent', () => {
+  const intent = {
     title: 'Post title',
     content: '<!-- wp:paragraph --><p>Body</p><!-- /wp:paragraph -->',
     slug: 'post-title',
     status: 'publish' as const,
-    categories: [12],
-    tags: [34, 56],
+    taxonomies: {
+      categories: ['engineering'],
+      tags: ['nextjs', 'publishing'],
+    },
   };
 
-  it('computes a deterministic hash for the complete publish payload', () => {
-    expect(computeWordPressPayloadHash({ contentType: 'post', payload })).toBe(
-      computeWordPressPayloadHash({ contentType: 'post', payload })
+  it('computes a deterministic hash for the target-independent intent', () => {
+    expect(computeWordPressPayloadHash({ contentType: 'post', intent })).toBe(
+      computeWordPressPayloadHash({ contentType: 'post', intent })
     );
   });
 
   it('changes when rendered output or publishing metadata changes', () => {
-    const original = computeWordPressPayloadHash({ contentType: 'post', payload });
+    const original = computeWordPressPayloadHash({ contentType: 'post', intent });
 
     expect(
       computeWordPressPayloadHash({
         contentType: 'post',
-        payload: { ...payload, content: '<!-- wp:paragraph --><p>Changed</p><!-- /wp:paragraph -->' },
+        intent: { ...intent, content: '<!-- wp:paragraph --><p>Changed</p><!-- /wp:paragraph -->' },
       })
     ).not.toBe(original);
-    expect(computeWordPressPayloadHash({ contentType: 'page', payload })).not.toBe(original);
+    expect(computeWordPressPayloadHash({ contentType: 'page', intent })).not.toBe(original);
     expect(
-      computeWordPressPayloadHash({ contentType: 'post', payload: { ...payload, tags: [34] } })
+      computeWordPressPayloadHash({
+        contentType: 'post',
+        intent: { ...intent, taxonomies: { ...intent.taxonomies, tags: ['nextjs'] } },
+      })
     ).not.toBe(original);
+  });
+
+  it('resolves taxonomy IDs only when creating the REST payload', () => {
+    expect(createWordPressPublishPayload({
+      intent,
+      taxonomyPayload: { categories: [12], tags: [34, 56] },
+    })).toEqual({
+      title: 'Post title',
+      content: '<!-- wp:paragraph --><p>Body</p><!-- /wp:paragraph -->',
+      slug: 'post-title',
+      status: 'publish',
+      categories: [12],
+      tags: [34, 56],
+    });
   });
 });

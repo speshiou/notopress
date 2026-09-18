@@ -1,4 +1,14 @@
 import { computeContentHash } from './sync-state';
+import type { ContentTaxonomies } from '../../src/domain/content-metadata';
+import type { WordPressTaxonomyPayload } from './wordpress-taxonomies';
+
+export type WordPressPublishIntent = {
+  title: string;
+  content: string;
+  slug: string;
+  status: 'publish';
+  taxonomies: ContentTaxonomies;
+};
 
 export type WordPressPublishPayload = {
   title: string;
@@ -13,20 +23,36 @@ export type WordPressPublishContentType = 'post' | 'page';
 
 export function computeWordPressPayloadHash({
   contentType,
-  payload,
+  intent,
 }: {
   contentType: WordPressPublishContentType;
-  payload: WordPressPublishPayload;
+  intent: WordPressPublishIntent;
 }): string {
   const canonicalPayload = JSON.stringify({
     contentType,
-    title: payload.title,
-    content: payload.content,
-    slug: payload.slug,
-    status: payload.status,
-    categories: payload.categories ?? null,
-    tags: payload.tags ?? null,
+    title: intent.title,
+    content: intent.content,
+    slug: intent.slug,
+    status: intent.status,
+    categories: intent.taxonomies.categories ?? null,
+    tags: intent.taxonomies.tags ?? null,
   });
 
   return computeContentHash(canonicalPayload);
+}
+
+export function createWordPressPublishPayload({
+  intent,
+  taxonomyPayload,
+}: {
+  intent: WordPressPublishIntent;
+  taxonomyPayload: WordPressTaxonomyPayload;
+}): WordPressPublishPayload {
+  return {
+    title: intent.title,
+    content: intent.content,
+    slug: intent.slug,
+    status: intent.status,
+    ...taxonomyPayload,
+  };
 }

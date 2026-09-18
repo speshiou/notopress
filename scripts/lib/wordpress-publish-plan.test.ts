@@ -19,11 +19,12 @@ function createOperation(
     existingPostId: 456,
     sourceHash: 'source-hash',
     payloadHash: 'payload-hash',
-    payload: {
+    intent: {
       title: 'Example Guide',
       content: '<!-- wp:paragraph --><p>Body</p><!-- /wp:paragraph -->',
       slug: 'example-guide',
       status: 'publish',
+      taxonomies: {},
     },
     ...overrides,
   };

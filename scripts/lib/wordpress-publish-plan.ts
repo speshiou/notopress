@@ -5,7 +5,7 @@ import {
 } from './operation-plan';
 import type {
   WordPressPublishContentType,
-  WordPressPublishPayload,
+  WordPressPublishIntent,
 } from './wordpress-payload';
 
 export type WordPressPublishOperationAction = 'create' | 'update' | 'skip';
@@ -21,12 +21,12 @@ export type WordPressPublishOperation = {
   existingPostId: number | null;
   sourceHash: string;
   payloadHash: string;
-  payload: WordPressPublishPayload;
+  intent: WordPressPublishIntent;
 };
 
 export type WordPressPublishPlan = OperationPlan<WordPressPublishOperation>;
 
-type SerializableWordPressPublishOperation = Omit<WordPressPublishOperation, 'payload'>;
+type SerializableWordPressPublishOperation = Omit<WordPressPublishOperation, 'intent'>;
 
 export function createWordPressPublishPlan({
   operations,

@@ -12,12 +12,13 @@ import { normalizeThumbnailSizes } from '../src/lib/responsive-images';
 import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
-import { pushToWordPress, pullFromWordPress } from './lib/wordpress';
+import { prepareWordPressPublisher, pullFromWordPress } from './lib/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
 import { generateRenderedContent } from './lib/rendered-content';
 import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
 import { buildS3SyncArgs } from './lib/s3-sync';
 import { buildContentSnapshot } from './lib/content-snapshot';
+import { executePublication, type SelectedPublisher } from './lib/publisher';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -336,17 +337,15 @@ async function deployToVercel({ site }: { site: Site }) {
   console.log(`\n✨ Deployment successfully triggered!`);
 }
 
-async function syncContent({
+async function buildContent({
   site,
   registry,
   isDryRun,
-  deleteRemoteFiles,
   verbose,
 }: {
   site: Site;
   registry: Registry;
   isDryRun: boolean;
-  deleteRemoteFiles: boolean;
   verbose: boolean;
 }) {
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
@@ -388,13 +387,26 @@ async function syncContent({
     dryRun: isDryRun,
   });
 
-  await syncSite({ site, registry, isDryRun, deleteRemoteFiles, verbose });
+  return { allIndices, contentSnapshot, vaultRootIndex };
+}
 
+async function applyNativeSite({
+  site,
+  registry,
+  isDryRun,
+  deleteRemoteFiles,
+  verbose,
+}: {
+  site: Site;
+  registry: Registry;
+  isDryRun: boolean;
+  deleteRemoteFiles: boolean;
+  verbose: boolean;
+}): Promise<void> {
+  await syncSite({ site, registry, isDryRun, deleteRemoteFiles, verbose });
   if (!isDryRun) {
     await uploadRegistry({ site, registry });
   }
-
-  return { allIndices, contentSnapshot, vaultRootIndex };
 }
 
 function getRunMode(): RunMode {
@@ -468,28 +480,42 @@ async function main() {
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
 
-    const { allIndices, contentSnapshot, vaultRootIndex } = await syncContent({
+    const { allIndices, contentSnapshot, vaultRootIndex } = await buildContent({
       site,
       registry,
       isDryRun,
-      deleteRemoteFiles,
       verbose,
     });
 
-    if (shouldPushWp) {
-      await pushToWordPress({
-        site,
-        registry,
-        allIndices,
-        contentSnapshot,
-        rootIndex: vaultRootIndex,
-        targetSlugs,
-        force: forcePush,
-        markSynced,
-        expectedPlanFingerprint,
-        dryRun: isDryRun,
-      });
-    }
+    const preparedWordPressPublisher = shouldPushWp
+      ? await prepareWordPressPublisher({
+          site,
+          registry,
+          allIndices,
+          contentSnapshot,
+          rootIndex: vaultRootIndex,
+          targetSlugs,
+          force: forcePush,
+          markSynced,
+          dryRun: isDryRun,
+        })
+      : null;
+
+    const selectedPublishers: SelectedPublisher[] = preparedWordPressPublisher
+      ? [{ publisher: preparedWordPressPublisher, expectedFingerprint: expectedPlanFingerprint }]
+      : [];
+    await executePublication({
+      publishers: selectedPublishers,
+      applyCore: () => applyNativeSite({ site, registry, isDryRun, deleteRemoteFiles, verbose }),
+      dryRun: isDryRun,
+      onValidated: ({ selection }) => {
+        if (selection.expectedFingerprint) {
+          console.log(
+            `✅ ${selection.publisher.label} plan fingerprint matched: ${selection.publisher.plan.fingerprint}`
+          );
+        }
+      },
+    });
 
     if (isDryRun) {
       console.log('\n✅ Dry run completed successfully!');

@@ -27,7 +27,10 @@ import {
 
 import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
 import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './wordpress-sync-state';
-import { computeWordPressPayloadHash, type WordPressPublishPayload } from './wordpress-payload';
+import {
+  computeWordPressPayloadHash,
+  createWordPressPublishPayload,
+} from './wordpress-payload';
 import {
   createWordPressPublishPlan,
   formatWordPressPublishPlan,
@@ -44,6 +47,11 @@ import {
   type ContentSnapshot,
   type ContentSnapshotDocument,
 } from './content-snapshot';
+import {
+  applyPreparedPublisher,
+  assertPublisherPlanFingerprint,
+  type PreparedPublisher,
+} from './publisher';
 
 
 
@@ -61,6 +69,8 @@ interface PushToWordPressArgs {
   dryRun: boolean;
 }
 
+type PrepareWordPressPublisherArgs = Omit<PushToWordPressArgs, 'expectedPlanFingerprint'>;
+
 interface WpFetchArgs {
   endpoint: string;
   credentials: { username: string; applicationPassword: string };
@@ -68,10 +78,6 @@ interface WpFetchArgs {
   method?: string;
   body?: unknown;
 }
-
-type WordPressPostPayload = WordPressPublishPayload & {
-  date?: string;
-};
 
 const WordPressContentTypeSchema = z.enum(['post', 'page']);
 const WordPressMutationResponseSchema = z.object({
@@ -187,7 +193,7 @@ async function wpFetch({
 /**
  * Iterates through the Markdown posts in the vault and publishes them to WordPress.
  */
-export async function pushToWordPress({
+export async function prepareWordPressPublisher({
   site,
   registry,
   allIndices,
@@ -196,25 +202,14 @@ export async function pushToWordPress({
   targetSlugs,
   force,
   markSynced,
-  expectedPlanFingerprint,
   dryRun,
-}: PushToWordPressArgs) {
+}: PrepareWordPressPublisherArgs): Promise<PreparedPublisher<WordPressPublishOperation> | null> {
   const credentials = site.wordpress;
   if (!credentials) {
     throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
   }
 
   const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
-  const taxonomyResolver = createWordPressTaxonomyResolver({
-    request: ({ path: apiPath, method, body }) => wpFetch({
-      endpoint,
-      credentials,
-      path: apiPath,
-      method,
-      body,
-    }),
-    createMissingTerms: !dryRun,
-  });
   const sizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   const imageHost = site.imageHost || registry.imageHost;
 
@@ -313,7 +308,7 @@ export async function pushToWordPress({
       await saveSyncState({ vaultPath: site.vaultPath, syncState });
     }
     console.log(`\n✅ Successfully marked ${markedCount} post(s) as synced in .notopress-sync.json.`);
-    return;
+    return null;
   }
 
   const publicNoteReferences = buildWordPressNoteReferenceInputs({ contentSnapshot: snapshot });
@@ -321,10 +316,6 @@ export async function pushToWordPress({
     vaultPath: site.vaultPath,
     includePaths: site.noteIncludePaths,
   });
-  await taxonomyResolver.preloadPayloads({
-    taxonomies: postsToPublish.map((post) => post.taxonomies),
-  });
-
   const updatedPosts: WordPressSyncItemResult[] = [];
   const createdPosts: WordPressSyncItemResult[] = [];
   const failedPosts: WordPressSyncErrorResult[] = [];
@@ -340,9 +331,6 @@ export async function pushToWordPress({
       console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
 
       const wordpressResource = getWordPressRestResource({ frontmatter: post.document.frontmatter });
-      const taxonomyPayload = wordpressResource.contentType === 'post'
-        ? await taxonomyResolver.resolvePayload({ taxonomies: post.document.taxonomies })
-        : {};
       const noteReferences = await collectLocalNoteReferences({
         publicNoteReferences,
         privateNoteReferences,
@@ -381,16 +369,16 @@ export async function pushToWordPress({
       // Replace slashes with hyphens to match WordPress's sanitization behavior
       const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
 
-      const payload: WordPressPostPayload = {
+      const intent = {
         title: post.title,
         content: wordpressBlockContent,
         slug: wpSlug,
-        status: 'publish',
-        ...taxonomyPayload,
+        status: 'publish' as const,
+        taxonomies: wordpressResource.contentType === 'post' ? post.document.taxonomies : {},
       };
       const payloadHash = computeWordPressPayloadHash({
         contentType: wordpressResource.contentType,
-        payload,
+        intent,
       });
       const syncEntry = wpSyncState[post.slug];
       const payloadIsUnchanged = syncEntry?.payloadHash === payloadHash;
@@ -407,7 +395,7 @@ export async function pushToWordPress({
           existingPostId: null,
           sourceHash,
           payloadHash,
-          payload,
+          intent,
         });
         continue;
       }
@@ -438,7 +426,7 @@ export async function pushToWordPress({
         existingPostId: wpPostId,
         sourceHash,
         payloadHash,
-        payload,
+        intent,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -464,132 +452,172 @@ export async function pushToWordPress({
   const publishPlan = createWordPressPublishPlan({ operations: plannedOperations });
   console.log(`\n${formatWordPressPublishPlan({ plan: publishPlan })}`);
 
-  if (expectedPlanFingerprint && expectedPlanFingerprint !== publishPlan.fingerprint) {
-    throw new Error(
-      `WordPress publish plan changed. Expected ${expectedPlanFingerprint}, received ${publishPlan.fingerprint}. Run the dry-run again and review the new plan before publishing.`
-    );
-  }
-  if (expectedPlanFingerprint) {
-    console.log(`✅ WordPress publish plan fingerprint matched: ${publishPlan.fingerprint}`);
-  }
+  const apply = async ({ dryRun: applyDryRun }: { dryRun: boolean }): Promise<void> => {
+    const taxonomyResolver = createWordPressTaxonomyResolver({
+      request: ({ path: apiPath, method, body }) => wpFetch({
+        endpoint,
+        credentials,
+        path: apiPath,
+        method,
+        body,
+      }),
+      createMissingTerms: !applyDryRun,
+    });
+    if (!applyDryRun) {
+      await taxonomyResolver.preloadPayloads({
+        taxonomies: publishPlan.operations
+          .filter((operation) => operation.action !== 'skip' && operation.contentType === 'post')
+          .map((operation) => operation.intent.taxonomies),
+      });
+    }
 
-  for (const operation of publishPlan.operations) {
-    try {
-      if (operation.action === 'skip') {
-        const syncEntry = wpSyncState[operation.sourceSlug];
-        if (syncEntry && syncEntry.contentHash !== operation.sourceHash) {
-          setWordPressEntry(syncState, operation.sourceSlug, {
-            contentHash: operation.sourceHash,
-            payloadHash: operation.payloadHash,
-            syncedAt: syncEntry.syncedAt,
+    for (const operation of publishPlan.operations) {
+      try {
+        if (operation.action === 'skip') {
+          const syncEntry = wpSyncState[operation.sourceSlug];
+          if (syncEntry && syncEntry.contentHash !== operation.sourceHash) {
+            setWordPressEntry(syncState, operation.sourceSlug, {
+              contentHash: operation.sourceHash,
+              payloadHash: operation.payloadHash,
+              syncedAt: syncEntry.syncedAt,
+            });
+            syncStateChanged = true;
+          }
+          console.log(
+            `  ⏭️  Skipping "${operation.title}" (slug: ${operation.sourceSlug}) - publish payload unchanged.`
+          );
+          continue;
+        }
+
+        if (operation.action === 'update') {
+          const wpPostId = operation.existingPostId;
+          if (wpPostId === null) {
+            throw new Error(`Invalid WordPress publish plan: update "${operation.sourceSlug}" has no post ID.`);
+          }
+          if (applyDryRun) {
+            console.log(
+              `  🔄 [DRY RUN] Would UPDATE WordPress ${operation.contentType} "${operation.title}" (ID: ${wpPostId})`
+            );
+          } else {
+            const taxonomyPayload = operation.contentType === 'post'
+              ? await taxonomyResolver.resolvePayload({ taxonomies: operation.intent.taxonomies })
+              : {};
+            const payload = createWordPressPublishPayload({ intent: operation.intent, taxonomyPayload });
+            const updateResult = WordPressMutationResponseSchema.safeParse(await wpFetch({
+              endpoint,
+              credentials,
+              path: `/wp/v2/${operation.restBase}/${wpPostId}`,
+              method: 'POST',
+              body: payload,
+            }));
+            if (!updateResult.success || updateResult.data.id !== wpPostId) {
+              throw new Error(`WordPress returned an invalid update response for "${operation.sourceSlug}".`);
+            }
+            console.log(`  🔄 Successfully UPDATED WordPress ${operation.contentType} (ID: ${wpPostId})`);
+          }
+          updatedPosts.push({
+            title: operation.title,
+            slug: operation.sourceSlug,
+            action: 'updated',
+            contentType: operation.contentType,
+            id: wpPostId,
+            isDryRun: applyDryRun,
           });
-          syncStateChanged = true;
-        }
-        console.log(
-          `  ⏭️  Skipping "${operation.title}" (slug: ${operation.sourceSlug}) - publish payload unchanged.`
-        );
-        continue;
-      }
-
-      if (operation.action === 'update') {
-        const wpPostId = operation.existingPostId;
-        if (wpPostId === null) {
-          throw new Error(`Invalid WordPress publish plan: update "${operation.sourceSlug}" has no post ID.`);
-        }
-        if (dryRun) {
-          console.log(
-            `  🔄 [DRY RUN] Would UPDATE WordPress ${operation.contentType} "${operation.title}" (ID: ${wpPostId})`
-          );
         } else {
-          const updateResult = WordPressMutationResponseSchema.safeParse(await wpFetch({
-            endpoint,
-            credentials,
-            path: `/wp/v2/${operation.restBase}/${wpPostId}`,
-            method: 'POST',
-            body: operation.payload,
-          }));
-          if (!updateResult.success || updateResult.data.id !== wpPostId) {
-            throw new Error(`WordPress returned an invalid update response for "${operation.sourceSlug}".`);
+          let createdId: number | null = null;
+          if (applyDryRun) {
+            console.log(
+              `  🆕 [DRY RUN] Would CREATE new WordPress ${operation.contentType} "${operation.title}"`
+            );
+          } else {
+            const taxonomyPayload = operation.contentType === 'post'
+              ? await taxonomyResolver.resolvePayload({ taxonomies: operation.intent.taxonomies })
+              : {};
+            const payload = createWordPressPublishPayload({ intent: operation.intent, taxonomyPayload });
+            const newPostResult = WordPressMutationResponseSchema.safeParse(await wpFetch({
+              endpoint,
+              credentials,
+              path: `/wp/v2/${operation.restBase}`,
+              method: 'POST',
+              body: {
+                ...payload,
+                date: operation.date,
+              },
+            }));
+            if (!newPostResult.success) {
+              throw new Error(`WordPress returned an invalid create response for "${operation.sourceSlug}".`);
+            }
+            createdId = newPostResult.data.id;
+            console.log(`  🆕 Successfully CREATED new WordPress ${operation.contentType} (ID: ${createdId})`);
           }
-          console.log(`  🔄 Successfully UPDATED WordPress ${operation.contentType} (ID: ${wpPostId})`);
+          createdPosts.push({
+            title: operation.title,
+            slug: operation.sourceSlug,
+            action: 'created',
+            contentType: operation.contentType,
+            id: createdId,
+            isDryRun: applyDryRun,
+          });
         }
-        updatedPosts.push({
+
+        setWordPressEntry(syncState, operation.sourceSlug, {
+          contentHash: operation.sourceHash,
+          payloadHash: operation.payloadHash,
+        });
+        syncStateChanged = true;
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`  ❌ Failed to apply publish plan for "${operation.title}":`, errMsg);
+        failedPosts.push({
           title: operation.title,
           slug: operation.sourceSlug,
-          action: 'updated',
-          contentType: operation.contentType,
-          id: wpPostId,
-          isDryRun: dryRun,
+          error: errMsg,
         });
-      } else {
-        let createdId: number | null = null;
-        if (dryRun) {
-          console.log(
-            `  🆕 [DRY RUN] Would CREATE new WordPress ${operation.contentType} "${operation.title}"`
-          );
-        } else {
-          const newPostResult = WordPressMutationResponseSchema.safeParse(await wpFetch({
-            endpoint,
-            credentials,
-            path: `/wp/v2/${operation.restBase}`,
-            method: 'POST',
-            body: {
-              ...operation.payload,
-              date: operation.date,
-            },
-          }));
-          if (!newPostResult.success) {
-            throw new Error(`WordPress returned an invalid create response for "${operation.sourceSlug}".`);
-          }
-          createdId = newPostResult.data.id;
-          console.log(`  🆕 Successfully CREATED new WordPress ${operation.contentType} (ID: ${createdId})`);
+        if (targetSlugs && targetSlugs.length > 0) {
+          throw err;
         }
-        createdPosts.push({
-          title: operation.title,
-          slug: operation.sourceSlug,
-          action: 'created',
-          contentType: operation.contentType,
-          id: createdId,
-          isDryRun: dryRun,
-        });
-      }
-
-      setWordPressEntry(syncState, operation.sourceSlug, {
-        contentHash: operation.sourceHash,
-        payloadHash: operation.payloadHash,
-      });
-      syncStateChanged = true;
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`  ❌ Failed to apply publish plan for "${operation.title}":`, errMsg);
-      failedPosts.push({
-        title: operation.title,
-        slug: operation.sourceSlug,
-        error: errMsg,
-      });
-      if (targetSlugs && targetSlugs.length > 0) {
-        throw err;
       }
     }
+
+    const skippedCount = publishPlan.operations.filter((operation) => operation.action === 'skip').length;
+
+    if (!applyDryRun && syncStateChanged) {
+      await saveSyncState({ vaultPath: site.vaultPath, syncState });
+    }
+
+    console.log(
+      `\n` +
+        formatWordPressSyncSummary({
+          updated: updatedPosts,
+          created: createdPosts,
+          failed: failedPosts,
+          skippedCount,
+          totalProcessed: postsToPublish.length,
+          isDryRun: applyDryRun,
+        })
+    );
+  };
+
+  return {
+    id: 'wordpress',
+    label: 'WordPress publish',
+    plan: publishPlan,
+    apply,
+  };
+}
+
+export async function pushToWordPress(args: PushToWordPressArgs): Promise<void> {
+  const preparedPublisher = await prepareWordPressPublisher(args);
+  if (!preparedPublisher) return;
+
+  assertPublisherPlanFingerprint({
+    publisher: preparedPublisher,
+    expectedFingerprint: args.expectedPlanFingerprint,
+  });
+  if (args.expectedPlanFingerprint) {
+    console.log(`✅ WordPress publish plan fingerprint matched: ${preparedPublisher.plan.fingerprint}`);
   }
-
-  const skippedCount = publishPlan.operations.filter((operation) => operation.action === 'skip').length;
-
-  if (!dryRun && syncStateChanged) {
-    await saveSyncState({ vaultPath: site.vaultPath, syncState });
-  }
-
-  console.log(
-    `\n` +
-      formatWordPressSyncSummary({
-        updated: updatedPosts,
-        created: createdPosts,
-        failed: failedPosts,
-        skippedCount,
-        totalProcessed: postsToPublish.length,
-        isDryRun: dryRun,
-      })
-  );
+  await applyPreparedPublisher({ publisher: preparedPublisher, dryRun: args.dryRun });
 }
 
 interface WpPost {
@@ -686,8 +714,8 @@ export function resolveAndCollectImagePath(
   if (tempPath.startsWith('http://') || tempPath.startsWith('https://')) {
     try {
       const urlObj = new URL(tempPath);
-      const isInternal = 
-        tempPath.includes('_thumbnails/') || 
+      const isInternal =
+        tempPath.includes('_thumbnails/') ||
         tempPath.includes('/api/vault-public/') ||
         (site.domain && urlObj.hostname === site.domain) ||
         (site.imageHost && urlObj.hostname === new URL(site.imageHost).hostname) ||
@@ -744,8 +772,8 @@ export function resolveAndCollectImagePath(
 
   // Check if the file already exists locally
   const dir = path.dirname(tempPath);
-  const candidateFolders = slug 
-    ? [slug] 
+  const candidateFolders = slug
+    ? [slug]
     : ['attachments', 'images', dir !== '.' ? dir : '', ''];
   const extensions = [ext, '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'];
 
@@ -753,10 +781,10 @@ export function resolveAndCollectImagePath(
     for (const curExt of extensions) {
       const checkFilename = `${decodedBaseName}${curExt}`;
       const relPath = folder ? `${folder}/${checkFilename}` : checkFilename;
-      
+
       const publicPath = path.join(site.vaultPath, 'public', relPath);
       const contentPath = path.join(site.vaultPath, 'content', relPath);
-      
+
       if (existsSync(publicPath)) {
         return relPath;
       }
@@ -829,7 +857,7 @@ export function htmlToMarkdown(
   // Tokenize the HTML
   const tagRegex = /(<\/?[a-zA-Z0-9:-]+(?:\s+[a-zA-Z0-9:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*\/?>)/g;
   const parts = cleanHtml.split(tagRegex);
-  
+
   interface Node {
     type: string;
     attributes: Record<string, string>;
@@ -848,9 +876,9 @@ export function htmlToMarkdown(
       const isClosing = part.startsWith('</');
       const tagContent = part.replace(/^<\/?/, '').replace(/\/?>$/, '').trim();
       const tagName = tagContent.split(/\s+/)[0].toLowerCase();
-      
+
       const isSelfClosing = part.endsWith('/>') || /^(?:img|br|hr|input|meta|link)$/i.test(tagName);
-      
+
       if (isClosing) {
         const openIdx = [...stack].reverse().findIndex(n => n.type === tagName);
         if (openIdx !== -1) {
@@ -1279,7 +1307,7 @@ export async function pullFromWordPress({
           await mkdir(path.dirname(img.localPath), { recursive: true });
           console.log(`- Fetching image: ${img.tryHighResUrl}`);
           let imgResponse = await fetch(img.tryHighResUrl);
-          
+
           if (!imgResponse.ok) {
             console.log(`  (High-res URL failed, falling back to original: ${img.remoteUrl})`);
             imgResponse = await fetch(img.remoteUrl);
