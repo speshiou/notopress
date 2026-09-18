@@ -50,3 +50,20 @@ export function formatOperationPlan<TOperation, TSerializableOperation>({
     }, null, 2),
   ].join('\n');
 }
+
+export function assertOperationPlanFingerprint<TOperation>({
+  label,
+  plan,
+  expectedFingerprint,
+}: {
+  label: string;
+  plan: OperationPlan<TOperation>;
+  expectedFingerprint?: string;
+}): void {
+  if (!expectedFingerprint) return;
+  if (expectedFingerprint !== plan.fingerprint) {
+    throw new Error(
+      `${label} plan changed. Expected ${expectedFingerprint}, received ${plan.fingerprint}. Run the dry-run again and review the new plan before publishing.`
+    );
+  }
+}

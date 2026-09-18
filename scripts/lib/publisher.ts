@@ -1,4 +1,4 @@
-import type { OperationPlan } from './operation-plan';
+import { assertOperationPlanFingerprint, type OperationPlan } from './operation-plan';
 import type { Registry, Site } from '../../src/domain/registry';
 import type { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
 import type { ContentSnapshot } from './content-snapshot';
@@ -61,12 +61,11 @@ export function assertPublisherPlanFingerprint<TOperation>({
   publisher: PreparedPublisher<TOperation>;
   expectedFingerprint?: string;
 }): void {
-  if (!expectedFingerprint) return;
-  if (expectedFingerprint !== publisher.plan.fingerprint) {
-    throw new Error(
-      `${publisher.label} plan changed. Expected ${expectedFingerprint}, received ${publisher.plan.fingerprint}. Run the dry-run again and review the new plan before publishing.`
-    );
-  }
+  assertOperationPlanFingerprint({
+    label: publisher.label,
+    plan: publisher.plan,
+    expectedFingerprint,
+  });
 }
 
 export async function applyPreparedPublisher<TOperation>({

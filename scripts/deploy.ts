@@ -29,6 +29,12 @@ import {
   LEGACY_WORDPRESS_PUBLISHER_ID,
   WORDPRESS_PUBLISHER_TYPE,
 } from './lib/wordpress-publisher-adapter';
+import {
+  createCoreBuildPlan,
+  createPublicationPlan,
+  formatPublicationPlan,
+} from './lib/publication-plan';
+import { assertOperationPlanFingerprint } from './lib/operation-plan';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -480,11 +486,13 @@ async function main() {
     if (genericExpectedPlanFingerprint && legacyExpectedPlanFingerprint) {
       throw new Error('⨯ Use either --expect-plan or --expect-wp-plan, not both.');
     }
-    const expectedPlanFingerprint = genericExpectedPlanFingerprint || legacyExpectedPlanFingerprint;
-    if (expectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(expectedPlanFingerprint)) {
+    if (genericExpectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(genericExpectedPlanFingerprint)) {
       throw new Error('⨯ --expect-plan requires the 64-character fingerprint printed by a publisher dry-run.');
     }
-    if (expectedPlanFingerprint && markSynced) {
+    if (legacyExpectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(legacyExpectedPlanFingerprint)) {
+      throw new Error('⨯ --expect-wp-plan requires the 64-character fingerprint printed by a WordPress dry-run.');
+    }
+    if ((genericExpectedPlanFingerprint || legacyExpectedPlanFingerprint) && markSynced) {
       throw new Error('⨯ --expect-plan cannot be combined with --mark-synced.');
     }
     const publisherValue = getFlagValue({ flag: '--publisher' });
@@ -508,8 +516,8 @@ async function main() {
     if (legacyWordPressRequested && selectedPublisherIds.length === 0) {
       throw new Error('⨯ WordPress publishing was requested, but no WordPress publisher is configured.');
     }
-    if (expectedPlanFingerprint && selectedPublisherIds.length !== 1) {
-      throw new Error('⨯ --expect-plan requires exactly one selected publisher.');
+    if (legacyExpectedPlanFingerprint && selectedPublisherIds.length !== 1) {
+      throw new Error('⨯ --expect-wp-plan requires exactly one selected publisher.');
     }
     const pushValue = getFlagValue({ flag: '--push' });
     const targetSlugs = pushValue && pushValue !== 'true'
@@ -543,8 +551,23 @@ async function main() {
 
     const selectedPublishers: SelectedPublisher[] = preparedPublishers.map((publisher) => ({
       publisher,
-      expectedFingerprint: preparedPublishers.length === 1 ? expectedPlanFingerprint : undefined,
+      expectedFingerprint: preparedPublishers.length === 1 ? legacyExpectedPlanFingerprint : undefined,
     }));
+    const corePlan = createCoreBuildPlan({
+      contentSnapshot,
+      rootIndex: vaultRootIndex,
+      deleteRemoteFiles,
+    });
+    const publicationPlan = createPublicationPlan({ corePlan, publishers: preparedPublishers });
+    console.log(`\n${formatPublicationPlan({ plan: publicationPlan })}`);
+    assertOperationPlanFingerprint({
+      label: 'NotoPress publication',
+      plan: publicationPlan,
+      expectedFingerprint: genericExpectedPlanFingerprint,
+    });
+    if (genericExpectedPlanFingerprint) {
+      console.log(`✅ NotoPress publication plan fingerprint matched: ${publicationPlan.fingerprint}`);
+    }
     await executePublication({
       publishers: selectedPublishers,
       applyCore: () => applyNativeSite({ site, registry, isDryRun, deleteRemoteFiles, verbose }),

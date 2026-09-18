@@ -17,4 +17,4 @@
   - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
-  - Publisher planning is read-only. NotoPress validates every selected publisher fingerprint before native storage sync or WordPress mutations begin.
+  - Publisher planning is read-only. `--expect-plan` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin. `--expect-wp-plan` validates only the WordPress section for compatibility.

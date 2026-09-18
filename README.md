@@ -285,14 +285,14 @@ Use `--publisher <id>` to select a configured publishing adapter. `--wp` remains
 
 NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it. Targeted `--push` arguments still use the full vault slug so NotoPress can select the correct source file.
 
-Publisher dry-runs print a deterministic plan fingerprint. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility alias:
+Dry-runs print a composite NotoPress publication fingerprint covering the core content build, routing and asset manifest, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility gate for the WordPress section only:
 
 ```bash
 npm run sync -- --site example-blog --wp --push guides/example-guide --dry-run
 npm run sync -- --site example-blog --publisher wordpress-main --push guides/example-guide --expect-plan <reviewed-fingerprint>
 ```
 
-The live run prepares and validates every selected publisher plan before native storage synchronization or publisher mutations. A changed fingerprint therefore stops the entire remote apply phase.
+The live run prepares the core build and every selected publisher plan, then validates the composite fingerprint before native storage synchronization or publisher mutations. A changed fingerprint therefore stops the entire remote apply phase.
 
 Operation planning and fingerprinting are core NotoPress mechanisms. Integrations contribute typed operations to that mechanism; WordPress publishing is the first adapter that enforces a reviewed fingerprint. Build stages such as rendered HTML, indices, thumbnails, storage synchronization, and future publishing adapters should use the same plan/apply boundary as their operation lists are exposed.
 
