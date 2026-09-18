@@ -1,42 +1,40 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import matter from 'gray-matter';
 import { RENDERED_DIR } from '../../src/lib/constants';
 import { renderMarkdownContent } from '../../src/lib/markdown';
 import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
-import { composeFullSlug, isRouteWinner, toPublicSlug } from '../../src/lib/rewrites';
+import { isRouteWinner } from '../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
+import {
+  buildContentSnapshot,
+  findSnapshotDocument,
+  type ContentSnapshot,
+} from './content-snapshot';
 
 type Logger = Pick<typeof console, 'log'>;
 
 type RenderedContentChange = 'create' | 'update' | null;
 
-function stripFirstMarkdownHeading(markdown: string): string {
-  return markdown.replace(/^#\s+.+$/m, '').trim();
-}
-
 function buildPublicNoteReferences({
-  allIndices,
+  contentSnapshot,
   routes,
 }: {
-  allIndices: Map<string, VaultDirectoryIndex>;
+  contentSnapshot: ContentSnapshot;
   routes?: Record<string, string>;
 }): NoteReferenceInput[] {
-  const noteReferences: NoteReferenceInput[] = [];
-  for (const [dirKey, dirIndex] of allIndices.entries()) {
-    for (const page of dirIndex.pages) {
-      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
-      const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
-      noteReferences.push({
-        fullSlug,
-        title: page.title,
-        publicSlug,
-        shadowed: routes ? !isRouteWinner({ routes, publicSlug, fullSlug }) : false,
-      });
-    }
-  }
-  return noteReferences;
+  return contentSnapshot.documents.map((document) => ({
+    fullSlug: document.sourceSlug,
+    title: document.title,
+    publicSlug: document.publicSlug,
+    shadowed: routes
+      ? !isRouteWinner({
+        routes,
+        publicSlug: document.publicSlug,
+        fullSlug: document.sourceSlug,
+      })
+      : false,
+  }));
 }
 
 export function getRenderedContentPath({ fullSlug }: { fullSlug: string }): string {
@@ -66,6 +64,7 @@ export async function generateRenderedContent({
   siteId,
   imageHost,
   allIndices,
+  contentSnapshot,
   rootIndex,
   thumbnailSizes,
   noteIncludePaths,
@@ -76,58 +75,59 @@ export async function generateRenderedContent({
   siteId: string;
   imageHost?: string;
   allIndices: Map<string, VaultDirectoryIndex>;
+  contentSnapshot?: ContentSnapshot;
   rootIndex: VaultRootIndex;
   thumbnailSizes: readonly number[];
   noteIncludePaths?: readonly string[];
   dryRun: boolean;
   logger?: Logger;
 }): Promise<void> {
+  const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath, allIndices });
   const assetFiles = rootIndex.assetFiles || rootIndex.publicFiles;
-  const publicNoteReferences = buildPublicNoteReferences({ allIndices, routes: rootIndex.routes });
+  const publicNoteReferences = buildPublicNoteReferences({ contentSnapshot: snapshot, routes: rootIndex.routes });
   const privateNoteReferences = await collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths });
   let renderedCount = 0;
   let changedCount = 0;
 
-  for (const [dirKey, dirIndex] of allIndices.entries()) {
-    for (const page of dirIndex.pages) {
-      const fullSlug = dirKey ? `${dirKey}/${page.slug}` : page.slug;
-      const markdownPath = path.join(vaultPath, 'content', `${fullSlug}.md`);
-      const renderedPath = path.join(vaultPath, getRenderedContentPath({ fullSlug }));
-      const markdownFile = await readFile(markdownPath, 'utf-8');
-      const { content } = matter(markdownFile);
-      const markdown = stripFirstMarkdownHeading(content);
-      const noteReferences = await collectNoteReferencesForLocalMarkdown({
-        publicNoteReferences,
-        privateNoteReferences,
-        markdown,
-        readPublicNote: ({ fullSlug: noteSlug }) => readFile(path.join(vaultPath, 'content', `${noteSlug}.md`), 'utf-8'),
-      });
-      const html = await renderMarkdownContent({
-        markdown,
-        thumbnailSizes,
-        assetFiles,
-        responsiveImageWidths: rootIndex.responsiveImageWidths,
-        noteReferences,
-        assetUrlConfig: {
-          imageHost,
-          siteId,
-          s3SubDir: 'content',
-          mode: imageHost ? 'absolute' : 'app-relative',
-        },
-      });
-
-      if (dryRun) {
-        const change = await getRenderedContentChange({ renderedPath, renderedHtml: html });
-        if (change) {
-          logger.log(`[DRY RUN] Would ${change} rendered HTML: ${getRenderedContentPath({ fullSlug })}`);
-          changedCount += 1;
+  for (const document of snapshot.documents) {
+    const renderedPath = path.join(vaultPath, getRenderedContentPath({ fullSlug: document.sourceSlug }));
+    const noteReferences = await collectNoteReferencesForLocalMarkdown({
+      publicNoteReferences,
+      privateNoteReferences,
+      markdown: document.markdown,
+      readPublicNote: async ({ fullSlug: noteSlug }) => {
+        const embeddedDocument = findSnapshotDocument({ snapshot, sourceSlug: noteSlug });
+        if (!embeddedDocument) {
+          throw new Error(`Could not find embedded public note "${noteSlug}" in the content snapshot.`);
         }
-      } else {
-        await mkdir(path.dirname(renderedPath), { recursive: true });
-        await writeFile(renderedPath, html);
+        return embeddedDocument.rawSource;
+      },
+    });
+    const html = await renderMarkdownContent({
+      markdown: document.markdown,
+      thumbnailSizes,
+      assetFiles,
+      responsiveImageWidths: rootIndex.responsiveImageWidths,
+      noteReferences,
+      assetUrlConfig: {
+        imageHost,
+        siteId,
+        s3SubDir: 'content',
+        mode: imageHost ? 'absolute' : 'app-relative',
+      },
+    });
+
+    if (dryRun) {
+      const change = await getRenderedContentChange({ renderedPath, renderedHtml: html });
+      if (change) {
+        logger.log(`[DRY RUN] Would ${change} rendered HTML: ${getRenderedContentPath({ fullSlug: document.sourceSlug })}`);
+        changedCount += 1;
       }
-      renderedCount += 1;
+    } else {
+      await mkdir(path.dirname(renderedPath), { recursive: true });
+      await writeFile(renderedPath, html);
     }
+    renderedCount += 1;
   }
 
   if (!dryRun) {

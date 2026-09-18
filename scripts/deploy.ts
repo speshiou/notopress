@@ -17,6 +17,7 @@ import { ensureVaultAgentRules } from './lib/agent-rules';
 import { generateRenderedContent } from './lib/rendered-content';
 import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
 import { buildS3SyncArgs } from './lib/s3-sync';
+import { buildContentSnapshot } from './lib/content-snapshot';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -364,12 +365,14 @@ async function syncContent({
     dryRun: isDryRun,
     verbose,
   });
+  const contentSnapshot = await buildContentSnapshot({ vaultPath: site.vaultPath, allIndices });
 
   await generateRenderedContent({
     vaultPath: site.vaultPath,
     siteId: site.siteId,
     imageHost: site.imageHost || registry.imageHost,
     allIndices,
+    contentSnapshot,
     rootIndex: vaultRootIndex,
     thumbnailSizes,
     noteIncludePaths: site.noteIncludePaths,
@@ -391,7 +394,7 @@ async function syncContent({
     await uploadRegistry({ site, registry });
   }
 
-  return { allIndices, vaultRootIndex };
+  return { allIndices, contentSnapshot, vaultRootIndex };
 }
 
 function getRunMode(): RunMode {
@@ -465,7 +468,7 @@ async function main() {
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
 
-    const { allIndices, vaultRootIndex } = await syncContent({
+    const { allIndices, contentSnapshot, vaultRootIndex } = await syncContent({
       site,
       registry,
       isDryRun,
@@ -478,6 +481,7 @@ async function main() {
         site,
         registry,
         allIndices,
+        contentSnapshot,
         rootIndex: vaultRootIndex,
         targetSlugs,
         force: forcePush,

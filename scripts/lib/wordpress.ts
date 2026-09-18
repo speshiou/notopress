@@ -1,7 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import matter from 'gray-matter';
 import { z } from 'zod';
 import { parse as parseWordPressBlocks } from '@wordpress/block-serialization-default-parser';
 import { Site, Registry } from '../../src/domain/registry';
@@ -12,7 +11,6 @@ import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
 import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../src/lib/local-images';
 import { type NoteReferenceInput } from '../../src/lib/note-links';
 import {
-  composeFullSlug,
   getContentImageFolder,
   hyphenateSlug,
   listVaultFullSlugCandidates,
@@ -21,7 +19,6 @@ import {
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 import { createRawBlockConverter } from './wordpress-raw-blocks';
 import { validatePulledMarkdown } from './wordpress-pull-validation';
-import { parseContentTaxonomies } from '../../src/lib/content-metadata';
 import {
   createWordPressTaxonomyResolver,
   formatTaxonomyFrontmatterLines,
@@ -41,6 +38,12 @@ import {
   type WordPressSyncErrorResult,
   type WordPressSyncItemResult,
 } from './wordpress-sync-log';
+import {
+  buildContentSnapshot,
+  findSnapshotDocument,
+  type ContentSnapshot,
+  type ContentSnapshotDocument,
+} from './content-snapshot';
 
 
 
@@ -49,6 +52,7 @@ interface PushToWordPressArgs {
   site: Site;
   registry: Registry;
   allIndices: Map<string, VaultDirectoryIndex>;
+  contentSnapshot?: ContentSnapshot;
   rootIndex?: VaultRootIndex;
   targetSlugs?: string[];
   force?: boolean;
@@ -108,41 +112,40 @@ function getWordPressRestResource({
 }
 
 function buildWordPressNoteReferenceInputs({
-  allIndices,
+  contentSnapshot,
 }: {
-  allIndices: Map<string, VaultDirectoryIndex>;
+  contentSnapshot: ContentSnapshot;
 }): NoteReferenceInput[] {
-  const noteReferences: NoteReferenceInput[] = [];
-  for (const [dirKey, dirIndex] of allIndices.entries()) {
-    for (const page of dirIndex.pages) {
-      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
-      noteReferences.push({
-        fullSlug,
-        title: page.title,
-        publicSlug: page.slug,
-        shadowed: false,
-      });
-    }
-  }
-  return noteReferences;
+  return contentSnapshot.documents.map((document) => ({
+    fullSlug: document.sourceSlug,
+    title: document.title,
+    publicSlug: document.leafSlug,
+    shadowed: false,
+  }));
 }
 
 async function collectLocalNoteReferences({
   publicNoteReferences,
   privateNoteReferences,
-  vaultPath,
+  contentSnapshot,
   markdown,
 }: {
   publicNoteReferences: readonly NoteReferenceInput[];
   privateNoteReferences: readonly NoteReferenceInput[];
-  vaultPath: string;
+  contentSnapshot: ContentSnapshot;
   markdown: string;
 }) {
   return collectNoteReferencesForLocalMarkdown({
     publicNoteReferences,
     privateNoteReferences,
     markdown,
-    readPublicNote: ({ fullSlug }) => readFile(path.join(vaultPath, 'content', `${fullSlug}.md`), 'utf-8'),
+    readPublicNote: async ({ fullSlug }) => {
+      const document = findSnapshotDocument({ snapshot: contentSnapshot, sourceSlug: fullSlug });
+      if (!document) {
+        throw new Error(`Could not find embedded public note "${fullSlug}" in the content snapshot.`);
+      }
+      return document.rawSource;
+    },
   });
 }
 
@@ -188,6 +191,7 @@ export async function pushToWordPress({
   site,
   registry,
   allIndices,
+  contentSnapshot,
   rootIndex,
   targetSlugs,
   force,
@@ -231,6 +235,7 @@ export async function pushToWordPress({
 
   const syncState = await loadSyncState({ vaultPath: site.vaultPath });
   const wpSyncState = getWordPressSyncStateFromObject(syncState);
+  const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath: site.vaultPath, allIndices });
 
   let assetFiles = rootIndex?.assetFiles || rootIndex?.publicFiles || [];
   let responsiveImageWidths = rootIndex?.responsiveImageWidths;
@@ -248,36 +253,29 @@ export async function pushToWordPress({
   }
 
   const postsToPublish: {
-    localPath: string;
+    document: ContentSnapshotDocument;
     slug: string;
     wordpressSlug: string;
     title: string;
     date: string;
-    taxonomies: ReturnType<typeof parseContentTaxonomies>;
+    taxonomies: ContentSnapshotDocument['taxonomies'];
   }[] = [];
 
-  for (const [dirKey, dirIndex] of allIndices.entries()) {
-    for (const page of dirIndex.pages) {
-      const fullSlug = composeFullSlug({ directory: dirKey, slug: page.slug });
-      const isExplicitTarget = Boolean(targetSlugs && targetSlugs.includes(fullSlug));
+  for (const document of snapshot.documents) {
+    const isExplicitTarget = Boolean(targetSlugs && targetSlugs.includes(document.sourceSlug));
 
-      if (targetSlugs && targetSlugs.length > 0 && !isExplicitTarget) {
-        continue;
-      }
-
-      const localPath = path.join(site.vaultPath, 'content', dirKey, `${page.slug}.md`);
-      postsToPublish.push({
-        localPath,
-        slug: fullSlug,
-        wordpressSlug: page.slug,
-        title: page.title,
-        date: page.date,
-        taxonomies: {
-          categories: page.categories,
-          tags: page.tags,
-        },
-      });
+    if (targetSlugs && targetSlugs.length > 0 && !isExplicitTarget) {
+      continue;
     }
+
+    postsToPublish.push({
+      document,
+      slug: document.sourceSlug,
+      wordpressSlug: document.leafSlug,
+      title: document.title,
+      date: document.date,
+      taxonomies: document.taxonomies,
+    });
   }
 
   if (targetSlugs && targetSlugs.length > 0) {
@@ -306,9 +304,7 @@ export async function pushToWordPress({
     console.log(`\n📝 Initializing WordPress Sync State (marking vault posts as synced)...`);
     let markedCount = 0;
     for (const post of postsToPublish) {
-      const fileContent = await readFile(post.localPath, 'utf-8');
-      const currentHash = computeContentHash(fileContent);
-      setWordPressEntry(syncState, post.slug, { contentHash: currentHash });
+      setWordPressEntry(syncState, post.slug, { contentHash: post.document.sourceHash });
       markedCount += 1;
       console.log(`  ✓ Marked "${post.title}" (slug: ${post.slug}) as synced.`);
     }
@@ -320,7 +316,7 @@ export async function pushToWordPress({
     return;
   }
 
-  const publicNoteReferences = buildWordPressNoteReferenceInputs({ allIndices });
+  const publicNoteReferences = buildWordPressNoteReferenceInputs({ contentSnapshot: snapshot });
   const privateNoteReferences = await collectPrivateNoteIncludes({
     vaultPath: site.vaultPath,
     includePaths: site.noteIncludePaths,
@@ -337,54 +333,26 @@ export async function pushToWordPress({
 
   for (const post of postsToPublish) {
     try {
-      // Read markdown and parse frontmatter
-      const fileContent = await readFile(post.localPath, 'utf-8');
-      const sourceHash = computeContentHash(fileContent);
+      const sourceHash = post.document.sourceHash;
 
       const isExplicitTarget = Boolean(targetSlugs && targetSlugs.length > 0);
 
       console.log(`\nSyncing "${post.title}" (slug: ${post.slug})...`);
 
-      const { data, content: markdownBody } = matter(fileContent);
-      const wordpressResource = getWordPressRestResource({ frontmatter: data });
-      const contentTaxonomies = parseContentTaxonomies({ frontmatter: data });
+      const wordpressResource = getWordPressRestResource({ frontmatter: post.document.frontmatter });
       const taxonomyPayload = wordpressResource.contentType === 'post'
-        ? await taxonomyResolver.resolvePayload({ taxonomies: contentTaxonomies })
+        ? await taxonomyResolver.resolvePayload({ taxonomies: post.document.taxonomies })
         : {};
-
-      // Strip first H1 from markdown to avoid duplicated titles, only if it's the first non-empty line of the document and not inside a code block
-      const lines = markdownBody.split('\n');
-      let inCodeBlock = false;
-      let firstH1Index = -1;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
-        if (trimmed.startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        }
-        if (!inCodeBlock && trimmed.startsWith('# ')) {
-          firstH1Index = i;
-          break;
-        }
-      }
-
-      if (firstH1Index !== -1) {
-        const hasContentBefore = lines.slice(0, firstH1Index).some(line => line.trim() !== '');
-        if (!hasContentBefore) {
-          lines.splice(firstH1Index, 1);
-        }
-      }
-      const bodyWithoutTitle = lines.join('\n').trim();
       const noteReferences = await collectLocalNoteReferences({
         publicNoteReferences,
         privateNoteReferences,
-        vaultPath: site.vaultPath,
-        markdown: bodyWithoutTitle,
+        contentSnapshot: snapshot,
+        markdown: post.document.markdown,
       });
 
       // Render Markdown content to HTML
       const htmlContent = await renderMarkdownContent({
-        markdown: bodyWithoutTitle,
+        markdown: post.document.markdown,
         thumbnailSizes: sizes,
         assetFiles,
         responsiveImageWidths,
