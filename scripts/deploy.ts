@@ -111,11 +111,13 @@ async function syncSite({
   registry,
   isDryRun,
   deleteRemoteFiles,
+  verbose,
 }: {
   site: Site;
   registry: Registry;
   isDryRun: boolean;
   deleteRemoteFiles: boolean;
+  verbose: boolean;
 }) {
   const endpoint = getEndpoint({ site, registry });
   const { accessKeyId, secretAccessKey } = getS3Credentials({ registry });
@@ -149,6 +151,7 @@ async function syncSite({
     endpoint,
     deleteRemoteFiles,
     dryRun: isDryRun,
+    verbose,
   });
 
   console.log(`Executing:\n> aws ${args.join(' ')}\n`);
@@ -166,6 +169,7 @@ async function syncSite({
       },
     },
   });
+  console.log(isDryRun ? '✅ S3 sync preview completed.' : '✅ S3 sync completed.');
 }
 
 async function uploadRegistry({ site, registry }: { site: Site; registry: Registry }) {
@@ -193,7 +197,15 @@ async function uploadRegistry({ site, registry }: { site: Site; registry: Regist
   try {
     await writeFile(registryTmpPath, JSON.stringify(sanitizedRegistry, null, 2));
 
-    const args = ['s3', 'cp', registryTmpPath, `s3://${site.bucketName}/registry.json`, '--endpoint-url', endpoint];
+    const args = [
+      's3',
+      'cp',
+      registryTmpPath,
+      `s3://${site.bucketName}/registry.json`,
+      '--endpoint-url',
+      endpoint,
+      '--only-show-errors',
+    ];
 
     await execAsync({
       command: 'aws',
@@ -328,11 +340,13 @@ async function syncContent({
   registry,
   isDryRun,
   deleteRemoteFiles,
+  verbose,
 }: {
   site: Site;
   registry: Registry;
   isDryRun: boolean;
   deleteRemoteFiles: boolean;
+  verbose: boolean;
 }) {
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   await ensureVaultAgentRules({
@@ -348,6 +362,7 @@ async function syncContent({
     noteIncludePaths: site.noteIncludePaths,
     rewrites: site.rewrites,
     dryRun: isDryRun,
+    verbose,
   });
 
   await generateRenderedContent({
@@ -370,13 +385,13 @@ async function syncContent({
     dryRun: isDryRun,
   });
 
-  await syncSite({ site, registry, isDryRun, deleteRemoteFiles });
+  await syncSite({ site, registry, isDryRun, deleteRemoteFiles, verbose });
 
   if (!isDryRun) {
     await uploadRegistry({ site, registry });
   }
 
-  return { allIndices };
+  return { allIndices, vaultRootIndex };
 }
 
 function getRunMode(): RunMode {
@@ -394,6 +409,7 @@ function getRunMode(): RunMode {
 async function main() {
   const isDryRun = hasFlag({ flag: '--dry-run' });
   const deleteRemoteFiles = hasFlag({ flag: '--delete' });
+  const verbose = hasFlag({ flag: '--verbose', alias: '-v' });
   const registryPath = getFlagValue({ flag: '--registry', alias: '-r' });
   const siteId = getFlagValue({ flag: '--site', alias: '-s' });
   const mode = getRunMode();
@@ -434,21 +450,39 @@ async function main() {
     const markSynced = hasFlag({ flag: '--mark-synced' });
     const shouldPushWp = hasFlag({ flag: '--wp' }) || hasPushFlag || markSynced;
     const forcePush = hasFlag({ flag: '--force' });
+    const expectedPlanFingerprint = getFlagValue({ flag: '--expect-wp-plan' });
+    if (expectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(expectedPlanFingerprint)) {
+      throw new Error('⨯ --expect-wp-plan requires the 64-character fingerprint printed by a WordPress dry-run.');
+    }
+    if (expectedPlanFingerprint && !shouldPushWp) {
+      throw new Error('⨯ --expect-wp-plan requires --wp or --push.');
+    }
+    if (expectedPlanFingerprint && markSynced) {
+      throw new Error('⨯ --expect-wp-plan cannot be combined with --mark-synced.');
+    }
     const pushValue = getFlagValue({ flag: '--push' });
     const targetSlugs = pushValue && pushValue !== 'true'
       ? pushValue.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
 
-    const { allIndices } = await syncContent({ site, registry, isDryRun, deleteRemoteFiles });
+    const { allIndices, vaultRootIndex } = await syncContent({
+      site,
+      registry,
+      isDryRun,
+      deleteRemoteFiles,
+      verbose,
+    });
 
     if (shouldPushWp) {
       await pushToWordPress({
         site,
         registry,
         allIndices,
+        rootIndex: vaultRootIndex,
         targetSlugs,
         force: forcePush,
         markSynced,
+        expectedPlanFingerprint,
         dryRun: isDryRun,
       });
     }

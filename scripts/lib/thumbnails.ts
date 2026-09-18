@@ -16,6 +16,7 @@ type Logger = Pick<typeof console, 'log'>;
 export type ThumbnailGeneratorDeps = {
   exists: (path: string) => Promise<boolean>;
   getFileStat: (path: string) => Promise<{ mtimeMs: number; size: number } | null>;
+  getImageWidth: (path: string) => Promise<number | null>;
   readdir: (path: string, options: { withFileTypes: true }) => Promise<FileEntry[]>;
   mkdir: (path: string, options: { recursive: true }) => Promise<string | undefined>;
   joinPath: (...paths: string[]) => string;
@@ -70,15 +71,16 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       dryRun: boolean;
       thumbnailSizes: readonly number[];
       label: string;
-    }): Promise<void> {
-      if (!(await deps.exists(sourceDir))) return;
+    }): Promise<Record<string, number[]>> {
+      if (!(await deps.exists(sourceDir))) return {};
 
       const sizes = deps.normalizeThumbnailSizes(thumbnailSizes);
       const imageFiles = await collectSourceImages({ dir: sourceDir });
+      const generatedWidths: Record<string, number[]> = {};
 
       if (imageFiles.length === 0) {
         deps.logger.log(`ℹ️  No responsive image thumbnails needed for ${label}.`);
-        return;
+        return generatedWidths;
       }
 
       let generatedCount = 0;
@@ -87,8 +89,16 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       for (const imageFile of imageFiles) {
         const inputPath = deps.joinPath(sourceDir, imageFile);
         const sourceStat = await deps.getFileStat(inputPath);
+        const sourceWidth = await deps.getImageWidth(inputPath);
+        const widths = sourceWidth === null
+          ? sizes
+          : [
+              ...sizes.filter((width) => width <= sourceWidth),
+              ...(sourceWidth < sizes[sizes.length - 1] && !sizes.includes(sourceWidth) ? [sourceWidth] : []),
+            ].sort((left, right) => left - right);
+        generatedWidths[imageFile] = widths;
 
-        for (const width of sizes) {
+        for (const width of widths) {
           const thumbnailRelPath = deps.getThumbnailPath({ imagePath: imageFile, width });
           const outputPath = deps.joinPath(sourceDir, thumbnailRelPath);
           const targetStat = await deps.getFileStat(outputPath);
@@ -128,6 +138,8 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       } else {
         deps.logger.log(`✨ Generated ${generatedCount} ${label} responsive image thumbnails.`);
       }
+
+      return generatedWidths;
     },
   };
 }
@@ -141,6 +153,10 @@ const defaultThumbnailGenerator = createThumbnailGenerator({
     } catch {
       return null;
     }
+  },
+  getImageWidth: async (filePath: string) => {
+    const metadata = await sharp(filePath).metadata();
+    return metadata.width && metadata.width > 0 ? metadata.width : null;
   },
   readdir,
   mkdir,

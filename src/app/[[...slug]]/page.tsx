@@ -91,6 +91,7 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
         markdown: bodyWithoutTitle,
         thumbnailSizes: result.thumbnailSizes,
         assetFiles,
+        responsiveImageWidths: rootIndex?.responsiveImageWidths,
         noteReferences,
       }));
     const { metadata } = result;

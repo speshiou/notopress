@@ -39,6 +39,7 @@ export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
   directories: z.array(z.string()),
   publicFiles: z.array(z.string()),
   assetFiles: z.array(z.string()).optional(),
+  responsiveImageWidths: z.record(z.string(), z.array(z.number().int().positive())).optional(),
   noteIncludes: z.array(z.object({
     fullSlug: z.string(),
     title: z.string(),

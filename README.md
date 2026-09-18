@@ -36,6 +36,7 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
 - **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with optional delete synchronization.
 - **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
+- **Focused logs**: Normal syncs show warnings and stage summaries. Add `--verbose` (or `-v`) for per-directory and per-file diagnostics.
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
 - **Optional image host**: Configure an `imageHost` for absolute image URLs, especially for CDN or WordPress publishing workflows.
@@ -244,6 +245,14 @@ Before making any changes, you can preview what will happen:
 npm run sync -- --dry-run
 ```
 
+Normal live sync output stays concise so warnings remain visible. Use verbose mode when diagnosing generated indices or individual storage operations:
+
+```bash
+npm run sync -- --verbose
+```
+
+Verbose mode does not change the sync plan or mutation behavior. Dry-runs always retain their planned file operations and safety-critical publish-plan details.
+
 This previews generated metadata and uses the AWS CLI's `--dryrun` mode to show exactly which files would be modified on your storage.
 
 ### Deploy the App
@@ -272,6 +281,19 @@ npm run deploy -- --site example-blog --registry ./custom-registry.json
 ```
 
 Use `--wp` with `sync` or `deploy` to publish local Markdown posts to the configured WordPress site, and `--push <slug1,slug2,...>` to limit that WordPress publish step to specific posts (comma-separated list of slugs).
+
+NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it. Targeted `--push` arguments still use the full vault slug so NotoPress can select the correct source file.
+
+WordPress dry-runs print a deterministic publish-plan fingerprint together with each source slug, WordPress slug, target ID, action, and payload hash. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-wp-plan`:
+
+```bash
+npm run sync -- --site example-blog --wp --push guides/example-guide --dry-run
+npm run sync -- --site example-blog --wp --push guides/example-guide --expect-wp-plan <reviewed-fingerprint>
+```
+
+The live run stops before WordPress post mutations if its freshly calculated plan differs from the reviewed fingerprint.
+
+Operation planning and fingerprinting are core NotoPress mechanisms. Integrations contribute typed operations to that mechanism; WordPress publishing is the first adapter that enforces a reviewed fingerprint. Build stages such as rendered HTML, indices, thumbnails, storage synchronization, and future publishing adapters should use the same plan/apply boundary as their operation lists are exposed.
 
 ## Roadmap
 

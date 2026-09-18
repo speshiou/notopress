@@ -89,19 +89,20 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
   function applyResponsiveImages({
     tree,
     thumbnailSizes,
+    responsiveImageWidths,
     getFigureProperties,
     assetUrlConfig,
   }: {
     tree: MarkdownNode;
     thumbnailSizes: readonly number[];
+    responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
     getFigureProperties?: (largestWidth: number) => FigureProperties;
     assetUrlConfig?: AssetUrlConfig;
   }) {
-    const normalizedSizes = normalizeThumbnailSizes(thumbnailSizes);
-    const largestWidth = normalizedSizes[normalizedSizes.length - 1] || 768;
-    const figureProps = getFigureProperties
-      ? getFigureProperties(largestWidth)
-      : { class: "image-figure" };
+    function getImageThumbnailSizes(src: string): readonly number[] {
+      const cleanSrc = src.replace(/^\//, '');
+      return responsiveImageWidths?.[cleanSrc] || thumbnailSizes;
+    }
 
     function visit(node: MarkdownNode) {
       if (node.children) {
@@ -114,7 +115,17 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
           if (child.type === "paragraph" && nonWhitespaceChildren.length === 1 && nonWhitespaceChildren[0].type === "image") {
             const imgNode = nonWhitespaceChildren[0];
             const imgUrl = imgNode.url || "";
-            const attributes = deps.getResponsiveImageAttributes({ src: imgUrl, thumbnailSizes, assetUrlConfig });
+            const imageThumbnailSizes = getImageThumbnailSizes(imgUrl);
+            const normalizedImageSizes = normalizeThumbnailSizes(imageThumbnailSizes);
+            const largestWidth = normalizedImageSizes[normalizedImageSizes.length - 1] || 768;
+            const figureProps = getFigureProperties
+              ? getFigureProperties(largestWidth)
+              : { class: "image-figure" };
+            const attributes = deps.getResponsiveImageAttributes({
+              src: imgUrl,
+              thumbnailSizes: imageThumbnailSizes,
+              assetUrlConfig,
+            });
             const srcVal = attributes
               ? attributes.src
               : deps.getOriginalImageSrc({ src: imgUrl, assetUrlConfig });
@@ -228,7 +239,11 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       }
 
       if (node.type === "image" && node.url) {
-        const attributes = deps.getResponsiveImageAttributes({ src: node.url, thumbnailSizes, assetUrlConfig });
+        const attributes = deps.getResponsiveImageAttributes({
+          src: node.url,
+          thumbnailSizes: getImageThumbnailSizes(node.url),
+          assetUrlConfig,
+        });
         const originalSrc = deps.getOriginalImageSrc({ src: node.url, assetUrlConfig });
         if (attributes || originalSrc !== node.url) {
           node.data = {
@@ -251,16 +266,24 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
 
   function responsiveImagePlugin({
     thumbnailSizes,
+    responsiveImageWidths,
     getFigureProperties,
     assetUrlConfig,
   }: {
     thumbnailSizes: readonly number[];
+    responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
     getFigureProperties?: (largestWidth: number) => FigureProperties;
     assetUrlConfig?: AssetUrlConfig;
   }): Plugin<[], MarkdownNode> {
     return function transformResponsiveImages() {
       return function transformer(tree: MarkdownNode) {
-        applyResponsiveImages({ tree, thumbnailSizes, getFigureProperties, assetUrlConfig });
+        applyResponsiveImages({
+          tree,
+          thumbnailSizes,
+          responsiveImageWidths,
+          getFigureProperties,
+          assetUrlConfig,
+        });
       };
     };
   }
@@ -273,6 +296,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       thumbnailSizes,
       assetFiles,
       publicFiles,
+      responsiveImageWidths,
       getFigureProperties,
       getTableFigureProperties,
       noteReferences,
@@ -282,6 +306,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       thumbnailSizes: readonly number[];
       assetFiles?: readonly string[];
       publicFiles?: readonly string[];
+      responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
       getFigureProperties?: (largestWidth: number) => FigureProperties;
       getTableFigureProperties?: () => FigureProperties;
       noteReferences?: readonly NoteReference[];
@@ -293,7 +318,12 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
-        plugin: responsiveImagePlugin({ thumbnailSizes, getFigureProperties, assetUrlConfig }),
+        plugin: responsiveImagePlugin({
+          thumbnailSizes,
+          responsiveImageWidths,
+          getFigureProperties,
+          assetUrlConfig,
+        }),
       }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
     },
   };

@@ -12,7 +12,10 @@ function directory(name: string): FileEntry {
 }
 
 describe('createThumbnailGenerator', () => {
-  function makeGenerator(statsMap: Record<string, { mtimeMs: number; size: number } | null> = {}) {
+  function makeGenerator(
+    statsMap: Record<string, { mtimeMs: number; size: number } | null> = {},
+    sourceWidth = 640
+  ) {
     const tree: Record<string, FileEntry[]> = {
       root: [file('hero.png'), file('notes.txt'), directory('_thumbnails'), directory('gallery')],
       'root/_thumbnails': [file('hero-320.webp')],
@@ -30,6 +33,7 @@ describe('createThumbnailGenerator', () => {
     const generator = createThumbnailGenerator({
       exists: vi.fn(async (filePath: string) => Boolean(tree[filePath])),
       getFileStat,
+      getImageWidth: vi.fn(async () => sourceWidth),
       readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
       mkdir,
       joinPath: path.posix.join,
@@ -130,5 +134,25 @@ describe('createThumbnailGenerator', () => {
     expect(mkdir).not.toHaveBeenCalled();
     expect(processImage).not.toHaveBeenCalled();
     expect(logger.log).toHaveBeenCalledWith('[DRY RUN] Would generate content thumbnail: _thumbnails/hero-320.webp');
+  });
+
+  it('does not create misleading thumbnail widths larger than the source image', async () => {
+    const { generator, processImage } = makeGenerator({}, 128);
+
+    const widths = await generator.generateImageThumbnails({
+      sourceDir: 'root',
+      dryRun: false,
+      thumbnailSizes: [320, 640, 960, 1280],
+      label: 'content',
+    });
+
+    expect(widths).toEqual({
+      'hero.png': [128],
+      'gallery/nested.jpg': [128],
+    });
+    expect(processImage).toHaveBeenCalledWith(expect.objectContaining({ width: 128 }));
+    expect(processImage).not.toHaveBeenCalledWith(expect.objectContaining({ width: 320 }));
+    expect(processImage).not.toHaveBeenCalledWith(expect.objectContaining({ width: 960 }));
+    expect(processImage).not.toHaveBeenCalledWith(expect.objectContaining({ width: 1280 }));
   });
 });

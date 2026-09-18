@@ -5,6 +5,7 @@ export function buildS3SyncArgs({
   endpoint,
   deleteRemoteFiles,
   dryRun,
+  verbose = false,
 }: {
   vaultPath: string;
   bucketName: string;
@@ -12,6 +13,7 @@ export function buildS3SyncArgs({
   endpoint: string;
   deleteRemoteFiles: boolean;
   dryRun: boolean;
+  verbose?: boolean;
 }): string[] {
   const args = [
     's3',
@@ -34,7 +36,11 @@ export function buildS3SyncArgs({
   }
 
   if (dryRun) {
-    args.push('--dryrun');
+    args.push('--dryrun', '--no-progress');
+  } else if (verbose) {
+    args.push('--no-progress');
+  } else {
+    args.push('--only-show-errors');
   }
 
   return args;

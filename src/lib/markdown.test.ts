@@ -60,6 +60,23 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/Pasted%20image%20example-320.webp 320w"');
   });
 
+  it("uses the generated widths recorded for each source asset", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![Product](attachments/products/example.png)",
+      thumbnailSizes: [320, 640, 960, 1280],
+      assetFiles: ["attachments/products/example.png"],
+      responsiveImageWidths: { "attachments/products/example.png": [128] },
+    });
+
+    expect(html).toContain('src="/api/vault-public/_thumbnails/attachments/products/example-128.webp"');
+    expect(html).toContain('srcset="/api/vault-public/_thumbnails/attachments/products/example-128.webp 128w"');
+    expect(html).toContain('sizes="(max-width: 128px) 100vw, 128px"');
+    expect(html).not.toContain("-320.webp");
+    expect(html).not.toContain("-640.webp");
+    expect(html).not.toContain("-1280.webp");
+  });
+
   it("uses the original absolute asset URL for GIFs without responsive thumbnails", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({

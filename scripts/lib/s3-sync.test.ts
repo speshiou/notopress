@@ -15,6 +15,7 @@ describe('buildS3SyncArgs', () => {
     const args = buildS3SyncArgs(BASE_INPUT);
 
     expect(args).not.toContain('--delete');
+    expect(args).toContain('--only-show-errors');
   });
 
   it('adds deletion only when explicitly enabled', () => {
@@ -32,5 +33,14 @@ describe('buildS3SyncArgs', () => {
 
     expect(args).toContain('--delete');
     expect(args).toContain('--dryrun');
+    expect(args).toContain('--no-progress');
+    expect(args).not.toContain('--only-show-errors');
+  });
+
+  it('shows live per-file operations in verbose mode without progress-meter noise', () => {
+    const args = buildS3SyncArgs({ ...BASE_INPUT, verbose: true });
+
+    expect(args).toContain('--no-progress');
+    expect(args).not.toContain('--only-show-errors');
   });
 });

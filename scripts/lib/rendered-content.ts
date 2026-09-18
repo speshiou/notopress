@@ -106,6 +106,7 @@ export async function generateRenderedContent({
         markdown,
         thumbnailSizes,
         assetFiles,
+        responsiveImageWidths: rootIndex.responsiveImageWidths,
         noteReferences,
         assetUrlConfig: {
           imageHost,

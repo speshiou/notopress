@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
 import { Site, Registry } from '../../src/domain/registry';
-import { VaultDirectoryIndex } from '../../src/lib/vault';
+import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -102,6 +102,63 @@ describe('WordPress Deployment Library', () => {
     ]);
     const mockRootOnlyIndices = new Map([...mockIndices].filter(([directory]) => directory === ''));
 
+    it('does not apply the NotoPress route table to a targeted WordPress post', async () => {
+      const rewrittenIndices = new Map<string, VaultDirectoryIndex>([
+        [
+          'guides',
+          {
+            version: 1,
+            pages: [
+              {
+                title: 'Example Guide',
+                slug: 'example-guide',
+                publicSlug: 'docs/example-guide',
+                date: '2026-06-16T13:00:00.000Z',
+                excerpt: 'An example guide.',
+              },
+            ],
+          },
+        ],
+      ]);
+      const currentRootIndex: VaultRootIndex = {
+        version: 1,
+        pages: [],
+        directories: ['guides'],
+        publicFiles: [],
+        assetFiles: [],
+        routes: { 'docs/example-guide': 'guides/example-guide' },
+        publicDirectories: ['docs'],
+      };
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [{ id: 456, title: { rendered: 'Example Guide' } }] };
+        }
+        if (url.includes('/wp/v2/posts/456') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 456 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: rewrittenIndices,
+        rootIndex: currentRootIndex,
+        targetSlugs: ['guides/example-guide'],
+        dryRun: false,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=example-guide'),
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/wp/v2/posts?slug=docs-example-guide'),
+        expect.objectContaining({ method: 'GET' })
+      );
+    });
+
     it('should perform GET queries to check for existence and POST queries to update when the post exists', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         // Query GET matches
@@ -176,7 +233,7 @@ describe('WordPress Deployment Library', () => {
 
       // Assert lookup and create calls
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=blog-post-two'),
+        expect.stringContaining('/wp/v2/posts?slug=post-two'),
         expect.objectContaining({ method: 'GET' })
       );
       expect(mockFetch).toHaveBeenCalledWith(
@@ -600,6 +657,72 @@ describe('WordPress Deployment Library', () => {
       expect(postCalls.length).toBe(0);
     });
 
+    it('should reject a changed expected plan fingerprint before mutating WordPress', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [{ id: 456 }] };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await expect(pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        expectedPlanFingerprint: 'reviewed-plan-fingerprint',
+        dryRun: false,
+      })).rejects.toThrow('WordPress publish plan changed');
+
+      const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
+      expect(postCalls).toHaveLength(0);
+    });
+
+    it('should reject an update response that does not confirm the planned post ID', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [{ id: 456 }] };
+        }
+        if (url.includes('/wp/v2/posts/456') && options.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 999 }) };
+        }
+        return { ok: false, status: 404 };
+      });
+      global.fetch = mockFetch;
+
+      await expect(pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        targetSlugs: ['post-one'],
+        dryRun: false,
+      })).rejects.toThrow('invalid update response');
+    });
+
+    it('should not mutate any posts when a bulk publish plan is incomplete', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        if (url.includes('slug=post-one') && options.method === 'GET') {
+          throw new Error('lookup failed');
+        }
+        if (url.includes('/wp/v2/posts') && options.method === 'GET') {
+          return { ok: true, json: async () => [] };
+        }
+        return { ok: true, json: async () => ({ id: 789 }) };
+      });
+      global.fetch = mockFetch;
+
+      await expect(pushToWordPress({
+        site: mockSite,
+        registry: mockRegistry,
+        allIndices: mockIndices,
+        dryRun: false,
+      })).rejects.toThrow('publish plan is incomplete');
+
+      const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
+      expect(postCalls).toHaveLength(0);
+    });
+
     it('should strip only the first H1 when it is the first non-empty line and outside code blocks', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
@@ -638,7 +761,9 @@ describe('WordPress Deployment Library', () => {
     });
 
     it('should support multiple target slugs', async () => {
+      const requestMethods: string[] = [];
       const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        requestMethods.push(options.method);
         if (url.includes('/wp/v2/posts') && options.method === 'GET') {
           return {
             ok: true,
@@ -669,12 +794,13 @@ describe('WordPress Deployment Library', () => {
         expect.objectContaining({ method: 'GET' })
       );
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wp/v2/posts?slug=blog-post-two'),
+        expect.stringContaining('/wp/v2/posts?slug=post-two'),
         expect.objectContaining({ method: 'GET' })
       );
       // Verify two POST calls occurred
       const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST');
       expect(postCalls.length).toBe(2);
+      expect(requestMethods).toEqual(['GET', 'GET', 'POST', 'POST']);
     });
 
     it('should throw an error if none of the target slugs are found', async () => {

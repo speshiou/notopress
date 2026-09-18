@@ -24,7 +24,13 @@ describe('createIndexGenerator', () => {
       'vault/_includes/example-note.md': 'include',
     };
     const writes: Record<string, string> = {};
-    const generateImageThumbnails = vi.fn(async () => undefined);
+    const generateImageThumbnails = vi.fn(async ({
+      label,
+    }: {
+      label: string;
+    }): Promise<Record<string, number[]>> => (
+      label === 'content' ? { 'hero.png': [320, 640] } : {}
+    ));
     const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const generator = createIndexGenerator({
@@ -77,6 +83,7 @@ describe('createIndexGenerator', () => {
       directories: ['blog'],
       publicFiles: ['sitemap.xml'],
       assetFiles: ['hero.png', 'sitemap.xml'],
+      responsiveImageWidths: { 'hero.png': [320, 640] },
       routes: {
         page: 'page',
         'blog/post': 'blog/post',
@@ -98,6 +105,19 @@ describe('createIndexGenerator', () => {
       thumbnailSizes: [320, 640],
       label: 'content',
     });
+    expect(logger.log).toHaveBeenCalledWith('✨ Generated 2 content directory index(es).');
+    expect(logger.log).not.toHaveBeenCalledWith(expect.stringContaining('Generated index for'));
+
+    logger.log.mockClear();
+    await generator.generateIndices({
+      vaultPath: 'vault',
+      thumbnailSizes: [320, 640],
+      noteIncludePaths: ['_includes'],
+      dryRun: false,
+      verbose: true,
+    });
+    expect(logger.log).toHaveBeenCalledWith('✨ Generated index for "root"');
+    expect(logger.log).toHaveBeenCalledWith('✨ Generated index for "blog"');
   });
 
   it('throws instead of exiting when content directory is missing', async () => {
@@ -114,7 +134,7 @@ describe('createIndexGenerator', () => {
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
-      generateImageThumbnails: vi.fn(async () => undefined),
+      generateImageThumbnails: vi.fn(async () => ({})),
       logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
@@ -150,7 +170,7 @@ describe('createIndexGenerator', () => {
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
-      generateImageThumbnails: vi.fn(async () => undefined),
+      generateImageThumbnails: vi.fn(async () => ({})),
       logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
@@ -187,7 +207,7 @@ describe('createIndexGenerator', () => {
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
-      generateImageThumbnails: vi.fn(async () => undefined),
+      generateImageThumbnails: vi.fn(async () => ({})),
       logger,
     });
 
@@ -241,7 +261,7 @@ describe('createIndexGenerator', () => {
       normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
-      generateImageThumbnails: vi.fn(async () => undefined),
+      generateImageThumbnails: vi.fn(async () => ({})),
       logger,
     });
 

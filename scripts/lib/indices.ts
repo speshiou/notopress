@@ -43,7 +43,7 @@ export type IndexGeneratorDeps = {
     dryRun: boolean;
     thumbnailSizes: readonly number[];
     label: string;
-  }) => Promise<void>;
+  }) => Promise<Record<string, number[]>>;
   logger: Logger;
 };
 
@@ -162,7 +162,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
   }): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
     const entries = await deps.readdir(dir, { withFileTypes: true });
     const pages: PageMetadata[] = [];
-    let allDirs: string[] = [];
+    const allDirs: string[] = [];
 
     const relDir = deps.relativePath(baseDir, dir).replace(/\\/g, '/');
 
@@ -255,12 +255,14 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       noteIncludePaths,
       rewrites,
       dryRun = false,
+      verbose = false,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
       noteIncludePaths?: readonly string[];
       rewrites?: readonly RewriteRule[];
       dryRun?: boolean;
+      verbose?: boolean;
     }): Promise<{
       rootContentIndex: VaultDirectoryIndex;
       vaultRootIndex: VaultRootIndex;
@@ -305,11 +307,15 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         const indexPath = relDir
           ? deps.joinPath(contentDir, relDir, INDEX_JSON)
           : deps.joinPath(contentDir, INDEX_JSON);
-        const relDirName = relDir || 'root';
         if (!dryRun) {
           await deps.writeFile(indexPath, JSON.stringify(indexData, null, 2));
-          deps.logger.log(`✨ Generated index for "${relDirName}"`);
+          if (verbose) {
+            deps.logger.log(`✨ Generated index for "${relDir || 'root'}"`);
+          }
         }
+      }
+      if (!dryRun) {
+        deps.logger.log(`✨ Generated ${allIndices.size} content directory index(es).`);
       }
 
       const publicBaseDir = deps.joinPath(vaultPath, 'public');
@@ -317,13 +323,13 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         await deps.mkdir(publicBaseDir, { recursive: true });
       }
 
-      await deps.generateImageThumbnails({
+      const contentResponsiveImageWidths = await deps.generateImageThumbnails({
         sourceDir: contentDir,
         dryRun,
         thumbnailSizes,
         label: 'content',
       });
-      await deps.generateImageThumbnails({
+      const publicResponsiveImageWidths = await deps.generateImageThumbnails({
         sourceDir: publicBaseDir,
         dryRun,
         thumbnailSizes,
@@ -343,6 +349,10 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         directories: allDirs,
         publicFiles,
         assetFiles,
+        responsiveImageWidths: {
+          ...publicResponsiveImageWidths,
+          ...contentResponsiveImageWidths,
+        },
         noteIncludes,
         thumbnailSizes: deps.normalizeThumbnailSizes(thumbnailSizes),
         routes: routeTable.routes,
