@@ -9,6 +9,12 @@ export const WordPressCredentialsSchema = z.object({
   endpoint: z.string().url().optional(),
 });
 
+export const PublisherDefinitionSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  config: z.record(z.string(), z.unknown()),
+});
+
 export const SiteSchema = z.object({
   domain: z.string().optional(),
   siteId: z.string(),
@@ -19,6 +25,7 @@ export const SiteSchema = z.object({
   endpoint: z.string().url().optional(),
   thumbnailSizes: ThumbnailSizesSchema,
   wordpress: WordPressCredentialsSchema.optional(),
+  publishers: z.array(PublisherDefinitionSchema).optional(),
   imageHost: z.string().url().optional(),
   rewrites: RewriteRulesSchema.optional(),
 });
@@ -34,3 +41,4 @@ export const RegistrySchema = z.object({
 
 export type Site = z.infer<typeof SiteSchema>;
 export type Registry = z.infer<typeof RegistrySchema>;
+export type PublisherDefinition = z.infer<typeof PublisherDefinitionSchema>;

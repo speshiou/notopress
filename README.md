@@ -102,7 +102,8 @@ The registry manages global defaults and site-specific overrides.
 | `vercelProjectId` | `string` | (Optional) Vercel project ID to deploy. Falls back to `siteId` when omitted. |
 | `imageHost` | `string` | (Optional) Absolute image host used for generated image URLs in publishing workflows. |
 | `thumbnailSizes` | `number[]` | (Optional) Override the global responsive image thumbnail widths for this site. |
-| `wordpress` | `object` | (Optional) WordPress REST API credentials for `--wp` publishing. |
+| `publishers` | `array` | (Optional) Named publishing adapters with `{ id, type, config }`. Adapter-specific configuration is validated by the adapter. |
+| `wordpress` | `object` | (Deprecated) Legacy WordPress credentials. Continue to work as publisher ID `wordpress`. |
 | `rewrites` | `array` | (Optional) Vault-path to public-URL mappings. `source` is a path under `content/` (`guides/:path*`). `destination` is a public URL (`/:path*`). First matching rule wins; duplicate public URLs warn and keep the earlier file. |
 
 Internal note links should use wikilinks (`[[vpn]]` or `[[guides/vpn]]`). Handwritten markdown links like `[text](/guides/vpn)` are not rewritten.
@@ -280,18 +281,18 @@ npm run sync -- --site example-blog
 npm run deploy -- --site example-blog --registry ./custom-registry.json
 ```
 
-Use `--wp` with `sync` or `deploy` to publish local Markdown posts to the configured WordPress site, and `--push <slug1,slug2,...>` to limit that WordPress publish step to specific posts (comma-separated list of slugs).
+Use `--publisher <id>` to select a configured publishing adapter. `--wp` remains a compatibility alias for a single configured WordPress publisher, and `--push <slug1,slug2,...>` limits publishing to specific posts (comma-separated full vault slugs).
 
 NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it. Targeted `--push` arguments still use the full vault slug so NotoPress can select the correct source file.
 
-WordPress dry-runs print a deterministic publish-plan fingerprint together with each source slug, WordPress slug, target ID, action, and payload hash. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-wp-plan`:
+Publisher dry-runs print a deterministic plan fingerprint. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility alias:
 
 ```bash
 npm run sync -- --site example-blog --wp --push guides/example-guide --dry-run
-npm run sync -- --site example-blog --wp --push guides/example-guide --expect-wp-plan <reviewed-fingerprint>
+npm run sync -- --site example-blog --publisher wordpress-main --push guides/example-guide --expect-plan <reviewed-fingerprint>
 ```
 
-The live run stops before WordPress post mutations if its freshly calculated plan differs from the reviewed fingerprint.
+The live run prepares and validates every selected publisher plan before native storage synchronization or publisher mutations. A changed fingerprint therefore stops the entire remote apply phase.
 
 Operation planning and fingerprinting are core NotoPress mechanisms. Integrations contribute typed operations to that mechanism; WordPress publishing is the first adapter that enforces a reviewed fingerprint. Build stages such as rendered HTML, indices, thumbnails, storage synchronization, and future publishing adapters should use the same plan/apply boundary as their operation lists are exposed.
 

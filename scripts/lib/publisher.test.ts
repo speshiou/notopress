@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createOperationPlan } from './operation-plan';
-import { applyPreparedPublisher, assertPublisherPlanFingerprint, executePublication } from './publisher';
+import {
+  applyPreparedPublisher,
+  assertPublisherPlanFingerprint,
+  createPublisherRegistry,
+  executePublication,
+  type PublisherAdapter,
+} from './publisher';
 
 function createPublisher() {
   const apply = vi.fn(async () => undefined);
@@ -16,6 +22,15 @@ function createPublisher() {
 }
 
 describe('prepared publisher lifecycle', () => {
+  it('registers adapters by stable publisher id', () => {
+    const adapter = { id: 'example-main', type: 'example', prepare: vi.fn() } satisfies PublisherAdapter;
+    const registry = createPublisherRegistry({ adapters: [adapter] });
+
+    expect(registry.get({ id: 'example-main' })).toBe(adapter);
+    expect(() => registry.get({ id: 'missing' })).toThrow('Publisher "missing" is not configured');
+    expect(() => createPublisherRegistry({ adapters: [adapter, adapter] })).toThrow('Duplicate publisher id');
+  });
+
   it('rejects a changed plan before apply', async () => {
     const { publisher, apply } = createPublisher();
 

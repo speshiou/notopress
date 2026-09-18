@@ -19,11 +19,17 @@
         { "source": "guides/:path*", "destination": "/:path*" },
         { "source": "reviews/:path*", "destination": "/:path*" }
       ],
-      "wordpress": {
-        "username": "your-wp-username",
-        "applicationPassword": "xxxx xxxx xxxx xxxx xxxx xxxx",
-        "endpoint": "https://your-wordpress-site.com/wp-json"
-      }
+      "publishers": [
+        {
+          "id": "wordpress-main",
+          "type": "wordpress",
+          "config": {
+            "username": "your-wp-username",
+            "applicationPassword": "xxxx xxxx xxxx xxxx xxxx xxxx",
+            "endpoint": "https://your-wordpress-site.com/wp-json"
+          }
+        }
+      ]
     }
   ]
 }

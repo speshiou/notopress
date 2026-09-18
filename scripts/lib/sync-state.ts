@@ -5,14 +5,7 @@ import path from 'path';
 
 export const SYNC_STATE_FILENAME = '.notopress-sync.json';
 
-export interface WordPressSyncEntry {
-  contentHash: string;
-  payloadHash?: string;
-  syncedAt: string;
-}
-
 export interface VaultSyncState {
-  wordpress?: Record<string, WordPressSyncEntry>;
   [platform: string]: Record<string, unknown> | undefined;
 }
 

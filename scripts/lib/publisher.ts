@@ -1,4 +1,7 @@
 import type { OperationPlan } from './operation-plan';
+import type { Registry, Site } from '../../src/domain/registry';
+import type { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
+import type { ContentSnapshot } from './content-snapshot';
 
 export type PreparedPublisher<TOperation> = {
   id: string;
@@ -6,6 +9,50 @@ export type PreparedPublisher<TOperation> = {
   plan: OperationPlan<TOperation>;
   apply: ({ dryRun }: { dryRun: boolean }) => Promise<void>;
 };
+
+export type PublisherPreparationContext = {
+  site: Site;
+  registry: Registry;
+  allIndices: Map<string, VaultDirectoryIndex>;
+  contentSnapshot: ContentSnapshot;
+  rootIndex: VaultRootIndex;
+  targetSlugs?: string[];
+  force?: boolean;
+  dryRun: boolean;
+};
+
+export type PublisherAdapter = {
+  id: string;
+  type: string;
+  prepare: (context: PublisherPreparationContext) => Promise<PreparedPublisher<unknown> | null>;
+};
+
+export function createPublisherRegistry({
+  adapters,
+}: {
+  adapters: readonly PublisherAdapter[];
+}) {
+  const adaptersById = new Map<string, PublisherAdapter>();
+  for (const adapter of adapters) {
+    if (adaptersById.has(adapter.id)) {
+      throw new Error(`Duplicate publisher id "${adapter.id}".`);
+    }
+    adaptersById.set(adapter.id, adapter);
+  }
+
+  return {
+    get({ id }: { id: string }): PublisherAdapter {
+      const adapter = adaptersById.get(id);
+      if (!adapter) {
+        throw new Error(`Publisher "${id}" is not configured.`);
+      }
+      return adapter;
+    },
+    list(): readonly PublisherAdapter[] {
+      return [...adaptersById.values()];
+    },
+  };
+}
 
 export function assertPublisherPlanFingerprint<TOperation>({
   publisher,

@@ -5,6 +5,7 @@
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --force`: Force updates all posts on WordPress regardless of publish payload hash.
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --dry-run`: Previews WordPress API mutations without altering remote posts.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --push <slug1,slug2> --expect-plan <fingerprint>`: Uses the generic publisher adapter path. `--wp` and `--expect-wp-plan` remain compatibility aliases.
 - **Pull Commands**:
   - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
@@ -16,3 +17,4 @@
   - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
+  - Publisher planning is read-only. NotoPress validates every selected publisher fingerprint before native storage sync or WordPress mutations begin.

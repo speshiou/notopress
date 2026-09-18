@@ -1,11 +1,22 @@
+import { z } from 'zod';
 import {
   loadSyncState,
   saveSyncState,
   VaultSyncState,
-  WordPressSyncEntry,
 } from './sync-state';
 
-export type { WordPressSyncEntry };
+export interface WordPressSyncEntry {
+  contentHash: string;
+  payloadHash?: string;
+  syncedAt: string;
+}
+
+const WordPressSyncEntrySchema = z.object({
+  contentHash: z.string(),
+  payloadHash: z.string().optional(),
+  syncedAt: z.string(),
+});
+const WordPressSyncMapSchema = z.record(z.string(), WordPressSyncEntrySchema);
 
 export type WordPressSyncMap = Record<string, WordPressSyncEntry>;
 
@@ -13,7 +24,8 @@ export type WordPressSyncMap = Record<string, WordPressSyncEntry>;
  * Safely extracts WordPress sync entries from a VaultSyncState object.
  */
 export function getWordPressSyncStateFromObject(syncState: VaultSyncState): WordPressSyncMap {
-  return syncState.wordpress || {};
+  const result = WordPressSyncMapSchema.safeParse(syncState.wordpress || {});
+  return result.success ? result.data : {};
 }
 
 /**

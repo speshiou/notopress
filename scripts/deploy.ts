@@ -12,13 +12,23 @@ import { normalizeThumbnailSizes } from '../src/lib/responsive-images';
 import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
-import { prepareWordPressPublisher, pullFromWordPress } from './lib/wordpress';
+import { pullFromWordPress } from './lib/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
 import { generateRenderedContent } from './lib/rendered-content';
 import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
 import { buildS3SyncArgs } from './lib/s3-sync';
 import { buildContentSnapshot } from './lib/content-snapshot';
-import { executePublication, type SelectedPublisher } from './lib/publisher';
+import {
+  createPublisherRegistry,
+  executePublication,
+  type SelectedPublisher,
+} from './lib/publisher';
+import {
+  createWordPressPublisherAdapters,
+  hasWordPressPublisher,
+  LEGACY_WORDPRESS_PUBLISHER_ID,
+  WORDPRESS_PUBLISHER_TYPE,
+} from './lib/wordpress-publisher-adapter';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 
@@ -352,7 +362,7 @@ async function buildContent({
   await ensureVaultAgentRules({
     vaultPath: site.vaultPath,
     siteId: site.siteId,
-    isWordPressEnabled: Boolean(site.wordpress),
+    isWordPressEnabled: hasWordPressPublisher({ site }),
     dryRun: isDryRun,
   });
 
@@ -463,17 +473,43 @@ async function main() {
 
     const hasPushFlag = hasFlag({ flag: '--push' });
     const markSynced = hasFlag({ flag: '--mark-synced' });
-    const shouldPushWp = hasFlag({ flag: '--wp' }) || hasPushFlag || markSynced;
+    const legacyWordPressRequested = hasFlag({ flag: '--wp' }) || hasPushFlag || markSynced;
     const forcePush = hasFlag({ flag: '--force' });
-    const expectedPlanFingerprint = getFlagValue({ flag: '--expect-wp-plan' });
-    if (expectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(expectedPlanFingerprint)) {
-      throw new Error('⨯ --expect-wp-plan requires the 64-character fingerprint printed by a WordPress dry-run.');
+    const genericExpectedPlanFingerprint = getFlagValue({ flag: '--expect-plan' });
+    const legacyExpectedPlanFingerprint = getFlagValue({ flag: '--expect-wp-plan' });
+    if (genericExpectedPlanFingerprint && legacyExpectedPlanFingerprint) {
+      throw new Error('⨯ Use either --expect-plan or --expect-wp-plan, not both.');
     }
-    if (expectedPlanFingerprint && !shouldPushWp) {
-      throw new Error('⨯ --expect-wp-plan requires --wp or --push.');
+    const expectedPlanFingerprint = genericExpectedPlanFingerprint || legacyExpectedPlanFingerprint;
+    if (expectedPlanFingerprint && !/^[a-f0-9]{64}$/.test(expectedPlanFingerprint)) {
+      throw new Error('⨯ --expect-plan requires the 64-character fingerprint printed by a publisher dry-run.');
     }
     if (expectedPlanFingerprint && markSynced) {
-      throw new Error('⨯ --expect-wp-plan cannot be combined with --mark-synced.');
+      throw new Error('⨯ --expect-plan cannot be combined with --mark-synced.');
+    }
+    const publisherValue = getFlagValue({ flag: '--publisher' });
+    const explicitPublisherIds = publisherValue
+      ? publisherValue.split(',').map((value) => value.trim()).filter(Boolean)
+      : [];
+    const publisherRegistry = createPublisherRegistry({
+      adapters: createWordPressPublisherAdapters({ site, markSynced }),
+    });
+    const legacyWordPressAdapters = publisherRegistry.list().filter(
+      (adapter) => adapter.type === WORDPRESS_PUBLISHER_TYPE
+    );
+    const legacyWordPressPublisher = legacyWordPressAdapters.find(
+      (adapter) => adapter.id === LEGACY_WORDPRESS_PUBLISHER_ID
+    ) || (legacyWordPressAdapters.length === 1 ? legacyWordPressAdapters[0] : undefined);
+    const selectedPublisherIds = explicitPublisherIds.length > 0
+      ? explicitPublisherIds
+      : legacyWordPressRequested && legacyWordPressPublisher
+      ? [legacyWordPressPublisher.id]
+      : [];
+    if (legacyWordPressRequested && selectedPublisherIds.length === 0) {
+      throw new Error('⨯ WordPress publishing was requested, but no WordPress publisher is configured.');
+    }
+    if (expectedPlanFingerprint && selectedPublisherIds.length !== 1) {
+      throw new Error('⨯ --expect-plan requires exactly one selected publisher.');
     }
     const pushValue = getFlagValue({ flag: '--push' });
     const targetSlugs = pushValue && pushValue !== 'true'
@@ -487,8 +523,10 @@ async function main() {
       verbose,
     });
 
-    const preparedWordPressPublisher = shouldPushWp
-      ? await prepareWordPressPublisher({
+    const preparedPublishers = [];
+    for (const publisherId of selectedPublisherIds) {
+      const adapter = publisherRegistry.get({ id: publisherId });
+      const preparedPublisher = await adapter.prepare({
           site,
           registry,
           allIndices,
@@ -496,14 +534,17 @@ async function main() {
           rootIndex: vaultRootIndex,
           targetSlugs,
           force: forcePush,
-          markSynced,
           dryRun: isDryRun,
-        })
-      : null;
+      });
+      if (preparedPublisher) {
+        preparedPublishers.push(preparedPublisher);
+      }
+    }
 
-    const selectedPublishers: SelectedPublisher[] = preparedWordPressPublisher
-      ? [{ publisher: preparedWordPressPublisher, expectedFingerprint: expectedPlanFingerprint }]
-      : [];
+    const selectedPublishers: SelectedPublisher[] = preparedPublishers.map((publisher) => ({
+      publisher,
+      expectedFingerprint: preparedPublishers.length === 1 ? expectedPlanFingerprint : undefined,
+    }));
     await executePublication({
       publishers: selectedPublishers,
       applyCore: () => applyNativeSite({ site, registry, isDryRun, deleteRemoteFiles, verbose }),
