@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getContentType, EXTENSION_MIME_MAP, DEFAULT_CONTENT_TYPE } from "./content-types";
+import { getContentType, DEFAULT_CONTENT_TYPE } from "./content-types";
 
 describe("getContentType", () => {
   it("maps XML sitemap and feed extensions correctly", () => {

@@ -43,8 +43,9 @@ export async function getFileFromS3(bucket: string, key: string): Promise<string
     const response = await client.send(command);
     if (!response.Body) throw new Error("Empty body from S3");
     return await response.Body.transformToString();
-  } catch (error: any) {
-    console.error(`Error fetching from S3 [${bucket}/${key}]:`, error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error fetching from S3 [${bucket}/${key}]:`, message);
     throw error;
   }
 }
