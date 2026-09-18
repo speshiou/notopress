@@ -26,13 +26,11 @@ For captions, use a single italic paragraph immediately after the media or table
 
 In Markdown tables, escape the alias separator in Obsidian wikilinks: \`[[note-slug\\|Display label]]\`. An unescaped \`|\` is treated as a new table column and breaks the table. Outside tables, normal aliased wikilinks (\`[[note-slug|Display label]]\`) are fine. Keep wikilinks in vault source instead of rewriting them to standard Markdown links. Notopress sync warns when it finds unescaped table wikilinks.`;
 
-const MOCK_WORDPRESS_TEMPLATE = `# WordPress Integration & Commands
-- **Sync & Push Commands**:
-  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp\`: Syncs content vault and publishes Markdown posts to WordPress via REST API.
-  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push <slug1,slug2>\`: Publishes specific post slugs to WordPress.
-  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --dry-run\`: Previews WordPress API mutations without altering remote posts.
-- **Pull Commands**:
-  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --pull <slug-or-id>\`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+const MOCK_WORDPRESS_TEMPLATE = `# Publisher Adapter & WordPress Commands
+- **Publish Commands**:
+  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id>\`: Syncs the native site and publishes through the selected adapter.
+- **Import Commands**:
+  - \`npm --prefix {{notopressPath}} run import -- --site {{siteId}} --publisher <publisher-id> --resource <slug-or-id>\`: Imports one remote resource through the adapter.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - \`wp post list --post_type=post\`: Lists published WordPress posts.
   - \`wp cache flush\`: Clears WordPress object cache.
@@ -92,7 +90,7 @@ describe('createAgentRulesWriter', () => {
     expect(writes['vault/AGENTS.md']).toContain('[[note-slug\\|Display label]]');
     expect(writes['vault/AGENTS.md']).toContain('Keep wikilinks in vault source');
     expect(writes['vault/AGENTS.md']).toContain('Notopress sync warns');
-    expect(writes['vault/AGENTS.md']).not.toContain('WordPress Integration & Commands');
+    expect(writes['vault/AGENTS.md']).not.toContain('Publisher Adapter & WordPress Commands');
     expect(writes['vault/AGENTS.md'].endsWith('\n')).toBe(true);
   });
 
@@ -112,9 +110,9 @@ describe('createAgentRulesWriter', () => {
       dryRun: false,
     });
 
-    expect(writes['vault/AGENTS.md']).toContain('WordPress Integration & Commands');
+    expect(writes['vault/AGENTS.md']).toContain('Publisher Adapter & WordPress Commands');
     expect(writes['vault/AGENTS.md']).toContain('NotoPress resolves existing terms to IDs and creates missing terms during live sync');
-    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run sync -- --site my-tech-blog --wp');
+    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run sync -- --site my-tech-blog --publisher <publisher-id>');
     expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
     expect(writes['vault/AGENTS.md']).not.toContain('{{notopressPath}}');
   });

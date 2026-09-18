@@ -351,7 +351,7 @@ export async function prepareWordPressPublisher({
           s3SubDir: 'content',
           mode: 'absolute',
         },
-        getFigureProperties: (largestWidth) => {
+        getFigureProperties: () => {
           return {
             class: 'wp-block-image',
             style: 'height: auto !important;',
@@ -722,26 +722,15 @@ export function resolveAndCollectImagePath(
   }
 
   let tempPath = src;
-  let isExternal = false;
   const originalUrl = src;
 
   // Check if it is an external URL
   if (tempPath.startsWith('http://') || tempPath.startsWith('https://')) {
     try {
       const urlObj = new URL(tempPath);
-      const isInternal =
-        tempPath.includes('_thumbnails/') ||
-        tempPath.includes('/api/vault-public/') ||
-        (site.domain && urlObj.hostname === site.domain) ||
-        (site.imageHost && urlObj.hostname === new URL(site.imageHost).hostname) ||
-        (registry.imageHost && urlObj.hostname === new URL(registry.imageHost).hostname);
-
-      if (!isInternal) {
-        isExternal = true;
-      }
       tempPath = urlObj.pathname;
     } catch {
-      isExternal = true;
+      // Keep the original path when the URL cannot be parsed.
     }
   }
 
@@ -1095,11 +1084,6 @@ export function htmlToMarkdown(
       if (found) return found;
     }
     return null;
-  }
-
-  function getPlainText(node: Node): string {
-    if (node.type === 'text') return node.text || '';
-    return node.children.map(getPlainText).join('');
   }
 
   const result = render(root);

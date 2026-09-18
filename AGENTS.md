@@ -34,13 +34,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
 - In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
 
-# WordPress Integration & Projects
-- **Sync & Push Commands**:
-  - `notopress sync --site <site-id> --wp` (or `npm run sync -- --site <site-id> --wp`): Syncs content vault and publishes Markdown posts to WordPress via REST API.
-  - `notopress sync --site <site-id> --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
-  - `notopress sync --site <site-id> --wp --dry-run`: Previews WordPress API mutations without altering remote posts.
-- **Pull Commands**:
-  - `notopress sync --site <site-id> --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+# Publisher Adapters & WordPress
+- **Publisher Commands**:
+  - `notopress sync --site <site-id> --publisher <publisher-id>`: Syncs the native site and publishes through a configured adapter.
+  - `notopress sync --site <site-id> --publisher <publisher-id> --only <slug1,slug2>`: Publishes specific full vault slugs.
+  - `notopress import --site <site-id> --publisher <publisher-id> --resource <slug-or-id>`: Imports one remote resource through an adapter that supports imports.
+  - `notopress initialize-publisher-state --site <site-id> --publisher <publisher-id>`: Initializes state through an adapter that supports it.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.
@@ -49,6 +48,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
   - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
+- Keep platform-independent contracts under `scripts/core/`, orchestration under `scripts/application/`, side effects under `scripts/infrastructure/`, and argument parsing under `scripts/cli/`.
 
 # Skills
 Consult the `skills/` directory for specific guides and automation patterns:

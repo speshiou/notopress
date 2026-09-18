@@ -40,7 +40,7 @@ Notopress is designed to fit seamlessly into your existing workflow, rather than
 - **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
 - **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
 - **Optional image host**: Configure an `imageHost` for absolute image URLs, especially for CDN or WordPress publishing workflows.
-- **Optional WordPress publishing**: Push your local Markdown posts to WordPress, update existing posts by slug, or target specific posts with `--push`.
+- **Extensible publishers**: Publish through isolated adapters, including WordPress, and target specific source documents with `--only`.
 
 ## Organizing Your Content
 
@@ -281,20 +281,29 @@ npm run sync -- --site example-blog
 npm run deploy -- --site example-blog --registry ./custom-registry.json
 ```
 
-Use `--publisher <id>` to select a configured publishing adapter. `--wp` remains a compatibility alias for a single configured WordPress publisher, and `--push <slug1,slug2,...>` limits publishing to specific posts (comma-separated full vault slugs).
+Use `--publisher <id>` to select one or more configured publishing adapters. `--only <slug1,slug2,...>` limits publishing to specific documents using their full vault slugs.
 
-NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it. Targeted `--push` arguments still use the full vault slug so NotoPress can select the correct source file.
+NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it.
 
-Dry-runs print a composite NotoPress publication fingerprint covering source content, rendered HTML artifact hashes, routing and asset manifests, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect-plan`. WordPress's `--expect-wp-plan` remains a compatibility gate for the WordPress section only:
+Dry-runs print a composite NotoPress publication fingerprint covering source content, rendered HTML artifact hashes, routing and asset manifests, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect`:
 
 ```bash
-npm run sync -- --site example-blog --wp --push guides/example-guide --dry-run
-npm run sync -- --site example-blog --publisher wordpress-main --push guides/example-guide --expect-plan <reviewed-fingerprint>
+npm run sync -- --site example-blog --publisher wordpress-main --only guides/example-guide --dry-run
+npm run sync -- --site example-blog --publisher wordpress-main --only guides/example-guide --expect <reviewed-fingerprint>
+```
+
+Importing and publisher-state initialization are explicit adapter capabilities rather than WordPress-specific sync flags:
+
+```bash
+npm run import -- --site example-blog --publisher wordpress-main --resource example-guide
+npm run initialize-publisher-state -- --site example-blog --publisher wordpress-main
 ```
 
 The live run prepares the core build and every selected publisher plan, then validates the composite fingerprint before native storage synchronization or publisher mutations. A changed fingerprint therefore stops the entire remote apply phase.
 
 Operation planning and fingerprinting are core NotoPress mechanisms. Integrations contribute typed operations to that mechanism; WordPress publishing is the first adapter that enforces a reviewed fingerprint. Build stages such as rendered HTML, indices, thumbnails, storage synchronization, and future publishing adapters should use the same plan/apply boundary as their operation lists are exposed.
+
+The implementation follows the same boundary: `scripts/core/` contains platform-independent content and publishing contracts, `scripts/adapters/` contains publisher integrations, `scripts/application/` coordinates use cases, `scripts/infrastructure/` owns storage and deployment side effects, and `scripts/cli/` only parses and dispatches commands.
 
 ## Roadmap
 

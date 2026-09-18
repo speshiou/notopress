@@ -23,7 +23,7 @@ function createPublisher() {
 
 describe('prepared publisher lifecycle', () => {
   it('registers adapters by stable publisher id', () => {
-    const adapter = { id: 'example-main', type: 'example', prepare: vi.fn() } satisfies PublisherAdapter;
+    const adapter = { id: 'example-main', type: 'example', preparePublication: vi.fn() } satisfies PublisherAdapter;
     const registry = createPublisherRegistry({ adapters: [adapter] });
 
     expect(registry.get({ id: 'example-main' })).toBe(adapter);

@@ -1,13 +1,12 @@
-# WordPress Integration & Commands
-- **Sync & Push Commands**:
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push`: Incrementally syncs content vault and pushes new/modified posts to WordPress (skipping unchanged posts).
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --mark-synced`: Marks all current vault posts as synced in `.notopress-sync.json` without pushing to WordPress (useful on initial setup).
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push <slug1,slug2>`: Publishes specific post slugs to WordPress.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --force`: Force updates all posts on WordPress regardless of publish payload hash.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --wp --push --dry-run`: Previews WordPress API mutations without altering remote posts.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --push <slug1,slug2> --expect-plan <fingerprint>`: Uses the generic publisher adapter path. `--wp` and `--expect-wp-plan` remain compatibility aliases.
-- **Pull Commands**:
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --pull <slug-or-id>`: Fetches remote post from WordPress REST API, converts content, and saves to local vault Markdown.
+# Publisher Adapter & WordPress Commands
+- **Publish Commands**:
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id>`: Syncs the native site and publishes changed content through the selected adapter.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2>`: Publishes specific full vault slugs.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2> --dry-run`: Previews the native and publisher plans without mutations.
+  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2> --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
+- **Import and State Commands**:
+  - `npm --prefix {{notopressPath}} run import -- --site {{siteId}} --publisher <publisher-id> --resource <slug-or-id>`: Imports one remote resource through the adapter.
+  - `npm --prefix {{notopressPath}} run initialize-publisher-state -- --site {{siteId}} --publisher <publisher-id>`: Initializes the adapter-owned sync state without publishing.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.
@@ -17,4 +16,4 @@
   - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
-  - Publisher planning is read-only. `--expect-plan` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin. `--expect-wp-plan` validates only the WordPress section for compatibility.
+  - Publisher planning is read-only. `--expect` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin.

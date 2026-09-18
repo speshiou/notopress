@@ -21,10 +21,19 @@ export type PublisherPreparationContext = {
   dryRun: boolean;
 };
 
+export type PublisherImportContext = {
+  site: Site;
+  registry: Registry;
+  resource: string;
+  dryRun: boolean;
+};
+
 export type PublisherAdapter = {
   id: string;
   type: string;
-  prepare: (context: PublisherPreparationContext) => Promise<PreparedPublisher<unknown> | null>;
+  preparePublication: (context: PublisherPreparationContext) => Promise<PreparedPublisher<unknown> | null>;
+  initializeState?: (context: PublisherPreparationContext) => Promise<void>;
+  importResource?: (context: PublisherImportContext) => Promise<void>;
 };
 
 export function createPublisherRegistry({

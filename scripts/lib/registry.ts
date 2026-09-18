@@ -2,6 +2,7 @@ import { readFile, access } from 'fs/promises';
 import path from 'path';
 import { RegistrySchema, type Registry } from '../../src/domain/registry';
 import { DEFAULT_REGISTRY_FILENAME } from '../../src/lib/constants';
+import { z } from 'zod';
 
 /**
  * Loads and validates the registry configuration.
@@ -23,14 +24,15 @@ export async function getRegistry(customPath?: string): Promise<Registry> {
 
     // Validate with Zod schema
     return RegistrySchema.parse(jsonData);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const migrationGuidance = `
 Tip: If your registry.json is outdated, you can use AI agents like Claude Code, OpenClaw, or other tools to help you migrate to the new schema. 
 Refer to skills/registry-migration.md for detailed migration instructions and the current schema definition.`;
 
-    if (error.name === 'ZodError') {
+    if (error instanceof z.ZodError) {
       throw new Error(`Invalid registry structure: ${JSON.stringify(error.format(), null, 2)}${migrationGuidance}`);
     }
-    throw new Error(`Failed to load registry: ${error.message}${migrationGuidance}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to load registry: ${message}${migrationGuidance}`);
   }
 }
