@@ -1,315 +1,258 @@
-# Notopress
+# NotoPress
+
+NotoPress turns a local Markdown vault into a content-driven Next.js site. Markdown remains the source of truth. NotoPress builds the site artifacts, stores them in S3-compatible storage, and can publish the same canonical content through optional adapters such as WordPress.
 
 > [!CAUTION]
-> Notopress is currently under active development. Expect breaking changes and potential backward incompatibility as we evolve.
+> NotoPress is under active development. Command and configuration compatibility may change before a stable release.
 
-Notopress is a tool for creating highly customizable, markdown-based, content-driven websites from local files you control. Whether you're building technical documentation, a personal blog, or unique marketing pages, Notopress bridges the gap between your own Markdown source of truth and the web with a focus on flexibility, simplicity, and SEO.
+## How it works
 
-## Why Notopress?
+```text
+Markdown vault
+    ↓
+canonical content snapshot
+    ↓
+indices · routes · rendered HTML · sitemaps · responsive images
+    ↓
+reviewable publication plan
+    ├── native site → S3-compatible storage → Next.js runtime
+    └── publishers  → WordPress or future adapters
+```
 
-Notopress is designed to fit seamlessly into your existing workflow, rather than forcing you into a new one:
+The native site and publisher adapters share content discovery and publication planning, but they do not share target behavior. URL rewrites belong to the NotoPress site. A WordPress adapter renders Gutenberg-compatible HTML, chooses WordPress slugs, and owns its remote state independently.
 
-- **Local Markdown as the Source of Truth**: Keep your content in ordinary local Markdown files. You own your own data, and the files on disk are the canonical source for what appears on the web.
-- **Developer-Friendly**: Write and organize files manually in your favorite editor with zero friction.
-- **Editable Anywhere**: Because your site is just local files, you can edit it manually in tools like Obsidian or work with local agents such as Claude Code and Codex.
+## Getting started
 
-## Requirements
-
-- **Node.js**: A modern Node.js runtime to build and run your site.
-- **S3-Compatible Storage**: Any S3-compatible service (AWS S3, Cloudflare R2, MinIO, etc.) to store and serve your content.
-
-## Supported Features
-
-- **Local Markdown publishing**: Use a local folder as the canonical source for site content.
-- **Clean file-based routing**: `content/page.md` becomes the home page, `content/blog/page.md` becomes `/blog`, and nested Markdown files map to clean URLs.
-- **Optional URL rewrites**: Keep articles in local category folders while publishing them under another path (including `/`) via optional `rewrites` in `registry.json`.
-- **Directory collection pages**: Folders without a `page.md` render an archive-style listing of their Markdown pages.
-- **Frontmatter metadata**: `title`, `date`, `updated`, `lastmod`, and `published: false` are supported for page metadata and publishing control.
-- **Automatic excerpts**: Page summaries are generated from the first non-heading paragraph, with fenced code blocks ignored.
-- **SEO metadata**: Rendered Markdown pages include title, description, canonical URL, Open Graph article metadata, and Twitter card metadata.
-- **Sitemap generation**: `sitemap.xml` is generated when a site `domain` is configured, with nested sitemap indexes for larger directory trees.
-- **Static asset serving**: Files in `public/` and supported asset files in `content/` are served from S3-compatible storage through the app.
-- **Responsive images**: Supported local images are converted to WebP thumbnails and rendered with `srcset`, lazy loading, and async decoding.
-- **Obsidian image embeds**: Local image wikilinks such as `![[image.png]]` are resolved against known public/content assets and render through the same image pipeline as `![](...)`.
-- **Note wikilinks**: Public notes can be linked with `[[note-slug]]` or `[[folder/note-slug]]`, using the target note title as link text.
-- **Note transclusions**: Public notes and configured private snippets can be embedded with `![[note-slug]]`, including nested transclusions.
-- **Multi-site registry**: Manage multiple sites from one `registry.json`, each with its own `siteId`, domain, bucket, endpoint, and local content path.
-- **Content sync**: Generate indices, rendered HTML, sitemaps, thumbnails, and upload content to S3-compatible storage with optional delete synchronization.
-- **Dry runs**: Preview generated files and storage changes before writing with `--dry-run`.
-- **Focused logs**: Normal syncs show warnings and stage summaries. Add `--verbose` (or `-v`) for per-directory and per-file diagnostics.
-- **Local environment switching**: Use `npm run configure` to update `.env.local` for a selected site.
-- **Vercel deployment automation**: Sync production environment variables and trigger a production Vercel deploy with `npm run deploy`.
-- **Optional image host**: Configure an `imageHost` for absolute image URLs, especially for CDN or WordPress publishing workflows.
-- **Extensible publishers**: Publish through isolated adapters, including WordPress, and target specific source documents with `--only`.
-
-## Organizing Your Content
-
-Notopress looks for a specific but intuitive structure in your local content folder:
-
-### `content/` (The Core)
-This is where your writing lives.
-- **Clean URLs**: Directory indices are named `page.md` (e.g., `blog/page.md` becomes `yoursite.com/blog`).
-- **Home Page**: Your site's landing page is simply `content/page.md`.
-
-### `public/` (Static Assets)
-Keep your images, PDFs, and other assets organized here.
-- **Mirroring**: The folder structure in `public/` perfectly mirrors your URL structure.
-- **Zero Configuration**: Just drop a file in `public/assets/logo.png` and it's available at `/assets/logo.png`.
-
-### Automated SEO & Sitemaps
-Every time you sync, Notopress automatically generates a valid, search-engine-friendly `sitemap.xml` (if a `domain` is configured).
-- **Discovery**: Helps search engines find and index all your content instantly.
-- **Scalability**: For large sites, Notopress automatically creates a sitemap index and nested sub-sitemaps to keep things organized and within search engine limits.
-
-## Configuration
-
-Notopress uses a centralized `registry.json` to manage multiple sites and their storage settings.
-
-### Setting Up Your Registry
-
-Start by copying the provided example:
+You need Node.js, an S3-compatible bucket, and the AWS CLI. Vercel is optional unless you use the included deployment workflow.
 
 ```bash
+npm install
 cp registry.json.example registry.json
 ```
 
-By default, Notopress looks for `registry.json` in the project root. You can customize this path:
-- **CLI Flag**: `--registry` or `-r` (e.g., `npm run sync -- -r ./custom-registry.json`).
-- **Environment**: Set the `REGISTRY_PATH` environment variable.
-
-#### Registry Properties
-
-The registry manages global defaults and site-specific overrides.
-
-**Global Settings**
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `endpoint` | `string` | Your S3-compatible API endpoint (e.g., Cloudflare R2). |
-| `accessKeyId` | `string` | Your S3 access key ID. |
-| `secretAccessKey` | `string` | Your S3 secret access key. |
-| `thumbnailSizes` | `number[]` | (Optional) Default responsive image thumbnail widths. Defaults to `[320, 640, 960, 1280]`. |
-| `sites` | `array` | List of site configurations. |
-
-**Site-Specific Settings**
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `domain` | `string` | (Optional) Your site's domain. Used to generate absolute URLs for the sitemap. If omitted, sitemap generation will be skipped. |
-| `siteId` | `string` | A unique ID for the site, used as its root folder in S3. |
-| `vaultPath` | `string` | Path to the local Markdown folder that acts as the source of truth for this site. |
-| `noteIncludePaths` | `string[]` | (Optional) Vault-relative folders for private Markdown snippets that can be embedded with `![[note-name]]` but are not routed as public pages. |
-| `bucketName` | `string` | (Optional) The S3 bucket name. |
-| `endpoint` | `string` | (Optional) Override the global endpoint for this site. |
-| `vercelProjectId` | `string` | (Optional) Vercel project ID to deploy. Falls back to `siteId` when omitted. |
-| `imageHost` | `string` | (Optional) Absolute image host used for generated image URLs in publishing workflows. |
-| `thumbnailSizes` | `number[]` | (Optional) Override the global responsive image thumbnail widths for this site. |
-| `publishers` | `array` | (Optional) Named publishing adapters with `{ id, type, config }`. Adapter-specific configuration is validated by the adapter. |
-| `wordpress` | `object` | (Deprecated) Legacy WordPress credentials. Continue to work as publisher ID `wordpress`. |
-| `rewrites` | `array` | (Optional) Vault-path to public-URL mappings. `source` is a path under `content/` (`guides/:path*`). `destination` is a public URL (`/:path*`). First matching rule wins; duplicate public URLs warn and keep the earlier file. |
-
-Internal note links should use wikilinks (`[[vpn]]` or `[[guides/vpn]]`). Handwritten markdown links like `[text](/guides/vpn)` are not rewritten.
-
-Example: keep files in `content/guides/` and `content/reviews/` while serving them at the site root:
-
-```json
-"rewrites": [
-  { "source": "guides/:path*", "destination": "/:path*" },
-  { "source": "reviews/:path*", "destination": "/:path*" }
-]
-```
-
-`content/guides/vpn.md` publishes at `/vpn`. Moving it to `content/reviews/vpn.md` keeps `/vpn` after the next sync.
-
-### Responsive Images
-
-When you run `npm run sync`, Notopress creates WebP thumbnails for supported images in `content/` and `public/`, then includes them in generated responsive `srcset` attributes at render time.
-
-Generated thumbnails live under `_thumbnails/` beside the source tree that owns the image. For example, an image referenced as `/attachments/photo.png` gets thumbnail candidates like `/_thumbnails/attachments/photo-640.webp`.
-
-Rendered HTML files are generated under `_rendered/content/` during sync. They are cache artifacts like thumbnails and indexes: source Markdown remains the source of truth.
-
-### Wikilinks and Note Transclusions
-
-Notopress supports a subset of Obsidian-style wikilinks for local images, note links, and note transclusions.
-
-Image embeds resolve against known files in `content/` and `public/`:
-
-```markdown
-![[image.png]]
-![[attachments/image.png|Alt text]]
-```
-
-These render through the same responsive image pipeline as standard Markdown images:
-
-```markdown
-![Alt text](attachments/image.png)
-```
-
-Public note links resolve against Markdown files under `content/`:
-
-```markdown
-[[guide-note]]
-[[docs/guide-note]]
-[[guide-note|Custom link text]]
-```
-
-When a note link is rendered, Notopress uses the target note's title as the default link text. Nested notes keep their **public URL**, so `[[docs/guide-note]]` links to `/docs/guide-note` unless a rewrite maps that file elsewhere.
-
-If a target leaf slug is unique, `[[guide-note]]` can resolve without the folder path. If multiple notes share the same filename, use the nested path form to avoid ambiguity.
-
-Use `![[note-slug]]` to transclude note content:
-
-```markdown
-![[shared-callout]]
-```
-
-Transclusions render only the referenced note body. Frontmatter and the first top-level heading are removed so reusable snippets do not duplicate their own title inside the host article. Transcluded content is processed recursively, so an embedded note can include other note links or transclusions.
-
-Private reusable snippets can live outside `content/` by configuring `noteIncludePaths`. For example:
+Edit `registry.json`, then point `vaultPath` at a local vault:
 
 ```json
 {
-  "noteIncludePaths": ["_includes"]
+  "endpoint": "https://storage.example.com",
+  "accessKeyId": "access-key",
+  "secretAccessKey": "secret-key",
+  "sites": [
+    {
+      "siteId": "example-blog",
+      "domain": "example.com",
+      "vaultPath": "/absolute/path/to/vault",
+      "bucketName": "content-bucket"
+    }
+  ]
 }
 ```
 
-A vault file at `_includes/shared-callout.md` can then be embedded with `![[shared-callout]]` without becoming a public page. Private include notes are embed-only: normal links such as `[[shared-callout]]` resolve only when the target is a public note under `content/`.
-
-### Serving Thumbnails from Cloudflare
-
-If your bucket is Cloudflare R2, the default deployment already stores thumbnails in R2 and serves them through the app's asset route with long-lived cache headers. To serve them directly from Cloudflare instead:
-
-1. Add a public or custom domain to the R2 bucket in Cloudflare.
-2. Keep the same uploaded key layout, including `{siteId}/content/_thumbnails/...` and `{siteId}/public/_thumbnails/...`.
-3. Point image URLs at that R2 domain with a future CDN URL setting, or add a rewrite in your edge/CDN layer from `/_thumbnails/...` to the matching R2 key.
-
-### Environment Overrides
-
-You can also use a `.env` file for quick overrides or local development:
-
-| Variable | Description |
-| :--- | :--- |
-| `S3_ENDPOINT` | Fallback S3 endpoint URL. |
-| `S3_ACCESS_KEY_ID` | Fallback S3 access key. |
-| `S3_SECRET_ACCESS_KEY` | Fallback S3 secret key. |
-| `VAULT_ROOT` | The ID of the site currently being served/synced. |
-
-## Deployment
-
-Notopress separates content sync from app deployment. Your local Markdown folder is the source content: write it by hand, edit it in tools like Obsidian, or let local agents work with the same files. Sync then generates the supporting metadata/assets and uploads everything to S3-compatible storage. The Next.js app is deployed separately as the web runtime that reads from that storage.
-
-### Configure Local Development
-
-To switch the local app to a site from `registry.json`, run:
+Configure the local Next.js runtime for that site and start development:
 
 ```bash
-npm run configure
+npm run configure -- --site example-blog
+npm run dev
 ```
 
-This updates `.env.local` with the selected site's runtime values:
+## Vault model
 
-| Variable | Purpose |
-| :--- | :--- |
-| `S3_ENDPOINT` | S3-compatible API endpoint. |
-| `S3_ACCESS_KEY_ID` | S3 access key ID. |
-| `S3_SECRET_ACCESS_KEY` | S3 secret access key. |
-| `S3_BUCKET` | Bucket that stores the synced site content. |
-| `VAULT_ROOT` | Site ID / bucket prefix for the site currently being served. |
+A minimal vault looks like this:
 
-Restart `npm run dev` after switching sites.
+```text
+vault/
+├── content/
+│   ├── page.md
+│   ├── about.md
+│   └── guides/
+│       ├── page.md
+│       └── first-guide.md
+├── public/
+│   └── assets/
+│       └── logo.svg
+└── _includes/
+    └── shared-note.md
+```
 
-### Sync Content
+`content/page.md` is the home page. A nested `page.md` represents its directory, while other Markdown files use their file path as the default route. Directories without a `page.md` become collection pages. Files under `public/` are copied as public assets. Paths listed in `noteIncludePaths` contain private, embed-only Markdown snippets.
 
-To generate content metadata, generate sitemaps, upload the local content folder to S3-compatible storage, and upload a sanitized `registry.json` to the bucket root, run:
+Article metadata uses YAML frontmatter:
+
+```markdown
+---
+title: "First guide"
+date: "2026-01-15T08:30:00.000Z"
+published: true
+categories:
+  - guides
+tags:
+  - publishing
+---
+
+# First guide
+
+Article body.
+```
+
+Set `published: false` to exclude a document from public indices and publishing.
+
+### Links, embeds, and images
+
+NotoPress understands standard Markdown plus Obsidian-style note references:
+
+```markdown
+[[first-guide]]
+[[guides/first-guide|Read the guide]]
+![[shared-note]]
+![[attachments/product.png|Product image]]
+```
+
+Public note links follow the final NotoPress route. Transclusions insert the referenced body without its frontmatter or first heading. Local images use the same responsive-image pipeline whether they are written as wikilinks or normal Markdown images.
+
+### Rewrites
+
+Rewrites let the vault stay organized without exposing those folders in the public URL:
+
+```json
+{
+  "rewrites": [
+    { "source": "guides/:path*", "destination": "/:path*" }
+  ]
+}
+```
+
+With this rule, `content/guides/first-guide.md` is served at `/first-guide`. Rewrites apply only to the native NotoPress site. Publisher adapters receive the canonical source document and choose their own target slug behavior.
+
+## Sync and deployment
+
+Always preview a meaningful change first:
 
 ```bash
-npm run sync
+npm run sync -- --site example-blog --dry-run
 ```
 
-The sync command writes generated files such as `root.json`, nested content indices, rendered HTML, responsive thumbnails, and `sitemap.xml` files before uploading. Each site is uploaded under its `siteId` prefix in the configured bucket.
-
-Remote files are preserved by default. To remove remote files that no longer exist in the local vault, opt in with `--delete`:
-
-```bash
-npm run sync -- --delete
-```
-
-Preview deletions before applying them by combining it with dry-run mode:
-
-```bash
-npm run sync -- --delete --dry-run
-```
-
-### Safety First: Dry Run
-Before making any changes, you can preview what will happen:
-
-```bash
-npm run sync -- --dry-run
-```
-
-Normal live sync output stays concise so warnings remain visible. Use verbose mode when diagnosing generated indices or individual storage operations:
-
-```bash
-npm run sync -- --verbose
-```
-
-Verbose mode does not change the sync plan or mutation behavior. Dry-runs always retain their planned file operations and safety-critical publish-plan details.
-
-This previews generated metadata and uses the AWS CLI's `--dryrun` mode to show exactly which files would be modified on your storage.
-
-### Deploy the App
-
-To sync content and deploy the Next.js app to Vercel production in one command, run:
-
-```bash
-npm run deploy
-```
-
-Deployment uses `vercel.json`, which declares this as a Next.js project with `npm run build` as the build command and `npm install` as the install command. The deploy script also syncs the selected site's production environment variables to Vercel before triggering:
-
-```bash
-vercel deploy --prod --local-config vercel.json
-```
-
-If a site defines `vercelProjectId`, that project is targeted. Otherwise, Notopress falls back to using `siteId` as the Vercel project ID.
-
-### Targeting Sites and Registries
-
-All deploy commands support choosing a site and registry file:
+Run the live sync after reviewing the generated files, warnings, storage operations, and publication fingerprint:
 
 ```bash
 npm run sync -- --site example-blog
-npm run deploy -- --site example-blog --registry ./custom-registry.json
 ```
 
-Use `--publisher <id>` to select one or more configured publishing adapters. `--only <slug1,slug2,...>` limits publishing to specific documents using their full vault slugs.
+Sync generates indices, rendered HTML, sitemaps, and image variants before uploading the vault under the site's `siteId` prefix. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output is concise; `--verbose` enables per-file diagnostics.
 
-NotoPress rewrite rules affect NotoPress public routes only. WordPress publishing uses the article filename as the ordinary WordPress slug; directory rewrites are not applied to it.
-
-Dry-runs print a composite NotoPress publication fingerprint covering source content, rendered HTML artifact hashes, routing and asset manifests, deletion policy, and every selected publisher plan. To ensure a later live run still matches the reviewed dry-run, pass that fingerprint with `--expect`:
+To sync content and deploy the Next.js runtime to Vercel in one workflow:
 
 ```bash
-npm run sync -- --site example-blog --publisher wordpress-main --only guides/example-guide --dry-run
-npm run sync -- --site example-blog --publisher wordpress-main --only guides/example-guide --expect <reviewed-fingerprint>
+npm run deploy -- --site example-blog
 ```
 
-Importing and publisher-state initialization are explicit adapter capabilities rather than WordPress-specific sync flags:
+Use `--registry <path>` to select another registry. The `REGISTRY_PATH` environment variable provides the same override.
+
+## Publisher adapters
+
+Publishers are named in the site configuration. WordPress is currently the built-in adapter:
+
+```json
+{
+  "publishers": [
+    {
+      "id": "wordpress-main",
+      "type": "wordpress",
+      "config": {
+        "endpoint": "https://wordpress.example.com/wp-json",
+        "username": "editor",
+        "applicationPassword": "application-password"
+      }
+    }
+  ]
+}
+```
+
+The deprecated top-level `wordpress` configuration remains readable as publisher ID `wordpress`, but new configurations should use `publishers`.
+
+Select an adapter with `--publisher`. Use the full vault slug with `--only`, even when a NotoPress rewrite changes the public URL:
 
 ```bash
-npm run import -- --site example-blog --publisher wordpress-main --resource example-guide
-npm run initialize-publisher-state -- --site example-blog --publisher wordpress-main
+npm run sync -- \
+  --site example-blog \
+  --publisher wordpress-main \
+  --only guides/first-guide \
+  --dry-run
 ```
 
-The live run prepares the core build and every selected publisher plan, then validates the composite fingerprint before native storage synchronization or publisher mutations. A changed fingerprint therefore stops the entire remote apply phase.
+The dry-run prints one composite fingerprint for the core build and all selected publisher plans. Pass that fingerprint to the corresponding live run:
 
-Operation planning and fingerprinting are core NotoPress mechanisms. Integrations contribute typed operations to that mechanism; WordPress publishing is the first adapter that enforces a reviewed fingerprint. Build stages such as rendered HTML, indices, thumbnails, storage synchronization, and future publishing adapters should use the same plan/apply boundary as their operation lists are exposed.
+```bash
+npm run sync -- \
+  --site example-blog \
+  --publisher wordpress-main \
+  --only guides/first-guide \
+  --expect <reviewed-fingerprint>
+```
 
-The implementation follows the same boundary: `scripts/core/` contains platform-independent content and publishing contracts, `scripts/adapters/` contains publisher integrations, `scripts/application/` coordinates use cases, `scripts/infrastructure/` owns storage and deployment side effects, and `scripts/cli/` only parses and dispatches commands.
+If content, rendered output, routes, assets, deletion policy, remote target identity, or publisher intent changes, the fingerprint changes and the live run stops before remote mutation. Publisher planning may perform narrowly targeted remote reads. Avoid unbounded WordPress planning merely for verification.
 
-## Roadmap
+Adapters may also provide import and state-initialization capabilities:
 
-- [ ] **Localization**: Native support for multi-language sites.
-- [ ] **Custom Themes**: A flexible system for bespoke site designs.
+```bash
+npm run import -- \
+  --site example-blog \
+  --publisher wordpress-main \
+  --resource first-guide
+
+npm run initialize-publisher-state -- \
+  --site example-blog \
+  --publisher wordpress-main
+```
+
+## Generated artifacts
+
+NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets.
+
+When image dimensions are known, generated responsive variants preserve aspect ratio and do not upscale beyond the source. The renderer uses the widths that were actually generated rather than assuming every configured size exists.
+
+## Architecture
+
+The publishing code is organized by responsibility:
+
+```text
+scripts/
+├── core/            content, state, plans, and adapter contracts
+├── adapters/        isolated platform implementations
+├── application/     build and command use cases
+├── infrastructure/  storage, configuration, processes, and deployment
+└── cli/             typed command parsing and dispatch
+```
+
+Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic publisher contract. Architecture tests enforce these boundaries.
+
+A publisher adapter prepares a read-only typed plan and returns an apply operation. NotoPress prepares every selected plan, builds the composite fingerprint, validates any reviewed fingerprint, and only then starts native storage or publisher mutations. Adapter-owned state, rendering, remote lookups, imports, and platform payloads stay inside the adapter package.
+
+## Configuration and credentials
+
+Site settings override registry-level storage, image-host, and thumbnail defaults. See [`registry.json.example`](registry.json.example) for the complete shape.
+
+Credentials can live in the uncommitted `registry.json` or environment variables:
+
+```text
+S3_ENDPOINT
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+REGISTRY_PATH
+```
+
+`npm run configure` writes the selected runtime values to `.env.local`. Never commit real storage or publisher credentials.
+
+## Development
+
+```bash
+npm test -- --run
+npm run type-check -- --incremental false
+npm run lint
+npm run build
+```
+
+Tests live beside their modules. `scripts/architecture.test.ts` protects the dependency boundaries, while adapter tests cover platform-specific rendering, planning, state, and import behavior.
 
 ## License
 
-MIT License. See [LICENSE.md](LICENSE.md) for details.
+MIT. See [`LICENSE.md`](LICENSE.md).
