@@ -1,4 +1,4 @@
-import { getRegistry } from '../lib/registry';
+import { getRegistry } from '../infrastructure/config/registry';
 import { runCommand } from '../application/run-command';
 import { parseCliCommand } from './command';
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import { createIndexGenerator } from './indices';
-import { type FileEntry } from './files';
+import { type FileEntry } from '../files';
 
 function file(name: string): FileEntry {
   return { name, isDirectory: () => false, isFile: () => true };

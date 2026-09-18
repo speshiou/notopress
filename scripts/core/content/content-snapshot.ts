@@ -6,7 +6,7 @@ import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
 import type { VaultDirectoryIndex } from '../../../src/lib/vault';
 import { parseContentTaxonomies } from '../../../src/lib/content-metadata';
 import { composeFullSlug } from '../../../src/lib/rewrites';
-import { computeContentHash } from '../../lib/sync-state';
+import { computeContentHash } from '../state/sync-state';
 
 const FrontmatterSchema = z.record(z.string(), z.unknown());
 

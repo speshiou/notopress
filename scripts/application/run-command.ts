@@ -14,7 +14,7 @@ import {
   type SelectedPublisher,
 } from '../core/publishing/publisher';
 import { assertOperationPlanFingerprint } from '../core/publishing/operation-plan';
-import { exists } from '../lib/files';
+import { exists } from '../core/files';
 import { applyNativeSite } from '../infrastructure/native/storage';
 import { configureLocalEnvironment, deployApplication } from '../infrastructure/vercel/deployment';
 import { buildSite } from './build-site';

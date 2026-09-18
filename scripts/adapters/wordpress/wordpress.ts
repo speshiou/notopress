@@ -25,7 +25,7 @@ import {
 } from './taxonomies';
 
 
-import { computeContentHash, loadSyncState, saveSyncState } from '../../lib/sync-state';
+import { computeContentHash, loadSyncState, saveSyncState } from '../../core/state/sync-state';
 import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './sync-state';
 import {
   computeWordPressPayloadHash,

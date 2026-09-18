@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'fs/promises';
 import { spawn } from 'child_process';
 import type { Registry, Site } from '../../../src/domain/registry';
 import { env, ENV_KEYS, ENV_METADATA } from '../../../src/lib/env';
-import { createVercelEnvironmentSynchronizer } from '../../lib/vercel-environment';
+import { createVercelEnvironmentSynchronizer } from './environment';
 import { runProcess } from '../process';
 
 const VERCEL_CONFIG_PATH = 'vercel.json';

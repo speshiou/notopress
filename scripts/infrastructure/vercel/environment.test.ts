@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createVercelEnvironmentSynchronizer } from './vercel-environment';
+import { createVercelEnvironmentSynchronizer } from './environment';
 
 describe('createVercelEnvironmentSynchronizer', () => {
   it('force-upserts variables without interactive stdin', async () => {

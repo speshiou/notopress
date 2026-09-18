@@ -1,4 +1,4 @@
-import { computeContentHash } from '../../lib/sync-state';
+import { computeContentHash } from '../../core/state/sync-state';
 import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
 import type { WordPressTaxonomyPayload } from './taxonomies';
 

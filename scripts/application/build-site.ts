@@ -3,9 +3,9 @@ import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
 import { hasConfiguredPublisherType } from '../adapters/catalog';
 import { buildContentSnapshot } from '../core/content/content-snapshot';
 import { generateRenderedContent } from '../core/content/rendered-content';
-import { ensureVaultAgentRules } from '../lib/agent-rules';
-import { generateIndices } from '../lib/indices';
-import { generateSitemaps } from '../lib/sitemaps';
+import { ensureVaultAgentRules } from './agent-rules';
+import { generateIndices } from '../core/content/indices';
+import { generateSitemaps } from '../core/content/sitemaps';
 
 export async function buildSite({
   site,

@@ -1,15 +1,14 @@
 import sharp from 'sharp';
 import { mkdir, readdir, stat } from 'fs/promises';
 import path from 'path';
-import { THUMBNAILS_DIR } from '../../src/lib/constants';
+import { THUMBNAILS_DIR } from '../../../src/lib/constants';
 import {
   getThumbnailPath,
   isGeneratedThumbnailPath,
   isSupportedResponsiveImage,
   normalizeThumbnailSizes,
-} from '../../src/lib/responsive-images';
-import { exists } from './files';
-import { type FileEntry } from './files';
+} from '../../../src/lib/responsive-images';
+import { exists, type FileEntry } from '../files';
 
 type Logger = Pick<typeof console, 'log'>;
 

@@ -1,7 +1,7 @@
 import { readFile, access } from 'fs/promises';
 import path from 'path';
-import { RegistrySchema, type Registry } from '../../src/domain/registry';
-import { DEFAULT_REGISTRY_FILENAME } from '../../src/lib/constants';
+import { RegistrySchema, type Registry } from '../../../src/domain/registry';
+import { DEFAULT_REGISTRY_FILENAME } from '../../../src/lib/constants';
 import { z } from 'zod';
 
 /**

@@ -19,12 +19,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Keep publishing platforms behind `PublisherAdapter`: core owns the canonical content snapshot, selection, plan validation, and apply ordering; adapters own target rendering, remote discovery, mutations, and namespaced state. Prepare every selected plan before the first remote mutation.
 - Module functions should strictly follow dependency injection patterns: pass filesystem, network, parser, logger, process, and other side-effect dependencies through explicit factory inputs or function parameters so modules stay extensible and testable.
 - Add unit tests beside the module file at the same directory level whenever creating or substantially changing a module.
-- **Single Source of Truth**: Strictly avoid duplicating code, logic, data structures, configurations, patterns (such as URL/path composition, file/folder resolution, parsing, etc.), or abstractions across the codebase. Always consolidate them into centralized, reusable modules and helper functions (e.g., in `src/lib/` or `scripts/lib/`) to maintain a single source of truth across all scripts, tools, and the frontend application.
+- **Single Source of Truth**: Strictly avoid duplicating code, logic, data structures, configurations, patterns (such as URL/path composition, file/folder resolution, parsing, etc.), or abstractions across the codebase. Consolidate runtime helpers in `src/lib/` and script-side behavior in its owning `scripts/core/`, `scripts/application/`, `scripts/infrastructure/`, or `scripts/adapters/` module.
 - **Layered Architecture & Cross-Imports**: Strictly maintain a unidirectional layered dependency model. Under no circumstances should cross-layer or circular imports occur:
   - **Domain layer** (`src/domain/`) holds pure types and configurations. It must never import from other layers.
   - **Library layer** (`src/lib/`) contains business logic/services. It can import from `src/domain/`, but never from the application (`src/app/`) or scripts (`scripts/`).
   - **Application/Presentation layer** (`src/app/` / Next.js) can import from `src/lib/` and `src/domain/`.
-  - **Scripts layer** (`scripts/` / CLI tools) can import from `src/lib/`, `src/domain/`, and local script helpers (`scripts/lib/`).
+  - **Scripts layer** (`scripts/` / CLI tools) can import from `src/lib/`, `src/domain/`, and lower-level script modules. Core must not import application, infrastructure, CLI, or adapters. Application may import the adapter catalog but not concrete adapters.
 
 
 # Privacy & Paths

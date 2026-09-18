@@ -1,4 +1,4 @@
-import { type EnvMetadata } from '../../src/lib/env';
+import { type EnvMetadata } from '../../../src/lib/env';
 
 type VercelCommandResult = {
   status: number | null;

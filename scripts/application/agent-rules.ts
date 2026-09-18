@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import { exists } from './files';
+import { exists } from '../core/files';
 
 type Logger = Pick<typeof console, 'log'>;
 

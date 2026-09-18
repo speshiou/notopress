@@ -4,8 +4,8 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import type { Registry, Site } from '../../../src/domain/registry';
 import { env } from '../../../src/lib/env';
-import { exists } from '../../lib/files';
-import { buildS3SyncArgs } from '../../lib/s3-sync';
+import { exists } from '../../core/files';
+import { buildS3SyncArgs } from './s3-sync';
 import { runProcess } from '../process';
 
 function getEndpoint({ site, registry }: { site: Site; registry: Registry }): string | undefined {

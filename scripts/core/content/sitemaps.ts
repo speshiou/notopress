@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
-import { INDEX_SLUG, SITEMAP_PAGES_XML, SITEMAP_XML } from '../../src/lib/constants';
-import { PageMetadata, VaultDirectoryIndex } from '../../src/lib/vault';
-import { composeFullSlug, getNoteHref, isRouteWinner, toPublicSlug } from '../../src/lib/rewrites';
+import { INDEX_SLUG, SITEMAP_PAGES_XML, SITEMAP_XML } from '../../../src/lib/constants';
+import { PageMetadata, VaultDirectoryIndex } from '../../../src/lib/vault';
+import { composeFullSlug, getNoteHref, isRouteWinner, toPublicSlug } from '../../../src/lib/rewrites';
 
 type Logger = Pick<typeof console, 'log'>;
 

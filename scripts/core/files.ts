@@ -103,4 +103,3 @@ export const exists = defaultFileScanner.exists;
 export const scanPublicFiles = defaultFileScanner.scanPublicFiles;
 export const scanContentAssetFiles = defaultFileScanner.scanContentAssetFiles;
 export const getAssetSubDir = defaultFileScanner.getAssetSubDir;
-

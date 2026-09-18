@@ -1,4 +1,4 @@
-import { computeContentHash } from '../../lib/sync-state';
+import { computeContentHash } from '../state/sync-state';
 
 export type OperationPlan<TOperation> = {
   version: 1;

@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { mkdir, readdir, readFile, stat, writeFile } from 'fs/promises';
 import { type Stats } from 'fs';
 import path from 'path';
-import { INDEX_JSON, ROOT_JSON } from '../../src/lib/constants';
-import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
-import { isGeneratedThumbnailPath, normalizeThumbnailSizes } from '../../src/lib/responsive-images';
-import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from './files';
+import { INDEX_JSON, ROOT_JSON } from '../../../src/lib/constants';
+import { PageMetadata, VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
+import { isGeneratedThumbnailPath, normalizeThumbnailSizes } from '../../../src/lib/responsive-images';
+import { exists, scanContentAssetFiles, scanPublicFiles, type FileEntry } from '../files';
 import { generateImageThumbnails } from './thumbnails';
-import { parseContentTaxonomies } from '../../src/lib/content-metadata';
-import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../src/lib/rewrites';
-import { findUnescapedWikilinksInTables, formatUnescapedTableWikilinkWarning } from '../../src/lib/table-wikilinks';
+import { parseContentTaxonomies } from '../../../src/lib/content-metadata';
+import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../../src/lib/rewrites';
+import { findUnescapedWikilinksInTables, formatUnescapedTableWikilinkWarning } from '../../../src/lib/table-wikilinks';
 
 type Logger = Pick<typeof console, 'log' | 'warn' | 'error'>;
 type MatterResult = {

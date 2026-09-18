@@ -11,7 +11,7 @@ import {
   findSnapshotDocument,
   type ContentSnapshot,
 } from './content-snapshot';
-import { computeContentHash } from '../../lib/sync-state';
+import { computeContentHash } from '../state/sync-state';
 
 type Logger = Pick<typeof console, 'log'>;
 
