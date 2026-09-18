@@ -1,17 +1,17 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import { RENDERED_DIR } from '../../src/lib/constants';
-import { renderMarkdownContent } from '../../src/lib/markdown';
-import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
-import { type NoteReferenceInput } from '../../src/lib/note-links';
-import { isRouteWinner } from '../../src/lib/rewrites';
+import { RENDERED_DIR } from '../../../src/lib/constants';
+import { renderMarkdownContent } from '../../../src/lib/markdown';
+import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
+import { type NoteReferenceInput } from '../../../src/lib/note-links';
+import { isRouteWinner } from '../../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
 import {
   buildContentSnapshot,
   findSnapshotDocument,
   type ContentSnapshot,
 } from './content-snapshot';
-import { computeContentHash } from './sync-state';
+import { computeContentHash } from '../../lib/sync-state';
 
 type Logger = Pick<typeof console, 'log'>;
 

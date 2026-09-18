@@ -2,11 +2,11 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
 import { z } from 'zod';
-import type { ContentTaxonomies } from '../../src/domain/content-metadata';
-import type { VaultDirectoryIndex } from '../../src/lib/vault';
-import { parseContentTaxonomies } from '../../src/lib/content-metadata';
-import { composeFullSlug } from '../../src/lib/rewrites';
-import { computeContentHash } from './sync-state';
+import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
+import type { VaultDirectoryIndex } from '../../../src/lib/vault';
+import { parseContentTaxonomies } from '../../../src/lib/content-metadata';
+import { composeFullSlug } from '../../../src/lib/rewrites';
+import { computeContentHash } from '../../lib/sync-state';
 
 const FrontmatterSchema = z.record(z.string(), z.unknown());
 

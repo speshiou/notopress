@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatWordPressSyncSummary } from './wordpress-sync-log';
+import { formatWordPressSyncSummary } from './sync-log';
 
 describe('formatWordPressSyncSummary', () => {
   it('formats summary when all posts are up to date', () => {

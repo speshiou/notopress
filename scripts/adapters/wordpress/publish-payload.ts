@@ -1,6 +1,6 @@
-import { computeContentHash } from './sync-state';
-import type { ContentTaxonomies } from '../../src/domain/content-metadata';
-import type { WordPressTaxonomyPayload } from './wordpress-taxonomies';
+import { computeContentHash } from '../../lib/sync-state';
+import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
+import type { WordPressTaxonomyPayload } from './taxonomies';
 
 export type WordPressPublishIntent = {
   title: string;

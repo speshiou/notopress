@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { pushToWordPress, restoreLocalImagePath, htmlToMarkdown, pullFromWordPress } from './wordpress';
-import { Site, Registry } from '../../src/domain/registry';
-import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
+import { Site, Registry } from '../../../src/domain/registry';
+import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -849,7 +849,7 @@ describe('WordPress Deployment Library', () => {
     });
 
     it('should publish legacy entries once and then skip their unchanged final payload', async () => {
-      const { computeContentHash } = await import('./sync-state');
+      const { computeContentHash } = await import('../../lib/sync-state');
       const postContent = '# My Post Title\nThis is content.';
       const hash = computeContentHash(postContent);
       let savedSyncState = JSON.stringify({
@@ -963,7 +963,7 @@ describe('WordPress Deployment Library', () => {
     });
 
     it('should republish when the final payload hash changes even if source markdown is unchanged', async () => {
-      const { computeContentHash } = await import('./sync-state');
+      const { computeContentHash } = await import('../../lib/sync-state');
       const postContent = '# My Post Title\nThis is content.';
       const sourceHash = computeContentHash(postContent);
       let savedSyncState = '';
@@ -1017,7 +1017,7 @@ describe('WordPress Deployment Library', () => {
     });
 
     it('should push unchanged post when force is true', async () => {
-      const { computeContentHash } = await import('./sync-state');
+      const { computeContentHash } = await import('../../lib/sync-state');
       const postContent = '# My Post Title\nThis is content.';
       const hash = computeContentHash(postContent);
 

@@ -1,6 +1,6 @@
 import { parse } from '@wordpress/block-serialization-default-parser';
 import { describe, expect, it, vi } from 'vitest';
-import { createRawBlockConverter } from './wordpress-raw-blocks';
+import { createRawBlockConverter } from './raw-blocks';
 
 function parseBlocks({ content }: { content: string }): unknown {
   const parsedBlocks: unknown = parse(content);

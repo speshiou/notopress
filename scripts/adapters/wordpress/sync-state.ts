@@ -3,7 +3,7 @@ import {
   loadSyncState,
   saveSyncState,
   VaultSyncState,
-} from './sync-state';
+} from '../../lib/sync-state';
 
 export interface WordPressSyncEntry {
   contentHash: string;

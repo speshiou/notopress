@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createWordPressTaxonomyResolver, formatTaxonomyFrontmatterLines } from './wordpress-taxonomies';
+import { createWordPressTaxonomyResolver, formatTaxonomyFrontmatterLines } from './taxonomies';
 
 describe('createWordPressTaxonomyResolver', () => {
   it('resolves optional taxonomy slugs to WordPress IDs', async () => {

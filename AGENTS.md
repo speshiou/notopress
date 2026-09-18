@@ -46,7 +46,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
   - `wp cache flush`: Clears WordPress object cache.
   - `wp plugin list`: Displays installed WordPress plugins.
 - **WordPress Conventions & Safety**:
-  - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
+  - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
 

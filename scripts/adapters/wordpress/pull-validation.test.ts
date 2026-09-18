@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validatePulledMarkdown } from './wordpress-pull-validation';
+import { validatePulledMarkdown } from './pull-validation';
 
 describe('validatePulledMarkdown', () => {
   it('accepts contiguous tables and normal paragraph spacing', () => {

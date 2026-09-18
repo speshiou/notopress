@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ContentTaxonomies } from '../../src/domain/content-metadata';
+import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
 
 type WordPressTaxonomyRestBase = 'categories' | 'tags';
 

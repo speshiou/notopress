@@ -3,55 +3,55 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { z } from 'zod';
 import { parse as parseWordPressBlocks } from '@wordpress/block-serialization-default-parser';
-import { Site, Registry } from '../../src/domain/registry';
-import { VaultDirectoryIndex, VaultRootIndex, VaultRootIndexSchema } from '../../src/lib/vault';
-import { renderMarkdownContent } from '../../src/lib/markdown';
-import { serializeHtmlToWordPressBlocks } from '../../src/lib/wordpress-blocks';
-import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
-import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../src/lib/local-images';
-import { type NoteReferenceInput } from '../../src/lib/note-links';
+import { Site, Registry } from '../../../src/domain/registry';
+import { VaultDirectoryIndex, VaultRootIndex, VaultRootIndexSchema } from '../../../src/lib/vault';
+import { renderMarkdownContent } from '../../../src/lib/markdown';
+import { serializeHtmlToWordPressBlocks } from './blocks';
+import { normalizeThumbnailSizes } from '../../../src/lib/responsive-images';
+import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../../src/lib/local-images';
+import { type NoteReferenceInput } from '../../../src/lib/note-links';
 import {
   getContentImageFolder,
   hyphenateSlug,
   listVaultFullSlugCandidates,
   applyRewrites,
-} from '../../src/lib/rewrites';
-import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from './note-includes';
-import { createRawBlockConverter } from './wordpress-raw-blocks';
-import { validatePulledMarkdown } from './wordpress-pull-validation';
+} from '../../../src/lib/rewrites';
+import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from '../../core/content/note-includes';
+import { createRawBlockConverter } from './raw-blocks';
+import { validatePulledMarkdown } from './pull-validation';
 import {
   createWordPressTaxonomyResolver,
   formatTaxonomyFrontmatterLines,
-} from './wordpress-taxonomies';
+} from './taxonomies';
 
 
-import { computeContentHash, loadSyncState, saveSyncState } from './sync-state';
-import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './wordpress-sync-state';
+import { computeContentHash, loadSyncState, saveSyncState } from '../../lib/sync-state';
+import { getWordPressSyncStateFromObject, setWordPressEntry, updateWordPressSyncState } from './sync-state';
 import {
   computeWordPressPayloadHash,
   createWordPressPublishPayload,
-} from './wordpress-payload';
+} from './publish-payload';
 import {
   createWordPressPublishPlan,
   formatWordPressPublishPlan,
   type WordPressPublishOperation,
-} from './wordpress-publish-plan';
+} from './publish-plan';
 import {
   formatWordPressSyncSummary,
   type WordPressSyncErrorResult,
   type WordPressSyncItemResult,
-} from './wordpress-sync-log';
+} from './sync-log';
 import {
   buildContentSnapshot,
   findSnapshotDocument,
   type ContentSnapshot,
   type ContentSnapshotDocument,
-} from './content-snapshot';
+} from '../../core/content/content-snapshot';
 import {
   applyPreparedPublisher,
   assertPublisherPlanFingerprint,
   type PreparedPublisher,
-} from './publisher';
+} from '../../core/publishing/publisher';
 
 
 

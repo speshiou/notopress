@@ -2,11 +2,11 @@ import {
   createOperationPlan,
   formatOperationPlan,
   type OperationPlan,
-} from './operation-plan';
+} from '../../core/publishing/operation-plan';
 import type {
   WordPressPublishContentType,
   WordPressPublishIntent,
-} from './wordpress-payload';
+} from './publish-payload';
 
 export type WordPressPublishOperationAction = 'create' | 'update' | 'skip';
 

@@ -3,7 +3,7 @@ import {
   createWordPressPublishPlan,
   formatWordPressPublishPlan,
   type WordPressPublishOperation,
-} from './wordpress-publish-plan';
+} from './publish-plan';
 
 function createOperation(
   overrides: Partial<WordPressPublishOperation> = {}

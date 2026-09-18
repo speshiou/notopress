@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { tmpdir } from 'os';
 import { generateRenderedContent, getRenderedContentPath } from './rendered-content';
-import { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
+import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
 
 describe('rendered content generator', () => {
   it('generates cached HTML for public content with private note transclusions', async () => {

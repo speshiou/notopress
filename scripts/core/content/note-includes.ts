@@ -6,7 +6,7 @@ import {
   extractWikilinkTargets,
   type NoteReference,
   type NoteReferenceInput,
-} from '../../src/lib/note-links';
+} from '../../../src/lib/note-links';
 
 type NoteIncludeSource = {
   fullSlug: string;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import { createContentSnapshotBuilder, stripLeadingMarkdownTitle } from './content-snapshot';
-import type { VaultDirectoryIndex } from '../../src/lib/vault';
+import type { VaultDirectoryIndex } from '../../../src/lib/vault';
 
 describe('content snapshot', () => {
   it('builds canonical documents with stable source and target-independent slug fields', async () => {

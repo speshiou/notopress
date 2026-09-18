@@ -9,8 +9,8 @@ import {
   setWordPressEntry,
   updateWordPressSyncState,
   updateWordPressSyncEntries,
-} from './wordpress-sync-state';
-import { VaultSyncState } from './sync-state';
+} from './sync-state';
+import { VaultSyncState } from '../../lib/sync-state';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),

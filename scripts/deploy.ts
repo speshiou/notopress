@@ -12,29 +12,29 @@ import { normalizeThumbnailSizes } from '../src/lib/responsive-images';
 import { exists } from './lib/files';
 import { generateIndices } from './lib/indices';
 import { generateSitemaps } from './lib/sitemaps';
-import { pullFromWordPress } from './lib/wordpress';
+import { pullFromWordPress } from './adapters/wordpress/wordpress';
 import { ensureVaultAgentRules } from './lib/agent-rules';
-import { generateRenderedContent } from './lib/rendered-content';
+import { generateRenderedContent } from './core/content/rendered-content';
 import { createVercelEnvironmentSynchronizer } from './lib/vercel-environment';
 import { buildS3SyncArgs } from './lib/s3-sync';
-import { buildContentSnapshot } from './lib/content-snapshot';
+import { buildContentSnapshot } from './core/content/content-snapshot';
 import {
   createPublisherRegistry,
   executePublication,
   type SelectedPublisher,
-} from './lib/publisher';
+} from './core/publishing/publisher';
 import {
   createWordPressPublisherAdapters,
   hasWordPressPublisher,
   LEGACY_WORDPRESS_PUBLISHER_ID,
   WORDPRESS_PUBLISHER_TYPE,
-} from './lib/wordpress-publisher-adapter';
+} from './adapters/wordpress/adapter';
 import {
   createCoreBuildPlan,
   createPublicationPlan,
   formatPublicationPlan,
-} from './lib/publication-plan';
-import { assertOperationPlanFingerprint } from './lib/operation-plan';
+} from './core/publishing/publication-plan';
+import { assertOperationPlanFingerprint } from './core/publishing/operation-plan';
 
 type RunMode = 'sync' | 'deploy' | 'configure';
 

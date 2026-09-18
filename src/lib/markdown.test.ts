@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMarkdownRenderer, type MarkdownNode, preprocessWikilinks } from "./markdown";
-import { serializeHtmlToWordPressBlocks } from "./wordpress-blocks";
+import { serializeHtmlToWordPressBlocks } from "../../scripts/adapters/wordpress/blocks";
 
 describe("createMarkdownRenderer", () => {
   it("injects responsive image attributes into image nodes before processing", async () => {

@@ -14,7 +14,7 @@
   - `wp plugin list`: Displays installed WordPress plugins.
 - **WordPress Conventions & Safety**:
   - Top-level `categories` and `tags` frontmatter fields contain optional WordPress term slugs. NotoPress resolves existing terms to IDs and creates missing terms during live sync; dry runs remain read-only and report missing terms.
-  - Keep WordPress HTML/Gutenberg block conversion logic centralized in `src/lib/wordpress-blocks.ts` and `scripts/lib/wordpress.ts`.
+  - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
   - Publisher planning is read-only. `--expect-plan` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin. `--expect-wp-plan` validates only the WordPress section for compatibility.

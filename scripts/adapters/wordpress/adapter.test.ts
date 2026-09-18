@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Site } from '../../src/domain/registry';
+import type { Site } from '../../../src/domain/registry';
 import {
   createWordPressPublisherAdapters,
   hasWordPressPublisher,
   LEGACY_WORDPRESS_PUBLISHER_ID,
-} from './wordpress-publisher-adapter';
+} from './adapter';
 
 describe('WordPress publisher adapter configuration', () => {
   it('preserves the legacy site.wordpress configuration', () => {

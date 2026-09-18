@@ -1,12 +1,12 @@
-import type { VaultRootIndex } from '../../src/lib/vault';
-import type { ContentSnapshot } from './content-snapshot';
+import type { VaultRootIndex } from '../../../src/lib/vault';
+import type { ContentSnapshot } from '../content/content-snapshot';
 import {
   createOperationPlan,
   formatOperationPlan,
   type OperationPlan,
 } from './operation-plan';
 import type { PreparedPublisher } from './publisher';
-import type { RenderedContentArtifact } from './rendered-content';
+import type { RenderedContentArtifact } from '../content/rendered-content';
 
 type CoreBuildOperation = {
   deleteRemoteFiles: boolean;

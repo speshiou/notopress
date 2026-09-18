@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdownContent } from "./markdown";
-import { serializeHtmlToWordPressBlocks } from "./wordpress-blocks";
+import { renderMarkdownContent } from "../../../src/lib/markdown";
+import { serializeHtmlToWordPressBlocks } from "./blocks";
 
 describe("serializeHtmlToWordPressBlocks", () => {
   it("serializes top-level HTML into separate Gutenberg blocks", () => {

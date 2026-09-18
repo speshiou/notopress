@@ -1,5 +1,5 @@
-import { WordPressCredentialsSchema, type PublisherDefinition, type Site } from '../../src/domain/registry';
-import type { PublisherAdapter } from './publisher';
+import { WordPressCredentialsSchema, type PublisherDefinition, type Site } from '../../../src/domain/registry';
+import type { PublisherAdapter } from '../../core/publishing/publisher';
 import { prepareWordPressPublisher } from './wordpress';
 
 export const WORDPRESS_PUBLISHER_TYPE = 'wordpress';

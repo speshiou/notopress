@@ -1,7 +1,7 @@
 import { assertOperationPlanFingerprint, type OperationPlan } from './operation-plan';
-import type { Registry, Site } from '../../src/domain/registry';
-import type { VaultDirectoryIndex, VaultRootIndex } from '../../src/lib/vault';
-import type { ContentSnapshot } from './content-snapshot';
+import type { Registry, Site } from '../../../src/domain/registry';
+import type { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
+import type { ContentSnapshot } from '../content/content-snapshot';
 
 export type PreparedPublisher<TOperation> = {
   id: string;
