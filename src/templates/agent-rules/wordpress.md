@@ -1,12 +1,12 @@
 # Publisher Adapter & WordPress Commands
 - **Publish Commands**:
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id>`: Syncs the native site and publishes changed content through the selected adapter.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2>`: Publishes specific full vault slugs.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2> --dry-run`: Previews the native and publisher plans without mutations.
-  - `npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id> --only <slug1,slug2> --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
+  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> --site {{siteId}}`: Syncs the native site and publishes changed content through the selected adapter.
+  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}}`: Publishes specific full vault slugs.
+  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}} --dry-run`: Previews the native and publisher plans without mutations.
+  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
 - **Import and State Commands**:
-  - `npm --prefix {{notopressPath}} run import -- --site {{siteId}} --publisher <publisher-id> --resource <slug-or-id>`: Imports one remote resource through the adapter.
-  - `npm --prefix {{notopressPath}} run initialize-publisher-state -- --site {{siteId}} --publisher <publisher-id>`: Initializes the adapter-owned sync state without publishing.
+  - `npm --prefix {{notopressPath}} run import -- <publisher-id> <slug-or-id> --site {{siteId}}`: Imports one remote resource through the adapter.
+  - `npm --prefix {{notopressPath}} run publisher:init -- <publisher-id> --site {{siteId}}`: Initializes the adapter-owned sync state without publishing.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.

@@ -1,7 +1,7 @@
 import { select } from '@inquirer/prompts';
 import type { Registry, Site } from '../../src/domain/registry';
 import { createConfiguredPublisherAdapters } from '../adapters/catalog';
-import type { CliCommand, SyncCommand } from '../cli/command';
+import type { OperationalCommand, PublishCommand, SyncCommand } from '../cli/command';
 import {
   createCoreBuildPlan,
   createPublicationPlan,
@@ -24,7 +24,7 @@ async function selectSite({
   command,
 }: {
   registry: Registry;
-  command: CliCommand;
+  command: OperationalCommand;
 }): Promise<Site> {
   if (registry.sites.length === 0) throw new Error('No sites are configured in registry.json.');
 
@@ -40,7 +40,7 @@ async function selectSite({
   if (!site) throw new Error(`Site "${selectedSiteId}" was not found in registry.json.`);
   if (command.kind === 'configure') return site;
   if (!(await exists(site.vaultPath))) throw new Error(`The local vaultPath does not exist: ${site.vaultPath}`);
-  if ((command.kind === 'sync' || command.kind === 'deploy') && !site.bucketName) {
+  if ((command.kind === 'sync' || command.kind === 'deploy' || command.kind === 'publish') && !site.bucketName) {
     throw new Error(`"bucketName" is not configured for site [${site.siteId}].`);
   }
   return site;
@@ -51,7 +51,7 @@ function publisherRegistryFor(site: Site) {
 }
 
 async function runImport({ command, site, registry }: {
-  command: Extract<CliCommand, { kind: 'import' }>;
+  command: Extract<OperationalCommand, { kind: 'import' }>;
   site: Site;
   registry: Registry;
 }): Promise<void> {
@@ -68,7 +68,7 @@ async function runImport({ command, site, registry }: {
 }
 
 async function runStateInitialization({ command, site, registry }: {
-  command: Extract<CliCommand, { kind: 'initialize-publisher-state' }>;
+  command: Extract<OperationalCommand, { kind: 'initialize-publisher-state' }>;
   site: Site;
   registry: Registry;
 }): Promise<void> {
@@ -87,15 +87,16 @@ async function runStateInitialization({ command, site, registry }: {
   });
 }
 
-async function runSync({ command, site, registry }: {
-  command: SyncCommand;
+async function runPublication({ command, site, registry }: {
+  command: SyncCommand | PublishCommand;
   site: Site;
   registry: Registry;
 }): Promise<void> {
   const build = await buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose });
   const publisherRegistry = publisherRegistryFor(site);
   const preparedPublishers: PreparedPublisher<unknown>[] = [];
-  for (const publisherId of command.publisherIds) {
+  const publisherIds = command.kind === 'publish' ? [command.publisherId] : [];
+  for (const publisherId of publisherIds) {
     const adapter = publisherRegistry.get({ id: publisherId });
     const prepared = await adapter.preparePublication({
       site,
@@ -103,8 +104,8 @@ async function runSync({ command, site, registry }: {
       allIndices: build.allIndices,
       contentSnapshot: build.contentSnapshot,
       rootIndex: build.vaultRootIndex,
-      targetSlugs: command.targetSlugs ? [...command.targetSlugs] : undefined,
-      force: command.force,
+      targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
+      force: command.kind === 'publish' && command.force,
       dryRun: command.dryRun,
     });
     if (prepared) preparedPublishers.push(prepared);
@@ -121,9 +122,9 @@ async function runSync({ command, site, registry }: {
   assertOperationPlanFingerprint({
     label: 'NotoPress publication',
     plan: publicationPlan,
-    expectedFingerprint: command.expectedPlanFingerprint,
+    expectedFingerprint: command.kind === 'publish' ? command.expectedPlanFingerprint : undefined,
   });
-  if (command.expectedPlanFingerprint) {
+  if (command.kind === 'publish' && command.expectedPlanFingerprint) {
     console.log(`✅ NotoPress publication plan fingerprint matched: ${publicationPlan.fingerprint}`);
   }
 
@@ -144,11 +145,13 @@ async function runSync({ command, site, registry }: {
     console.log('\n✅ Dry run completed successfully!');
     return;
   }
-  console.log('\n✅ Sync and registry upload successfully completed!');
+  console.log(command.kind === 'publish'
+    ? '\n✅ Native sync and publisher apply completed successfully!'
+    : '\n✅ Sync and registry upload successfully completed!');
   if (command.kind === 'deploy') await deployApplication({ site, registry });
 }
 
-export async function runCommand({ command, registry }: { command: CliCommand; registry: Registry }): Promise<void> {
+export async function runCommand({ command, registry }: { command: OperationalCommand; registry: Registry }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
   if (command.kind === 'configure') {
@@ -163,5 +166,5 @@ export async function runCommand({ command, registry }: { command: CliCommand; r
     await runStateInitialization({ command, site, registry });
     return;
   }
-  await runSync({ command, site, registry });
+  await runPublication({ command, site, registry });
 }

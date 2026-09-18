@@ -51,7 +51,7 @@ Edit `registry.json`, then point `vaultPath` at a local vault:
 Configure the local Next.js runtime for that site and start development:
 
 ```bash
-npm run configure -- --site example-blog
+npm run configure -- example-blog
 npm run dev
 ```
 
@@ -128,13 +128,13 @@ With this rule, `content/guides/first-guide.md` is served at `/first-guide`. Rew
 Always preview a meaningful change first:
 
 ```bash
-npm run sync -- --site example-blog --dry-run
+npm run sync -- example-blog --dry-run
 ```
 
 Run the live sync after reviewing the generated files, warnings, storage operations, and publication fingerprint:
 
 ```bash
-npm run sync -- --site example-blog
+npm run sync -- example-blog
 ```
 
 Sync generates indices, rendered HTML, sitemaps, and image variants before uploading the vault under the site's `siteId` prefix. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output is concise; `--verbose` enables per-file diagnostics.
@@ -142,7 +142,7 @@ Sync generates indices, rendered HTML, sitemaps, and image variants before uploa
 To sync content and deploy the Next.js runtime to Vercel in one workflow:
 
 ```bash
-npm run deploy -- --site example-blog
+npm run deploy -- example-blog
 ```
 
 Use `--registry <path>` to select another registry. The `REGISTRY_PATH` environment variable provides the same override.
@@ -169,23 +169,23 @@ Publishers are named in the site configuration. WordPress is currently the built
 
 The deprecated top-level `wordpress` configuration remains readable as publisher ID `wordpress`, but new configurations should use `publishers`.
 
-Select an adapter with `--publisher`. Use the full vault slug with `--only`, even when a NotoPress rewrite changes the public URL:
+The publisher and source documents are command operands. Use full vault slugs, even when a NotoPress rewrite changes the public URL:
 
 ```bash
-npm run sync -- \
+npm run publish -- \
+  wordpress-main \
+  guides/first-guide \
   --site example-blog \
-  --publisher wordpress-main \
-  --only guides/first-guide \
   --dry-run
 ```
 
 The dry-run prints one composite fingerprint for the core build and all selected publisher plans. Pass that fingerprint to the corresponding live run:
 
 ```bash
-npm run sync -- \
+npm run publish -- \
+  wordpress-main \
+  guides/first-guide \
   --site example-blog \
-  --publisher wordpress-main \
-  --only guides/first-guide \
   --expect <reviewed-fingerprint>
 ```
 
@@ -195,13 +195,13 @@ Adapters may also provide import and state-initialization capabilities:
 
 ```bash
 npm run import -- \
-  --site example-blog \
-  --publisher wordpress-main \
-  --resource first-guide
+  wordpress-main \
+  first-guide \
+  --site example-blog
 
-npm run initialize-publisher-state -- \
-  --site example-blog \
-  --publisher wordpress-main
+npm run publisher:init -- \
+  wordpress-main \
+  --site example-blog
 ```
 
 ## Generated artifacts

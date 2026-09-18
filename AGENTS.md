@@ -36,10 +36,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Publisher Adapters & WordPress
 - **Publisher Commands**:
-  - `notopress sync --site <site-id> --publisher <publisher-id>`: Syncs the native site and publishes through a configured adapter.
-  - `notopress sync --site <site-id> --publisher <publisher-id> --only <slug1,slug2>`: Publishes specific full vault slugs.
-  - `notopress import --site <site-id> --publisher <publisher-id> --resource <slug-or-id>`: Imports one remote resource through an adapter that supports imports.
-  - `notopress initialize-publisher-state --site <site-id> --publisher <publisher-id>`: Initializes state through an adapter that supports it.
+  - `notopress publish <publisher-id> [slug...] --site <site-id>`: Syncs the native site and publishes through a configured adapter. Slugs are optional full vault slugs.
+  - `notopress import <publisher-id> <slug-or-id> --site <site-id>`: Imports one remote resource through an adapter that supports imports.
+  - `notopress publisher init <publisher-id> --site <site-id>`: Initializes state through an adapter that supports it.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.

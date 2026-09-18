@@ -13,8 +13,9 @@
     "sync": "tsx --env-file=.env scripts/cli/main.ts sync",
     "deploy": "tsx --env-file=.env scripts/cli/main.ts deploy",
     "configure": "tsx --env-file=.env scripts/cli/main.ts configure",
+    "publish": "tsx --env-file=.env scripts/cli/main.ts publish",
     "import": "tsx --env-file=.env scripts/cli/main.ts import",
-    "initialize-publisher-state": "tsx --env-file=.env scripts/cli/main.ts initialize-publisher-state",
+    "publisher:init": "tsx --env-file=.env scripts/cli/main.ts publisher init",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },

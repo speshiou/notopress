@@ -28,9 +28,9 @@ In Markdown tables, escape the alias separator in Obsidian wikilinks: \`[[note-s
 
 const MOCK_WORDPRESS_TEMPLATE = `# Publisher Adapter & WordPress Commands
 - **Publish Commands**:
-  - \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}} --publisher <publisher-id>\`: Syncs the native site and publishes through the selected adapter.
+  - \`npm --prefix {{notopressPath}} run publish -- <publisher-id> --site {{siteId}}\`: Syncs the native site and publishes through the selected adapter.
 - **Import Commands**:
-  - \`npm --prefix {{notopressPath}} run import -- --site {{siteId}} --publisher <publisher-id> --resource <slug-or-id>\`: Imports one remote resource through the adapter.
+  - \`npm --prefix {{notopressPath}} run import -- <publisher-id> <slug-or-id> --site {{siteId}}\`: Imports one remote resource through the adapter.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - \`wp post list --post_type=post\`: Lists published WordPress posts.
   - \`wp cache flush\`: Clears WordPress object cache.
@@ -112,7 +112,7 @@ describe('createAgentRulesWriter', () => {
 
     expect(writes['vault/AGENTS.md']).toContain('Publisher Adapter & WordPress Commands');
     expect(writes['vault/AGENTS.md']).toContain('NotoPress resolves existing terms to IDs and creates missing terms during live sync');
-    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run sync -- --site my-tech-blog --publisher <publisher-id>');
+    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run publish -- <publisher-id> --site my-tech-blog');
     expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
     expect(writes['vault/AGENTS.md']).not.toContain('{{notopressPath}}');
   });
