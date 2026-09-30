@@ -26,11 +26,14 @@ For captions, use a single italic paragraph immediately after the media or table
 
 In Markdown tables, escape the alias separator in Obsidian wikilinks: \`[[note-slug\\|Display label]]\`. An unescaped \`|\` is treated as a new table column and breaks the table. Outside tables, normal aliased wikilinks (\`[[note-slug|Display label]]\`) are fine. Keep wikilinks in vault source instead of rewriting them to standard Markdown links. Notopress sync warns when it finds unescaped table wikilinks.`;
 
+const MOCK_NATIVE_TEMPLATE = `# Notopress Commands
+- \`npm --prefix {{notopressPath}} run sync -- --site {{siteId}}\`: Builds and uploads the native site.`;
+
 const MOCK_WORDPRESS_TEMPLATE = `# Publisher Adapter & WordPress Commands
 - **Publish Commands**:
-  - \`npm --prefix {{notopressPath}} run publish -- <publisher-id> --site {{siteId}}\`: Syncs the native site and publishes through the selected adapter.
+  - \`npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}\`: Syncs the native site and publishes through the selected adapter.
 - **Import Commands**:
-  - \`npm --prefix {{notopressPath}} run import -- <publisher-id> <slug-or-id> --site {{siteId}}\`: Imports one remote resource through the adapter.
+  - \`npm --prefix {{notopressPath}} run import -- wordpress <slug-or-id> --site {{siteId}}\`: Imports one remote resource through the adapter.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - \`wp post list --post_type=post\`: Lists published WordPress posts.
   - \`wp cache flush\`: Clears WordPress object cache.
@@ -55,6 +58,7 @@ describe('createAgentRulesWriter', () => {
   } = {}) {
     const readTemplate = vi.fn(async (moduleName: RuleModule) => {
       if (moduleName === 'base') return MOCK_BASE_TEMPLATE;
+      if (moduleName === 'native') return MOCK_NATIVE_TEMPLATE;
       if (moduleName === 'wordpress') return MOCK_WORDPRESS_TEMPLATE;
       return '';
     });
@@ -73,7 +77,7 @@ describe('createAgentRulesWriter', () => {
 
   it('creates base vault AGENTS.md rules when missing and WordPress is disabled', async () => {
     const writes: Record<string, string> = {};
-    const { writer } = makeMockWriter({
+    const { writer, readTemplate } = makeMockWriter({
       writeFile: vi.fn(async (filePath: string, content: string) => {
         writes[filePath] = content;
       }),
@@ -91,12 +95,15 @@ describe('createAgentRulesWriter', () => {
     expect(writes['vault/AGENTS.md']).toContain('Keep wikilinks in vault source');
     expect(writes['vault/AGENTS.md']).toContain('Notopress sync warns');
     expect(writes['vault/AGENTS.md']).not.toContain('Publisher Adapter & WordPress Commands');
+    expect(writes['vault/AGENTS.md']).toContain('run sync -- --site <site-id>');
+    expect(readTemplate).toHaveBeenCalledWith('native');
+    expect(readTemplate).not.toHaveBeenCalledWith('wordpress');
     expect(writes['vault/AGENTS.md'].endsWith('\n')).toBe(true);
   });
 
   it('includes WordPress section with dynamic siteId substitution when isWordPressEnabled is true', async () => {
     const writes: Record<string, string> = {};
-    const { writer } = makeMockWriter({
+    const { writer, readTemplate } = makeMockWriter({
       writeFile: vi.fn(async (filePath: string, content: string) => {
         writes[filePath] = content;
       }),
@@ -112,7 +119,10 @@ describe('createAgentRulesWriter', () => {
 
     expect(writes['vault/AGENTS.md']).toContain('Publisher Adapter & WordPress Commands');
     expect(writes['vault/AGENTS.md']).toContain('NotoPress resolves existing terms to IDs and creates missing terms during live sync');
-    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run publish -- <publisher-id> --site my-tech-blog');
+    expect(writes['vault/AGENTS.md']).toContain('npm --prefix /path/to/notopress run publish -- wordpress --site my-tech-blog');
+    expect(writes['vault/AGENTS.md']).not.toContain('run sync');
+    expect(readTemplate).toHaveBeenCalledWith('wordpress');
+    expect(readTemplate).not.toHaveBeenCalledWith('native');
     expect(writes['vault/AGENTS.md']).not.toContain('{{siteId}}');
     expect(writes['vault/AGENTS.md']).not.toContain('{{notopressPath}}');
   });
@@ -180,6 +190,8 @@ describe('createAgentRulesWriter', () => {
     const existingContent = [
       '<!-- BEGIN:notopress-vault-agent-rules -->',
       MOCK_BASE_TEMPLATE,
+      '',
+      MOCK_NATIVE_TEMPLATE.replace('{{notopressPath}}', '/path/to/notopress').replace('{{siteId}}', '<site-id>'),
       '<!-- END:notopress-vault-agent-rules -->',
       '',
     ].join('\n');
@@ -190,7 +202,7 @@ describe('createAgentRulesWriter', () => {
       writeFile,
     });
 
-    await writer.ensureVaultAgentRules({ vaultPath: 'vault', dryRun: false });
+    await writer.ensureVaultAgentRules({ vaultPath: 'vault', notopressPath: '/path/to/notopress', dryRun: false });
 
     expect(writeFile).not.toHaveBeenCalled();
   });

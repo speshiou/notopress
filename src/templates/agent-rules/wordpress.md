@@ -1,12 +1,12 @@
 # Publisher Adapter & WordPress Commands
 - **Publish Commands**:
-  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> --site {{siteId}}`: Syncs the native site and publishes changed content through the selected adapter.
-  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}}`: Publishes specific full vault slugs.
-  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}} --dry-run`: Previews the native and publisher plans without mutations.
-  - `npm --prefix {{notopressPath}} run publish -- <publisher-id> <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}`: Syncs the native site and publishes changed content through the selected adapter.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}}`: Publishes specific full vault slugs.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --dry-run`: Previews the native and publisher plans without mutations.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
 - **Import and State Commands**:
-  - `npm --prefix {{notopressPath}} run import -- <publisher-id> <slug-or-id> --site {{siteId}}`: Imports one remote resource through the adapter.
-  - `npm --prefix {{notopressPath}} run publisher:init -- <publisher-id> --site {{siteId}}`: Marks current locally rendered payloads as synced without publishing or verifying remote content. Use it only when deliberately adopting or resetting the remote baseline.
+  - `npm --prefix {{notopressPath}} run import -- wordpress <slug-or-id> --site {{siteId}}`: Imports one remote resource through the adapter.
+  - `npm --prefix {{notopressPath}} run publisher:init -- wordpress --site {{siteId}}`: Marks current locally rendered payloads as synced without publishing or verifying remote content. Use it only when deliberately adopting or resetting the remote baseline.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
   - `wp post list --post_type=post`: Lists published WordPress posts.
   - `wp cache flush`: Clears WordPress object cache.
@@ -15,5 +15,6 @@
   - Top-level `categories` and `tags` frontmatter fields contain optional WordPress term slugs. NotoPress resolves existing terms to IDs and creates missing terms during live sync; dry runs remain read-only and report missing terms.
   - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
-  - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
+  - Use targeted full vault slugs and review `--dry-run` before applying WordPress changes.
+  - Confirm the public page and expected content before reporting it live; storage upload success alone does not confirm WordPress publication.
   - Publisher planning is read-only. `--expect` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin.

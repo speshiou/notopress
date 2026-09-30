@@ -4,7 +4,7 @@ import { exists } from '../core/files';
 
 type Logger = Pick<typeof console, 'log'>;
 
-export type RuleModule = 'base' | 'wordpress';
+export type RuleModule = 'base' | 'native' | 'wordpress';
 
 export type AgentRulesDeps = {
   exists: (path: string) => Promise<boolean>;
@@ -21,12 +21,14 @@ const END_MARKER = '<!-- END:notopress-vault-agent-rules -->';
 
 export function renderManagedBlock({
   baseTemplate,
+  nativeTemplate,
   wordpressTemplate,
   siteId,
   notopressPath,
   isWordPressEnabled,
 }: {
   baseTemplate: string;
+  nativeTemplate?: string;
   wordpressTemplate?: string;
   siteId?: string;
   notopressPath?: string;
@@ -36,6 +38,8 @@ export function renderManagedBlock({
 
   if (isWordPressEnabled && wordpressTemplate) {
     blocks.push(wordpressTemplate.trim());
+  } else if (!isWordPressEnabled && nativeTemplate) {
+    blocks.push(nativeTemplate.trim());
   }
 
   const rawContent = blocks.join('\n\n');
@@ -108,11 +112,12 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
       dryRun: boolean;
     }): Promise<void> {
       const baseTemplate = await deps.readTemplate('base');
-      const wordpressTemplate = isWordPressEnabled ? await deps.readTemplate('wordpress') : undefined;
+      const commandTemplate = await deps.readTemplate(isWordPressEnabled ? 'wordpress' : 'native');
 
       const managedBlock = renderManagedBlock({
         baseTemplate,
-        wordpressTemplate,
+        nativeTemplate: isWordPressEnabled ? undefined : commandTemplate,
+        wordpressTemplate: isWordPressEnabled ? commandTemplate : undefined,
         siteId,
         notopressPath,
         isWordPressEnabled,
@@ -143,7 +148,7 @@ const defaultAgentRulesWriter = createAgentRulesWriter({
   readFile,
   writeFile,
   readTemplate: async (moduleName: RuleModule) => {
-    const templateFileName = moduleName === 'base' ? 'vault-base.md' : 'wordpress.md';
+    const templateFileName = moduleName === 'base' ? 'vault-base.md' : `${moduleName}.md`;
     const templatePath = path.join(process.cwd(), 'src', 'templates', 'agent-rules', templateFileName);
     return readFile(templatePath, 'utf-8');
   },
