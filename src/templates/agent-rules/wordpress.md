@@ -1,6 +1,10 @@
 # Publisher Adapter & WordPress Commands
+- **Command scope**:
+  - For a WordPress site, a request to publish or push the whole site means `publish wordpress` without slugs. Use full vault slugs when the user requests a specific article.
+  - `sync` uploads native NotoPress files only. It does not create or update WordPress posts, even when WordPress is configured. Use it only when native-only synchronization is intended.
+  - Every `publish` command also synchronizes the entire native site. Article slugs limit the WordPress selection, not the native upload. Review both parts of the plan.
 - **Publish Commands**:
-  - `npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}`: Syncs the native site and publishes changed content through the selected adapter.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}`: Synchronizes the entire native site and pushes changed content site-wide to WordPress.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}}`: Publishes specific full vault slugs.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --dry-run`: Previews the native and publisher plans without mutations.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.
@@ -15,6 +19,7 @@
   - Top-level `categories` and `tags` frontmatter fields contain optional WordPress term slugs. NotoPress resolves existing terms to IDs and creates missing terms during live sync; dry runs remain read-only and report missing terms.
   - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
-  - Use targeted full vault slugs and review `--dry-run` before applying WordPress changes.
+  - Match the requested scope: use full vault slugs for article publication, or omit slugs for a requested site-wide push. Run the corresponding `--dry-run`, then keep the publisher, site, slugs, and flags unchanged and pass its composite fingerprint with `--expect`.
+  - A requested site-wide push includes authorization for its required site-wide dry run. Avoid all-post remote checks merely for verification and do not add `--force` unless requested. Prefer local checks for unrelated verification.
   - Confirm the public page and expected content before reporting it live; storage upload success alone does not confirm WordPress publication.
   - Publisher planning is read-only. `--expect` validates the composite NotoPress build and all selected publishers before native storage sync or WordPress mutations begin.

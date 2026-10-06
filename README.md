@@ -137,6 +137,8 @@ Run the live sync after reviewing the generated files, warnings, storage operati
 npm run sync -- example-blog
 ```
 
+`sync` uploads native NotoPress files only, including for sites with WordPress configured. It does not create or update WordPress posts. For a WordPress site-wide push, use `publish <publisher> --site <site-id>` without slugs, first with `--dry-run` and then with the reviewed `--expect` fingerprint.
+
 Sync generates indices, rendered HTML, sitemaps, and image variants before uploading the vault under the site's `siteId` prefix. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output is concise; `--verbose` enables per-file diagnostics.
 
 To sync content and deploy the Next.js runtime to Vercel in one workflow:
@@ -189,7 +191,7 @@ npm run publish -- \
   --expect <reviewed-fingerprint>
 ```
 
-If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. Avoid unbounded WordPress planning merely for verification.
+If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. A requested site-wide push requires a site-wide dry run. Avoid unbounded WordPress planning merely for verification. Target slugs limit adapter publication only: the native site upload remains site-wide.
 
 Adapters may also provide import and state-initialization capabilities:
 

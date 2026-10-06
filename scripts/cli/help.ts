@@ -2,6 +2,8 @@ const COMMAND_HELP: Record<string, string> = {
   sync: `Usage: notopress sync [site] [options]
 
 Build and synchronize the native NotoPress site.
+Configured publishing adapters are not applied.
+To publish through an adapter, use "notopress publish <publisher> --site <id>".
 
 Options:
   --dry-run          Preview generated and remote changes
@@ -22,7 +24,8 @@ Options:
   publish: `Usage: notopress publish <publisher> [slug...] [options]
 
 Synchronize the native site and publish through one configured adapter.
-Slugs are full vault slugs. Omit them to publish every changed document.
+Slugs are full vault slugs. Omit them for a site-wide push of changed documents.
+The native site is synchronized in full even when adapter slugs are specified.
 
 Options:
   --site, -s <id>    Select a site
