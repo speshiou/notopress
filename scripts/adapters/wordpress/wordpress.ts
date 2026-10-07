@@ -1,4 +1,6 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import * as importIo from 'fs/promises';
+import { readFile } from 'fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'fs';
 import path from 'path';
 import { z } from 'zod';
@@ -8,12 +10,10 @@ import { VaultDirectoryIndex, VaultRootIndex, VaultRootIndexSchema } from '../..
 import { renderMarkdownContent } from '../../../src/lib/markdown';
 import { serializeHtmlToWordPressBlocks } from './blocks';
 import { normalizeThumbnailSizes } from '../../../src/lib/responsive-images';
-import { formatMarkdownImageDestination, safelyDecodeUriComponent } from '../../../src/lib/local-images';
+import { formatMarkdownImageDestination } from '../../../src/lib/local-images';
 import { type NoteReferenceInput } from '../../../src/lib/note-links';
 import {
-  getContentImageFolder,
   hyphenateSlug,
-  listVaultFullSlugCandidates,
   applyRewrites,
 } from '../../../src/lib/rewrites';
 import { collectNoteReferencesForLocalMarkdown, collectPrivateNoteIncludes } from '../../core/content/note-includes';
@@ -25,18 +25,24 @@ import {
 } from './taxonomies';
 
 
-import { computeContentHash, loadSyncState, saveSyncState } from '../../core/state/sync-state';
+import { computeContentHash, loadSyncState, saveSyncState, SYNC_STATE_FILENAME } from '../../core/state/sync-state';
 import {
   getWordPressPublicationStateFromObject,
   setWordPressPublicationStateEntry,
   type WordPressPublicationStateEntry,
-  updateWordPressPublicationState,
 } from './publication-state';
 import {
   computeWordPressPayloadHash,
   createWordPressPublishPayload,
 } from './publish-payload';
 import { computeWordPressPublicationInputHash } from './publication-input';
+import { scanContentAssetFiles, scanPublicFiles } from '../../core/files';
+import { createWordPressAssetImporter, DEFAULT_WORDPRESS_ASSET_FOLDER, isWordPressImportImage, getWordPressAssetScope, getWordPressAssetKey, WordPressAssetStateSchema, WORDPRESS_ASSET_STATE_SECTION } from './import-assets';
+import { getWordPressEndpoint } from './configuration';
+import { createWordPressOriginalFetcher } from './import-original';
+import { createWordPressImportPlan, createWordPressImportApplier } from './import-plan';
+import { createWordPressImportStorage } from './import-storage';
+import { createWordPressImportTargetResolver, getImportedImageMarkdownPath } from './import-target';
 import { findWordPressPostIds, getWordPressPostId } from './remote-posts';
 import {
   createWordPressPublishPlan,
@@ -224,7 +230,7 @@ export async function prepareWordPressPublication({
     throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
   }
 
-  const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
+  const endpoint = getWordPressEndpoint({ site });
   const sizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
   const imageHost = site.imageHost || registry.imageHost;
 
@@ -784,135 +790,37 @@ export function decodeHtmlEntities(str: string): string {
     });
 }
 
+function hashAsset(value: string | Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 export function resolveAndCollectImagePath(
   src: string,
   site: Site,
   registry: Registry,
-  slug = '',
   collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
 ): string {
-  // If it's a relative path already, just return it without leading slash
-  if (src.startsWith('/') && !src.startsWith('//') && !src.includes('/api/vault-public/') && !src.includes('_thumbnails/')) {
-    return src.replace(/^\//, '');
-  }
-
-  let tempPath = src;
-  const originalUrl = src;
-
-  // Check if it is an external URL
-  if (tempPath.startsWith('http://') || tempPath.startsWith('https://')) {
-    try {
-      const urlObj = new URL(tempPath);
-      tempPath = urlObj.pathname;
-    } catch {
-      // Keep the original path when the URL cannot be parsed.
+  const importer = createWordPressAssetImporter({
+    vaultPath: site.vaultPath,
+    siteId: site.siteId,
+    imageHost: site.imageHost || registry.imageHost,
+    folder: site.wordpress?.assetFolder,
+    scope: getWordPressAssetScope({ endpoint: getWordPressEndpoint({ site }), hash: hashAsset }),
+    state: {},
+    exists: existsSync,
+    read: (file) => readFile(file),
+    list: async () => [],
+    hash: hashAsset,
+    fetchOriginal: async () => { throw new Error('Image download requires a prepared WordPress import.'); },
+  });
+  const result = importer.resolve({ src });
+  for (const reference of importer.references()) {
+    const localPath = path.join(site.vaultPath, reference.root, reference.path);
+    if (!existsSync(localPath) && collectedImages && !collectedImages.some((image) => image.localPath === localPath)) {
+      collectedImages.push({ remoteUrl: reference.source, tryHighResUrl: reference.originalUrls[0] || reference.source, localPath });
     }
   }
-
-  // Remove leading slash
-  tempPath = tempPath.replace(/^\//, '');
-
-  // Strip query parameters and hash from tempPath
-  const questionMarkIndex = tempPath.indexOf('?');
-  if (questionMarkIndex !== -1) {
-    tempPath = tempPath.substring(0, questionMarkIndex);
-  }
-  const hashIndex = tempPath.indexOf('#');
-  if (hashIndex !== -1) {
-    tempPath = tempPath.substring(0, hashIndex);
-  }
-
-  // If it goes through api/vault-public
-  if (tempPath.startsWith('api/vault-public/')) {
-    tempPath = tempPath.substring('api/vault-public/'.length);
-  }
-
-  // If it has siteId prefix (e.g. test-blog/content/...)
-  const siteIdPrefix = `${site.siteId}/`;
-  if (tempPath.startsWith(siteIdPrefix)) {
-    tempPath = tempPath.substring(siteIdPrefix.length);
-    if (tempPath.startsWith('content/')) {
-      tempPath = tempPath.substring('content/'.length);
-    } else if (tempPath.startsWith('public/')) {
-      tempPath = tempPath.substring('public/'.length);
-    }
-  }
-
-  // Extract filename
-  const filename = tempPath.split('/').pop() || '';
-  if (!filename) return src;
-
-  // Extract base name and extension to find original files
-  const ext = path.extname(filename);
-  const baseName = path.basename(filename, ext);
-  const cleanBaseName = baseName.replace(/-(\d+x\d+|\d+)$/, '');
-  const decodedBaseName = safelyDecodeUriComponent({ value: cleanBaseName });
-  const finalFilename = `${decodedBaseName}${ext}`;
-
-  // Check if the file already exists locally
-  const dir = path.dirname(tempPath);
-  const candidateFolders = slug
-    ? [slug]
-    : ['attachments', 'images', dir !== '.' ? dir : '', ''];
-  const extensions = [ext, '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'];
-
-  for (const folder of candidateFolders) {
-    for (const curExt of extensions) {
-      const checkFilename = `${decodedBaseName}${curExt}`;
-      const relPath = folder ? `${folder}/${checkFilename}` : checkFilename;
-
-      const publicPath = path.join(site.vaultPath, 'public', relPath);
-      const contentPath = path.join(site.vaultPath, 'content', relPath);
-
-      if (existsSync(publicPath)) {
-        return relPath;
-      }
-      if (existsSync(contentPath)) {
-        return relPath;
-      }
-    }
-  }
-
-  // If it contains _thumbnails, extract path
-  const thumbIndex = tempPath.indexOf('_thumbnails/');
-  if (thumbIndex !== -1) {
-    tempPath = tempPath.substring(thumbIndex + '_thumbnails/'.length);
-    const match = tempPath.match(/(.+)-\d+\.webp$/);
-    const encodedPathWithoutThumbExt = match ? match[1] : tempPath.replace(/\.[^/.]+$/, "");
-    const pathWithoutThumbExt = safelyDecodeUriComponent({ value: encodedPathWithoutThumbExt });
-
-    for (const curExt of extensions) {
-      const publicPath = path.join(site.vaultPath, 'public', `${pathWithoutThumbExt}${curExt}`);
-      const contentPath = path.join(site.vaultPath, 'content', `${pathWithoutThumbExt}${curExt}`);
-      if (existsSync(publicPath)) {
-        return `${pathWithoutThumbExt}${curExt}`;
-      }
-      if (existsSync(contentPath)) {
-        return `${pathWithoutThumbExt}${curExt}`;
-      }
-    }
-  }
-
-  // If not found locally, we queue it for download
-  const targetLocalPath = slug ? `${slug}/${finalFilename}` : `attachments/${finalFilename}`;
-  const targetFullPath = path.join(site.vaultPath, 'content', targetLocalPath);
-
-  if (collectedImages) {
-    let tryHighResUrl = originalUrl;
-    if (originalUrl.includes(filename)) {
-      tryHighResUrl = originalUrl.replace(filename, finalFilename);
-    }
-    const isAlreadyCollected = collectedImages.some((image) => image.localPath === targetFullPath);
-    if (!isAlreadyCollected) {
-      collectedImages.push({
-        remoteUrl: originalUrl,
-        tryHighResUrl,
-        localPath: targetFullPath,
-      });
-    }
-  }
-
-  return targetLocalPath;
+  return result;
 }
 
 export function restoreLocalImagePath(src: string, site: Site, registry: Registry): string {
@@ -924,8 +832,12 @@ export function htmlToMarkdown(
   site: Site,
   registry: Registry,
   slug = '',
-  collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[]
+  collectedImages?: { remoteUrl: string; tryHighResUrl: string; localPath: string }[],
+  imageResolver?: Pick<ReturnType<typeof createWordPressAssetImporter>, 'resolve' | 'isHosted'>
 ): string {
+  // Retain the positional argument for existing callers; publisher configuration
+  // now owns asset placement instead of the article slug.
+  void slug;
   // Strip script tags, standard HTML comments, and core Gutenberg block comments (e.g. wp:paragraph)
   // while preserving custom/namespaced Gutenberg block comments (e.g. wp:namespace/example-block)
   const coreBlocksPattern = '(?:paragraph|heading|image|list|quote|table|code|html|freeform)\\b';
@@ -1030,10 +942,14 @@ export function htmlToMarkdown(
       const image = findNodeByType(node, 'img');
       if (image) {
         const src = image.attributes['src'] || '';
-        const alt = image.attributes['alt'] || '';
+        const alt = decodeHtmlEntities(image.attributes['alt'] || '');
         const figcaption = findNodeByType(node, 'figcaption');
-        const captionMarkdown = figcaption ? `\n\n*${render(figcaption, listDepth).trim()}*` : '';
-        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
+        const caption = figcaption ? render(figcaption, listDepth).trim() : '';
+        const localSrc = imageResolver ? imageResolver.resolve({ src }) : resolveAndCollectImagePath(src, site, registry, collectedImages);
+        // NotoPress generates a default caption from alt text. Reimporting that
+        // caption as separate source text would expand an unchanged round trip.
+        const generatedCaption = caption === decodeHtmlEntities(alt) && imageResolver?.isHosted({ src });
+        const captionMarkdown = caption && !generatedCaption ? `\n\n*${caption}*` : '';
         return `\n\n![${alt}](${formatMarkdownImageDestination({ src: localSrc })})${captionMarkdown}\n\n`;
       }
 
@@ -1119,8 +1035,8 @@ export function htmlToMarkdown(
         return `[${childrenContent}](${href})`;
       case 'img': {
         const src = node.attributes['src'] || '';
-        const alt = node.attributes['alt'] || '';
-        const localSrc = resolveAndCollectImagePath(src, site, registry, slug, collectedImages);
+        const alt = decodeHtmlEntities(node.attributes['alt'] || '');
+        const localSrc = imageResolver ? imageResolver.resolve({ src }) : resolveAndCollectImagePath(src, site, registry, collectedImages);
         return `![${alt}](${formatMarkdownImageDestination({ src: localSrc })})`;
       }
       case 'caption':
@@ -1174,47 +1090,26 @@ interface ImportFromWordPressInput {
   dryRun: boolean;
 }
 
-function findLocalImportTarget({
-  site,
-  slugOrId,
-  wpSlug,
-}: {
-  site: Site;
-  slugOrId: string;
-  wpSlug: string;
-}): { localPath: string; canonicalSlug: string; matchedExisting: boolean } {
-  const candidates = listVaultFullSlugCandidates({
-    slugOrId,
-    wpSlug,
-    rules: site.rewrites,
+export async function importFromWordPress(input: ImportFromWordPressInput) {
+  const storage = createWordPressImportStorage({
+    vaultPath: input.site.vaultPath, io: importIo, exists: existsSync, hash: hashAsset, uniqueId: randomUUID,
   });
-
-  for (const fullSlug of candidates) {
-    const localPath = path.join(site.vaultPath, 'content', `${fullSlug}.md`);
-    if (existsSync(localPath)) {
-      return { localPath, canonicalSlug: fullSlug, matchedExisting: true };
-    }
-  }
-
-  return {
-    localPath: path.join(site.vaultPath, 'content', `${wpSlug}.md`),
-    canonicalSlug: wpSlug,
-    matchedExisting: false,
-  };
+  if (input.dryRun) return prepareAndImportWordPress(input, storage);
+  return storage.withLock(() => prepareAndImportWordPress(input, storage));
 }
 
-export async function importFromWordPress({
+async function prepareAndImportWordPress({
   site,
   registry,
   slugOrId,
   dryRun,
-}: ImportFromWordPressInput) {
+}: ImportFromWordPressInput, storage: ReturnType<typeof createWordPressImportStorage>) {
   const credentials = site.wordpress;
   if (!credentials) {
     throw new Error(`⨯ WordPress credentials are not configured for site [${site.siteId}].`);
   }
 
-  const endpoint = credentials.endpoint || `https://${site.domain}/wp-json`;
+  const endpoint = getWordPressEndpoint({ site });
   const taxonomyResolver = createWordPressTaxonomyResolver({
     request: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
   });
@@ -1285,41 +1180,80 @@ export async function importFromWordPress({
 
   console.log(`✅ Found post: "${rawTitle}" (ID: wpPost ID: ${wpPost.id}, Slug: ${wpPost.slug})`);
 
-  const importTarget = findLocalImportTarget({ site, slugOrId, wpSlug: wpPost.slug });
-  const imageFolder = importTarget.matchedExisting
-    ? getContentImageFolder({ fullSlug: importTarget.canonicalSlug })
-    : wpPost.slug;
-  if (!importTarget.matchedExisting && site.rewrites && site.rewrites.length > 0) {
-    console.warn(
-      `⚠️  No local Markdown file matched this WordPress post. Creating it at content root because rewrite folders cannot be inferred from WordPress.`
-    );
-  }
-
-  const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
+  const importTarget = await createWordPressImportTargetResolver({
+    list: () => scanPublicFiles({ dir: path.join(site.vaultPath, 'content') }),
+    exists: existsSync, join: path.join,
+  })({ site, slugOrId, wpSlug: wpPost.slug });
+  const statePath = path.join(site.vaultPath, SYNC_STATE_FILENAME);
+  const previousStateHash = await storage.getHash(statePath);
+  const previousArticleHash = await storage.getHash(importTarget.localPath);
+  const syncState = await loadSyncState({ vaultPath: site.vaultPath });
+  const assetState = WordPressAssetStateSchema.parse(syncState[WORDPRESS_ASSET_STATE_SECTION] || {});
+  const scope = getWordPressAssetScope({ endpoint, hash: hashAsset });
+  const fetchOriginal = createWordPressOriginalFetcher({
+    requestMedia: ({ path: apiPath }) => wpFetch({ endpoint, credentials, path: apiPath }),
+    download: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      if (!response.headers.get('content-type')?.toLowerCase().startsWith('image/')) {
+        throw new Error('Original image request returned a non-image response.');
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length === 0) throw new Error('Original image request returned an empty file.');
+      return bytes;
+    },
+  });
+  const assetImporter = createWordPressAssetImporter({
+    vaultPath: site.vaultPath, siteId: site.siteId, imageHost: site.imageHost || registry.imageHost,
+    folder: credentials.assetFolder, scope, state: assetState, exists: existsSync,
+    read: storage.readAsset, hash: hashAsset, fetchOriginal,
+    list: async () => {
+      const content = await scanContentAssetFiles({ dir: path.join(site.vaultPath, 'content') });
+      const publicFiles = await scanPublicFiles({ dir: path.join(site.vaultPath, 'public') });
+      return [
+        ...content.filter(isWordPressImportImage).map((assetPath) => ({ root: 'content' as const, path: assetPath })),
+        ...publicFiles.filter(isWordPressImportImage).map((assetPath) => ({ root: 'public' as const, path: assetPath })),
+      ];
+    },
+  });
+  const rootsByImagePath = new Map<string, 'content' | 'public'>();
   const convertHtml = ({ html }: { html: string }) => htmlToMarkdown(
-    html,
-    site,
-    registry,
-    imageFolder,
-    collectedImages
-  );
-  let markdownBody: string;
-  if (typeof wpPost.content.raw === 'string') {
-    const convertRawBlocks = createRawBlockConverter({
-      parseBlocks: ({ content }) => {
-        const parsedBlocks: unknown = parseWordPressBlocks(content);
-        return parsedBlocks;
+    html, site, registry, '', undefined, {
+      isHosted: assetImporter.isHosted,
+      resolve: ({ src }) => {
+        const imagePath = assetImporter.resolve({ src });
+        return getImportedImageMarkdownPath({ imagePath, root: rootsByImagePath.get(imagePath) || 'content', canonicalSlug: importTarget.canonicalSlug });
       },
-      convertHtml,
-    });
-    const conversion = convertRawBlocks({ content: wpPost.content.raw });
-    markdownBody = conversion.markdown;
-    if (conversion.preservedBlockNames.length > 0) {
-      console.log(`  ℹ️ Preserved unsupported or dynamic blocks: ${conversion.preservedBlockNames.join(', ')}`);
     }
-  } else {
-    markdownBody = convertHtml({ html: wpPost.content.rendered });
+  );
+  const convertBody = (logPreservedBlocks = false) => {
+    let markdownBody: string;
+    if (typeof wpPost.content.raw === 'string') {
+      const convertRawBlocks = createRawBlockConverter({
+        parseBlocks: ({ content }) => {
+          const parsedBlocks: unknown = parseWordPressBlocks(content);
+          return parsedBlocks;
+        },
+        convertHtml,
+      });
+      const conversion = convertRawBlocks({ content: wpPost.content.raw });
+      markdownBody = conversion.markdown;
+      if (logPreservedBlocks && conversion.preservedBlockNames.length > 0) {
+        console.log(`  ℹ️ Preserved unsupported or dynamic blocks: ${conversion.preservedBlockNames.join(', ')}`);
+      }
+    } else {
+      markdownBody = convertHtml({ html: wpPost.content.rendered });
+    }
+    return markdownBody;
+  };
+  convertBody();
+  const assets = await assetImporter.prepare();
+  for (const asset of assets) {
+    const previousRoot = rootsByImagePath.get(asset.path);
+    if (previousRoot && previousRoot !== asset.root) throw new Error('Ambiguous imported image path across content and public roots.');
+    rootsByImagePath.set(asset.path, asset.root);
   }
+  const markdownBody = convertBody(true);
   validateImportedMarkdown({
     sourceContent: wpPost.content.raw ?? wpPost.content.rendered,
     markdown: markdownBody,
@@ -1357,59 +1291,38 @@ export async function importFromWordPress({
   const targetLocalPath = importTarget.localPath;
   const canonicalSlug = importTarget.canonicalSlug;
 
+  const plan = createWordPressImportPlan({
+    assets, path: targetLocalPath, markdown: frontmatter, previousHash: previousArticleHash,
+    scope, previousStateHash, assetFolder: credentials.assetFolder || DEFAULT_WORDPRESS_ASSET_FOLDER,
+  });
+  console.log(`WordPress import plan ${plan.fingerprint}: ${assets.filter((asset) => asset.bytes).length} download(s), ${assets.filter((asset) => !asset.bytes).length} reused image(s).`);
   if (dryRun) {
     console.log(`  [DRY RUN] Would write Markdown post for "${wpPost.title.rendered}" to:`);
     console.log(`  📂 ${targetLocalPath}`);
-    if (collectedImages.length > 0) {
-      console.log(`\n  [DRY RUN] Would download ${collectedImages.length} image(s):`);
-      for (const img of collectedImages) {
-        console.log(`  - ${img.tryHighResUrl} -> ${img.localPath}`);
-      }
-    }
+    console.log(`  [DRY RUN] Would download ${assets.filter((asset) => asset.bytes).length} image(s)`);
+    for (const asset of assets) console.log(`  - ${asset.bytes ? 'download' : 'reuse'}: ${asset.path}`);
     console.log(`\n--- PREVIEW START ---`);
     console.log(frontmatter);
     console.log(`--- PREVIEW END ---`);
-  } else {
-    // Ensure parent directory exists
-    await mkdir(path.dirname(targetLocalPath), { recursive: true });
-
-    // Download collected images
-    if (collectedImages.length > 0) {
-      console.log(`\n📥 Downloading ${collectedImages.length} image(s) to local vault...`);
-      for (const img of collectedImages) {
-        try {
-          await mkdir(path.dirname(img.localPath), { recursive: true });
-          console.log(`- Fetching image: ${img.tryHighResUrl}`);
-          let imgResponse = await fetch(img.tryHighResUrl);
-
-          if (!imgResponse.ok) {
-            console.log(`  (High-res URL failed, falling back to original: ${img.remoteUrl})`);
-            imgResponse = await fetch(img.remoteUrl);
-          }
-
-          if (!imgResponse.ok) {
-            console.error(`  ❌ Failed to download image from both URLs: ${imgResponse.statusText}`);
-            continue;
-          }
-
-          const buffer = Buffer.from(await imgResponse.arrayBuffer());
-          await writeFile(img.localPath, buffer);
-          console.log(`  ✅ Saved to: ${img.localPath}`);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.error(`  ❌ Failed to download image "${img.remoteUrl}":`, errMsg);
-        }
-      }
-    }
-
-    await writeFile(targetLocalPath, frontmatter, 'utf-8');
-    console.log(`\n  💾 Successfully imported and saved post to: ${targetLocalPath}`);
-
-    await updateWordPressPublicationState({
-      vaultPath: site.vaultPath,
-      slug: canonicalSlug,
-      contentHash: computeContentHash(frontmatter),
-    });
-    console.log(`  ✓ Updated sync state for "${canonicalSlug}" in .notopress-sync.json`);
+    return;
   }
+  const apply = createWordPressImportApplier({
+    getHash: storage.getHash, hash: hashAsset,
+    assetPath: (asset) => path.join(site.vaultPath, asset.root, asset.path),
+    writeAsset: storage.writeAsset,
+    assetKey: (source) => getWordPressAssetKey({ scope, source }),
+    commit: async ({ path: articlePath, markdown, entries }) => {
+      syncState[WORDPRESS_ASSET_STATE_SECTION] = { ...assetState, ...entries };
+      const prior = getWordPressPublicationStateFromObject(syncState)[canonicalSlug];
+      setWordPressPublicationStateEntry(syncState, canonicalSlug, {
+        ...prior, contentHash: computeContentHash(markdown), remoteId: wpPost.id, remoteSlug: wpPost.slug, contentType: 'post',
+      });
+      await storage.commit({
+        articlePath, markdown, statePath, state: JSON.stringify(syncState, null, 2) + '\n',
+        expectedStateHash: previousStateHash, expectedArticleHash: previousArticleHash,
+      });
+    },
+  });
+  await apply({ plan });
+  console.log(`  💾 Successfully imported post and asset mappings for "${canonicalSlug}".`);
 }

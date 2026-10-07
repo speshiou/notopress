@@ -123,6 +123,18 @@ Rewrites let the vault stay organized without exposing those folders in the publ
 
 With this rule, `content/guides/first-guide.md` is served at `/first-guide`. Rewrites apply only to the native NotoPress site. Platform adapters receive the canonical source document and choose their own target slug behavior.
 
+A named segment can also hide a grouping folder: `guides/:edition/:path*` to
+`/:path*` serves `content/guides/edition-a/first-guide.md` at `/first-guide` with
+one rule for every edition. WordPress imports resolve existing source files
+through their forward rewrite, so omitted grouping segments do not require
+guessing a folder or creating another root article. Ambiguous targets stop the
+import; use the full vault slug to select the intended article.
+
+For sibling folders, a segment wildcard works too: `series-*/:path*` to
+`/:path*` flattens both `content/series-edition-a/` and
+`content/series-edition-b/` with one rule. The wildcard stays within one folder
+segment; it does not match unrelated folder prefixes.
+
 ## Sync and deployment
 
 Always preview a meaningful change first:
@@ -162,7 +174,8 @@ Publication targets are named in the site configuration. WordPress is currently 
       "config": {
         "endpoint": "https://wordpress.example.com/wp-json",
         "username": "editor",
-        "applicationPassword": "application-password"
+        "applicationPassword": "application-password",
+        "assetFolder": "assets"
       }
     }
   ]
@@ -207,6 +220,37 @@ npm run publisher:init -- \
 ```
 
 `publisher:init` trusts the adapter's current locally rendered payloads as the remote baseline. It does not publish or verify remote content. Use it deliberately when adopting a publisher or resetting state, then explicitly publish any known remote differences.
+
+WordPress imports keep existing local image paths intact. New image downloads go to
+`content/assets/` by default; set the publisher's `config.assetFolder` to another
+relative folder under `content/` (for example, `media/images`) to match your vault's
+attachment convention. The legacy `wordpress.assetFolder` field works too. This
+setting does not change Obsidian settings or move existing files.
+
+Imports record endpoint-scoped image mappings and content hashes in the
+`wordpressAssets` section of `.notopress-sync.json`. Exact NotoPress-hosted originals
+are reused in place. New WordPress-hosted images are compared by content against
+source images throughout `content/` and `public/`, including existing attachment
+folders. Generated files are excluded. Repeated unchanged imports create no new
+asset files; WordPress-hosted sources are fetched again to detect changes at the
+same URL. Changed remote images get a new file, preserving the old image for other
+articles. Conflicting local edits stop the import.
+
+Missing originals are fetched from recorded URLs, NotoPress's hosted source paths,
+or WordPress media metadata (including unscaled originals). If only a thumbnail
+remains, or the original extension is ambiguous, the import stops instead of
+silently saving a lower resolution replacement. Keep the remote originals available
+if you intend to restore deleted local files.
+
+`import --dry-run` prepares the same asset and Markdown plan as a live import,
+including read-only image downloads and hashing, but writes no files. Live imports
+hold a vault lock, validate local content before applying, install new assets without
+overwriting existing files, and stage Markdown and sync state. A sync-state commit
+failure rolls back the article. A failed import can leave successfully installed,
+unreferenced new assets; retrying reuses them. After a process crash, inspect the
+vault before removing a stale `.notopress-wordpress-import.lock` file. Imports do
+not mutate WordPress posts or media. Existing asset consolidation is a separate
+migration and is not performed automatically.
 
 ## Generated artifacts
 

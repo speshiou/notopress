@@ -5,6 +5,7 @@ import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
+  constants: { F_OK: 0 },
 }));
 
 vi.mock('fs/promises', () => ({
@@ -12,6 +13,11 @@ vi.mock('fs/promises', () => ({
   readdir: vi.fn(),
   writeFile: vi.fn(),
   mkdir: vi.fn(),
+  access: vi.fn().mockRejectedValue(new Error('missing')),
+  realpath: vi.fn().mockImplementation(async (file: string) => file),
+  rename: vi.fn(),
+  link: vi.fn(),
+  unlink: vi.fn(),
 }));
 
 import { readFile, readdir, writeFile, mkdir } from 'fs/promises';
@@ -61,10 +67,10 @@ describe('WordPress Deployment Library', () => {
         collectedImages
       );
 
-      expect(result).toContain('![](<article-map/示例-image.png>)');
-      expect(collectedImages[0]?.localPath).toBe('/mock/vault/content/article-map/示例-image.png');
+      expect(result).toMatch(/^!\[\]\(<assets\/示例-image-[a-f0-9]{16}\.png>\)$/);
+      expect(collectedImages[0]?.localPath).toMatch(/content\/assets\/示例-image-[a-f0-9]{16}\.png$/);
       expect(collectedImages[0]?.tryHighResUrl).toBe(
-        'https://testsite.com/wp-content/uploads/2020/02/示例-image.png'
+        'https://testsite.com/wp-content/uploads/2020/02/%E7%A4%BA%E4%BE%8B-image-1024x521.png'
       );
     });
   });
@@ -1182,7 +1188,7 @@ describe('WordPress Deployment Library', () => {
       expect(result).toBe('images/avatar.jpg');
     });
 
-    it('should resolve direct non-thumbnail image url and find original path on disk', () => {
+    it('does not guess a different extension for a direct non-thumbnail URL', () => {
       vi.mocked(existsSync).mockImplementation((p) => {
         if (typeof p === 'string' && p.endsWith('/mock/vault/content/docs/screenshot.png')) {
           return true;
@@ -1195,13 +1201,13 @@ describe('WordPress Deployment Library', () => {
         mockSite,
         mockRegistry
       );
-      expect(result).toBe('docs/screenshot.png');
+      expect(result).toMatch(/^assets\/screenshot-[a-f0-9]{16}\.webp$/);
     });
 
     it('should find decoded local filenames when thumbnail URLs contain encoded spaces', () => {
       vi.mocked(existsSync).mockImplementation((filePath) => (
         typeof filePath === 'string' &&
-        filePath.endsWith('/mock/vault/content/post-one/Pasted image.webp')
+        filePath.endsWith('/mock/vault/content/attachments/Pasted image.webp')
       ));
       const collectedImages: { remoteUrl: string; tryHighResUrl: string; localPath: string }[] = [];
 
@@ -1213,7 +1219,7 @@ describe('WordPress Deployment Library', () => {
         collectedImages
       );
 
-      expect(result).toBe('![Image](<post-one/Pasted image.webp>)');
+      expect(result).toBe('![Image](<attachments/Pasted image.webp>)');
       expect(collectedImages).toEqual([]);
     });
   });
@@ -1294,7 +1300,7 @@ describe('WordPress Deployment Library', () => {
 
       const md = htmlToMarkdown(html, mockSite, mockRegistry, 'post-one', collectedImages);
 
-      expect(md).toBe('![Alt](<post-one/image.webp>)\n\n*Caption*');
+      expect(md).toMatch(/^!\[Alt\]\(<assets\/image-1200-[a-f0-9]{16}\.webp>\)\n\n\*Caption\*$/);
       expect(collectedImages).toHaveLength(1);
     });
 
@@ -1351,24 +1357,24 @@ describe('WordPress Deployment Library', () => {
       // Verify that writeFile is called with the compiled markdown and correct path
       expect(mkdir).toHaveBeenCalledWith('/mock/vault/content', { recursive: true });
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/post-one.md',
+        expect.stringMatching('/mock/vault/content/post-one.md.'),
         expect.stringContaining('title: "Post One Title"'),
-        'utf-8'
+        { flag: 'wx' }
       );
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/post-one.md',
+        expect.stringMatching('/mock/vault/content/post-one.md.'),
         expect.not.stringContaining('# Post One Title'),
-        'utf-8'
+        { flag: 'wx' }
       );
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/post-one.md',
+        expect.stringMatching('/mock/vault/content/post-one.md.'),
         expect.stringContaining('---\nWordPress body text.'),
-        'utf-8'
+        { flag: 'wx' }
       );
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/.notopress-sync.json',
+        expect.stringMatching('/mock/vault/.notopress-sync.json.'),
         expect.stringContaining('post-one'),
-        'utf-8'
+        { flag: 'wx' }
       );
     });
 
@@ -1408,14 +1414,15 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/post-one.md',
+        expect.stringMatching('/mock/vault/content/post-one.md.'),
         expect.stringContaining('categories:\n  - "engineering"\ntags:\n  - "nextjs"'),
-        'utf-8'
+        { flag: 'wx' }
       );
     });
 
     it('should safely convert an edit-context raw block document with tables, captions, images, and custom blocks', async () => {
       vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(existsSync).mockImplementation((file) => /content\/(one|two|three)\.png$/.test(String(file)));
       const rawContent = [
         '<!-- wp:paragraph --><p>Intro</p><!-- /wp:paragraph -->',
         '<!-- wp:table --><figure class="wp-block-table"><table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table><figcaption>Comparison</figcaption></figure><!-- /wp:table -->',
@@ -1453,9 +1460,10 @@ describe('WordPress Deployment Library', () => {
       }
 
       expect(output).toContain('| Name | Value |\n| --- | --- |\n| A | B |\n\n*Comparison*');
-      expect(output).toContain('![One](<post-one/one.webp>)\n\n*First image*');
+      expect(output).toContain('![One](<one.png>)\n\n*First image*');
       expect(output).toContain('<!-- wp:namespace/example-block {"setting":"value"} /-->');
-      expect(output).toContain('Would download 3 image(s)');
+      expect(output).toContain('Would download 0 image(s)');
+      expect(writeFile).not.toHaveBeenCalled();
       expect(output).not.toContain('Rendered fallback should not be used.');
     });
 
@@ -1493,14 +1501,14 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/pulled-post-slug.md',
+        expect.stringMatching('/mock/vault/content/pulled-post-slug.md.'),
         expect.stringContaining('---\nFetched by ID.'),
-        'utf-8'
+        { flag: 'wx' }
       );
     });
 
     it('writes a rewritten post to the matching vault path instead of creating a root duplicate', async () => {
-      vi.mocked(existsSync).mockImplementation((filePath) => filePath === '/mock/vault/content/guides/vpn.md');
+      vi.mocked(existsSync).mockImplementation((filePath) => String(filePath).endsWith('/guides/vpn.md') || String(filePath).endsWith('/guides/photo.png'));
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => [{
@@ -1509,7 +1517,7 @@ describe('WordPress Deployment Library', () => {
           modified: '2026-06-30T11:00:00',
           slug: 'vpn',
           title: { rendered: 'VPN Guide' },
-          content: { rendered: '<p>Body</p><img src="https://cdn.testsite.com/photo.png" alt="Photo">' },
+          content: { rendered: '<p>Body</p><img src="https://cdn.testsite.com/test-blog/content/guides/photo.png" alt="Photo">' },
           status: 'publish',
         }],
       });
@@ -1526,9 +1534,9 @@ describe('WordPress Deployment Library', () => {
       });
 
       expect(writeFile).toHaveBeenCalledWith(
-        '/mock/vault/content/guides/vpn.md',
+        expect.stringMatching('/mock/vault/content/guides/vpn.md.'),
         expect.stringContaining('title: "VPN Guide"'),
-        'utf-8'
+        { flag: 'wx' }
       );
       expect(writeFile).not.toHaveBeenCalledWith(
         '/mock/vault/content/vpn.md',

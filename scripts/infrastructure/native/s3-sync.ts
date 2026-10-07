@@ -29,6 +29,8 @@ export function buildS3SyncArgs({
     '*/.git/*',
     '--exclude',
     '.git/*',
+    '--exclude',
+    '.notopress/*',
   ];
 
   if (deleteRemoteFiles) {

@@ -31,6 +31,15 @@ describe('getNoteHref', () => {
 });
 
 describe('applyRewrites', () => {
+  it('flattens sibling folders with a single segment wildcard', () => {
+    const rules = [{ source: 'series-*/:path*', destination: '/:path*' }];
+    expect(applyRewrites({ fullSlug: 'series-edition-a/example-note', rules })).toBe('example-note');
+    expect(applyRewrites({ fullSlug: 'series-edition-b/nested/example-note', rules })).toBe('nested/example-note');
+    expect(applyRewrites({ fullSlug: 'another-series-edition-a/example-note', rules })).toBe('another-series-edition-a/example-note');
+    expect(applyRewrites({ fullSlug: 'series/edition-a/example-note', rules })).toBe('series/edition-a/example-note');
+    expect(listVaultFullSlugCandidates({ slugOrId: 'example-note', rules, availableFullSlugs: ['series-edition-a/example-note'] })[0]).toBe('series-edition-a/example-note');
+    expect(listVaultFullSlugCandidates({ slugOrId: 'new-note', rules }).some((candidate) => candidate.includes('*'))).toBe(false);
+  });
   it('keeps identity mapping when no rules match', () => {
     expect(applyRewrites({ fullSlug: 'blog/hello', rules: flattenRules })).toBe('blog/hello');
     expect(applyRewrites({ fullSlug: 'about' })).toBe('about');
@@ -95,6 +104,13 @@ describe('buildRouteTable', () => {
 });
 
 describe('listVaultFullSlugCandidates', () => {
+  it('resolves omitted grouping segments against existing source paths', () => {
+    const rules = [{ source: 'guides/:group/:path*', destination: '/:path*' }];
+    expect(applyRewrites({ fullSlug: 'guides/edition-a/example-note', rules })).toBe('example-note');
+    expect(applyRewrites({ fullSlug: 'guides/edition-b/another-note', rules })).toBe('another-note');
+    expect(listVaultFullSlugCandidates({ slugOrId: 'example-note', rules, availableFullSlugs: ['guides/edition-a/example-note'] })[0]).toBe('guides/edition-a/example-note');
+    expect(() => listVaultFullSlugCandidates({ slugOrId: 'example-note', rules, availableFullSlugs: ['guides/edition-a/example-note', 'guides/edition-b/example-note'] })).toThrow('Ambiguous');
+  });
   it('stats rewrite sources in rule order before identity', () => {
     expect(listVaultFullSlugCandidates({ slugOrId: 'vpn', wpSlug: 'vpn', rules: flattenRules })).toEqual([
       'guides/vpn',

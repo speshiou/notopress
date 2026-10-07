@@ -11,6 +11,14 @@ const BASE_INPUT = {
 };
 
 describe('buildS3SyncArgs', () => {
+  it('keeps local migration backups out of live and dry-run uploads', () => {
+    for (const dryRun of [false, true]) {
+      const args = buildS3SyncArgs({ ...BASE_INPUT, dryRun });
+      const excluded = args.flatMap((arg, index) => arg === '--exclude' ? [args[index + 1]] : []);
+      expect(excluded).toContain('.notopress/*');
+    }
+  });
+
   it('does not delete remote files by default', () => {
     const args = buildS3SyncArgs(BASE_INPUT);
 

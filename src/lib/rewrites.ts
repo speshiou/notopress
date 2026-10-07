@@ -100,7 +100,11 @@ function matchSource({ source, fullSlug }: { source: string; fullSlug: string })
       continue;
     }
 
-    if (valueParts[valueIndex] !== part) {
+    const value = valueParts[valueIndex];
+    const wildcardPattern = part.includes('*')
+      ? new RegExp(`^${part.split('*').map((fragment) => fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`)
+      : null;
+    if (value === undefined || (wildcardPattern ? !wildcardPattern.test(value) : value !== part)) {
       return null;
     }
     valueIndex += 1;
@@ -135,6 +139,9 @@ function substitutePattern({ pattern, captures }: { pattern: string; captures: R
       continue;
     }
 
+    // A wildcard source segment cannot be reconstructed from the public URL.
+    // Existing source paths are resolved by forward matching instead.
+    if (part.includes('*')) return null;
     output.push(part);
   }
 
@@ -211,10 +218,12 @@ export function listVaultFullSlugCandidates({
   slugOrId,
   wpSlug,
   rules = [],
+  availableFullSlugs = [],
 }: {
   slugOrId: string;
   wpSlug?: string;
   rules?: readonly RewriteRule[];
+  availableFullSlugs?: readonly string[];
 }): string[] {
   const raw = slugOrId.replace(/^\//, '');
   const publicGuesses = uniqueStrings([
@@ -227,6 +236,10 @@ export function listVaultFullSlugCandidates({
   ]);
 
   const candidates: string[] = [];
+  if (availableFullSlugs.includes(raw)) candidates.push(raw);
+  const existing = availableFullSlugs.filter((fullSlug) => publicGuesses.includes(applyRewrites({ fullSlug, rules })));
+  if (!candidates.length && existing.length > 1) throw new Error('Ambiguous local article for the requested public slug. Use its full vault path.');
+  candidates.push(...existing);
   for (const guess of publicGuesses) {
     candidates.push(...listRewriteCandidateFullSlugs({ publicSlug: guess, rules }));
   }

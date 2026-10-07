@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SourceAssetFolderSchema } from './asset-path';
 import { RewriteRulesSchema } from './rewrites';
 
 export const ThumbnailSizesSchema = z.array(z.number().int().positive()).min(1).optional();
@@ -7,6 +8,7 @@ export const WordPressCredentialsSchema = z.object({
   username: z.string(),
   applicationPassword: z.string(),
   endpoint: z.string().url().optional(),
+  assetFolder: SourceAssetFolderSchema.optional(),
 });
 
 export const PlatformDefinitionSchema = z.object({
