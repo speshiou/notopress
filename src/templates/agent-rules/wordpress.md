@@ -18,6 +18,7 @@
 - **WordPress Conventions & Safety**:
   - Top-level `categories` and `tags` frontmatter fields contain optional WordPress term slugs. NotoPress resolves existing terms to IDs and creates missing terms during live sync; dry runs remain read-only and report missing terms.
   - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
+  - Preserve custom Gutenberg blocks and attributes unchanged. Adjacent paragraphs remain article text.
   - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
   - Match the requested scope: use full vault slugs for article publication, or omit slugs for a requested site-wide push. Run the corresponding `--dry-run`, then keep the publisher, site, slugs, and flags unchanged and pass its composite fingerprint with `--expect`.
   - A requested site-wide push includes authorization for its required site-wide dry run. Avoid all-post remote checks merely for verification and do not add `--force` unless requested. Prefer local checks for unrelated verification.

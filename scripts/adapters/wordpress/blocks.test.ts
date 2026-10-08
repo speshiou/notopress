@@ -169,3 +169,14 @@ describe("serializeHtmlToWordPressBlocks", () => {
     expect(result).toBe(customBlock);
   });
 });
+
+it.each([
+  '<!-- wp:example/visual {"caption":"Explicit caption","options":{"labels":["one","two"]}} /-->',
+  '<!-- wp:example/widget {"description":"Widget text","enabled":true,"count":3} /-->',
+  '<!-- wp:example/opaque /-->',
+])("preserves opaque custom-block attributes and adjacent prose: %s", async (customBlock) => {
+  const html = await renderMarkdownContent({ markdown: `${customBlock}\n\n*Separate italic paragraph.*`, thumbnailSizes: [] });
+  const result = serializeHtmlToWordPressBlocks(html);
+  expect(result).toContain(customBlock);
+  expect(result).toContain('<p><em>Separate italic paragraph.</em></p>');
+});
