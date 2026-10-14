@@ -16,7 +16,7 @@ vi.mock('../infrastructure/native/storage', async (original) => {
     environment: { NODE_ENV: 'test' },
   }) };
 });
-vi.mock('../adapters/catalog', () => ({ hasConfiguredPlatformType: () => false,
+vi.mock('../adapters/catalog', () => ({
   createConfiguredPlatformAdapters: () => [{ id: 'example-main', type: 'example', preparePublication: async () => ({ id: 'example-main', label: 'Example',
     plan: createOperationPlan({ kind: 'example-publisher', operations: [], serializeOperation: (operation) => operation }), apply: harness.apply,
   }) }],

@@ -12,10 +12,10 @@ function setup() {
   const staged = { snapshotPath: 'snapshot', registryPath: 'registry.json', configPath: 'aws-config', verify, close };
   const runCli = vi.fn<AwsCliRunner>(async () => '(dryrun) upload: snapshot/article.md to s3://example-bucket/example-site/article.md\n');
   const logger = { log: vi.fn() };
-  const history = { describe: vi.fn(async () => 'Last successful full vault sync: unknown.'), record: vi.fn(async () => undefined) };
+  const history = { describe: vi.fn(async () => 'Last successful full distribution sync: unknown.'), record: vi.fn(async () => undefined) };
   const prepare = createNativeSitePreparation({
     resolveConnection: () => ({ target: { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' }, credentials: { accessKeyId: 'example-key', secretAccessKey: 'example-secret' } }),
-    createFiles: () => ({ listDirectory: async () => [{ path: source.path, kind: 'file' }], hashFile: async (file) => {
+    createFiles: () => ({ hashFile: async (file) => {
       if (file === source.path) return { size: source.size, contentHash: source.contentHash };
       throw Object.assign(new Error('Missing'), { code: 'ENOENT' });
     }, readFile: source.read, writeFile }),

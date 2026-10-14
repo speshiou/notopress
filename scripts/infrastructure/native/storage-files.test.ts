@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, readFile, rm, symlink, mkdir } from 'node:fs/promis
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createBuildArtifact } from '../../core/content/build-artifact';
-import { createVaultStorageFiles, createVaultStorageInventory } from './vault-inventory';
+import { createVaultStorageFiles, createDistributionMaterializer } from './storage-files';
 
 describe('vault storage files', () => {
   it('rejects direct file and parent-directory symlinks during bounded asset reads', async () => {
@@ -26,10 +26,10 @@ describe('vault storage files', () => {
       await writeFile(path.join(vaultPath, 'root.json'), '{}');
       const files = createVaultStorageFiles({ vaultPath });
       const write = vi.spyOn(files, 'writeFile');
-      const inventory = createVaultStorageInventory(files);
-      await inventory.materialize([createBuildArtifact({ path: 'root.json', content: '{}' })]);
+      const materializer = createDistributionMaterializer(files);
+      await materializer.materialize([createBuildArtifact({ path: 'root.json', content: '{}' })]);
       expect(write).not.toHaveBeenCalled();
-      await inventory.materialize([createBuildArtifact({ path: 'public/sitemap.xml', content: '<xml />' })]);
+      await materializer.materialize([createBuildArtifact({ path: 'public/sitemap.xml', content: '<xml />' })]);
       expect(write).toHaveBeenCalledOnce();
       expect(await readFile(path.join(vaultPath, 'public/sitemap.xml'), 'utf8')).toBe('<xml />');
     } finally { await rm(vaultPath, { recursive: true, force: true }); }

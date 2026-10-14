@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { parseCliCommand } from './command';
 
 describe('CLI command parser', () => {
-  it('supports fingerprinted native sync and rejects removed custom storage actions', () => {
+  it('supports fingerprinted native sync and rejects unknown commands', () => {
     expect(parseCliCommand({ argv: ['sync', '--site', 'example-site', '--expect', 'a'.repeat(64)] })).toMatchObject({ kind: 'sync', expectedPlanFingerprint: 'a'.repeat(64) });
-    expect(() => parseCliCommand({ argv: ['storage', 'init', '--trust-local'] })).toThrow('have been removed');
+    expect(() => parseCliCommand({ argv: ['storage', 'init'] })).toThrow('Unknown command');
     expect(() => parseCliCommand({ argv: ['sync', '--reconcile-storage'] })).toThrow('Unknown option');
     expect(() => parseCliCommand({ argv: ['sync', '--recover-storage'] })).toThrow('Unknown option');
   });

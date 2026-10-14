@@ -2,7 +2,7 @@ import { assertOperationPlanFingerprint } from '../../core/publishing/operation-
 import { createAwsStoragePlan, normalizeAwsPreview } from '../../core/storage/aws-cli-plan';
 import { getStorageConnection } from './storage-config';
 import { prepareStorageArtifacts, type NativeStorageBuildInput } from './storage-artifacts';
-import { createVaultStorageFiles } from './vault-inventory';
+import { createVaultStorageFiles } from './storage-files';
 import { createStorageSnapshot } from './storage-snapshot';
 import { buildS3SyncArgs } from './s3-sync';
 import { runAwsCli, type AwsCliRunner } from './aws-cli';

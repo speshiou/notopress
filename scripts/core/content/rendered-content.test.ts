@@ -1,3 +1,4 @@
+import { createStageTimer, type StageTiming } from '../stage-timing';
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -47,16 +48,9 @@ describe('rendered content generator', () => {
         directories: [],
         publicFiles: [],
         assetFiles: [],
-        noteIncludes: [
-          {
-            fullSlug: 'promo-note',
-            title: 'Promo Note',
-            filePath: 'templates/promo-note.md',
-            linkable: false,
-          },
-        ],
       };
 
+      const timings: StageTiming[] = [];
       const renderedResult = await generateRenderedContent({
         vaultPath,
         siteId: 'test-blog',
@@ -64,12 +58,14 @@ describe('rendered content generator', () => {
         rootIndex,
         thumbnailSizes: [320],
         noteIncludePaths: ['templates'],
+        stageTimer: createStageTimer({ now: () => 0, report: (timing) => timings.push(timing) }),
         dryRun: false,
         logger: { log: vi.fn() },
       });
 
       const rendered = await readFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'utf-8');
 
+      expect(timings).toEqual([{ stage: 'build.include-scan', durationMs: 0, outcome: 'completed' }]);
       expect(rendered).toContain('Before.');
       expect(rendered).toContain('Private promotion body.');
       expect(rendered).toContain('src="/api/vault-public/_thumbnails/hero-320.webp"');

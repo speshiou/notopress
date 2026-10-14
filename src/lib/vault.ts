@@ -33,13 +33,6 @@ export const VaultRootIndexSchema = VaultDirectoryIndexSchema.extend({
   publicFiles: z.array(z.string()),
   assetFiles: z.array(z.string()).optional(),
   responsiveImageWidths: z.record(z.string(), z.array(z.number().int().positive())).optional(),
-  noteIncludes: z.array(z.object({
-    fullSlug: z.string(),
-    title: z.string(),
-    filePath: z.string(),
-    linkable: z.literal(false).optional(),
-  })).optional(),
-  thumbnailSizes: z.array(z.number().int().positive()).optional(),
   routes: z.record(z.string(), z.string()).optional(),
   publicDirectories: z.array(z.string()).optional(),
 });

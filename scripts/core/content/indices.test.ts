@@ -17,12 +17,10 @@ describe('createIndexGenerator', () => {
     const tree: Record<string, FileEntry[]> = {
       'vault/content': [file('page.md'), directory('blog'), file('hero.png')],
       'vault/content/blog': [file('post.md')],
-      'vault/_includes': [file('example-note.md')],
     };
     const fileContent: Record<string, string> = {
       'vault/content/page.md': 'home',
       'vault/content/blog/post.md': 'post',
-      'vault/_includes/example-note.md': 'include',
     };
     const writes: Record<string, string> = {};
     const generateImageThumbnails = vi.fn(async ({
@@ -36,7 +34,7 @@ describe('createIndexGenerator', () => {
 
     const generator = createIndexGenerator({
       exists: vi.fn(async (filePath: string) =>
-        filePath === 'vault/content' || filePath === 'vault/public' || filePath === 'vault/_includes'
+        filePath === 'vault/content' || filePath === 'vault/public'
       ),
       mkdir: vi.fn(async () => undefined),
       readdir: vi.fn(async (filePath: string) => tree[filePath] || []),
@@ -58,10 +56,7 @@ describe('createIndexGenerator', () => {
               },
               content: '# Home\nIntro text',
             }
-          : content === 'include'
-          ? { data: { title: 'Example Include' }, content: '# Example Include\nPrivate body' }
           : { data: {}, content: '# Post\nPost excerpt' },
-      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => ['sitemap.xml', '_thumbnails/logo-320.webp']),
       scanContentAssetFiles: vi.fn(async () => ['hero.png', '_thumbnails/hero-320.webp']),
       generateImageThumbnails,
@@ -72,14 +67,13 @@ describe('createIndexGenerator', () => {
     const result = await generator.generateIndices({
       vaultPath: 'vault',
       thumbnailSizes: [320, 640],
-      noteIncludePaths: ['_includes'],
       dryRun: false,
       stageTimer: createStageTimer({ now: () => 0, report: (timing) => timings.push(timing) }),
     });
 
     expect(timings.map((timing) => timing.stage)).toEqual([
       'build.content-scan', 'build.thumbnails.content', 'build.thumbnails.public',
-      'build.asset-scan', 'build.include-scan',
+      'build.asset-scan',
     ]);
     expect(timings.every((timing) => timing.outcome === 'completed')).toBe(true);
 
@@ -98,16 +92,9 @@ describe('createIndexGenerator', () => {
         'blog/post': 'blog/post',
       },
       publicDirectories: ['blog'],
-      noteIncludes: [
-        {
-          fullSlug: 'example-note',
-          title: 'Example Include',
-          filePath: '_includes/example-note.md',
-          linkable: false,
-        },
-      ],
-      thumbnailSizes: [320, 640],
     });
+    expect(JSON.parse(writes['vault/root.json'])).not.toHaveProperty('noteIncludes');
+    expect(JSON.parse(writes['vault/root.json'])).not.toHaveProperty('thumbnailSizes');
     expect(generateImageThumbnails).toHaveBeenCalledWith({
       sourceDir: 'vault/content',
       dryRun: false,
@@ -121,7 +108,6 @@ describe('createIndexGenerator', () => {
     await generator.generateIndices({
       vaultPath: 'vault',
       thumbnailSizes: [320, 640],
-      noteIncludePaths: ['_includes'],
       dryRun: false,
       verbose: true,
     });
@@ -140,7 +126,6 @@ describe('createIndexGenerator', () => {
       joinPath: path.posix.join,
       relativePath: path.posix.relative,
       parseMatter: () => ({ data: {}, content: '' }),
-      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
       generateImageThumbnails: vi.fn(async () => ({})),
@@ -176,7 +161,6 @@ describe('createIndexGenerator', () => {
         data: { title: 'Code Page', date: '2024-01-02' },
         content: '# Code Page\n```typescript\nconst a = 1;\n```\nThis is the real first paragraph.',
       }),
-      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
       generateImageThumbnails: vi.fn(async () => ({})),
@@ -213,7 +197,6 @@ describe('createIndexGenerator', () => {
       joinPath: path.posix.join,
       relativePath: path.posix.relative,
       parseMatter: () => ({ data: { title: 'VPN' }, content: '# VPN\nBody' }),
-      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
       generateImageThumbnails: vi.fn(async () => ({})),
@@ -267,7 +250,6 @@ describe('createIndexGenerator', () => {
         data: { title: 'Article', date: '2024-01-02' },
         content: markdown,
       }),
-      normalizeThumbnailSizes: (sizes) => [...(sizes || [])],
       scanPublicFiles: vi.fn(async () => []),
       scanContentAssetFiles: vi.fn(async () => []),
       generateImageThumbnails: vi.fn(async () => ({})),

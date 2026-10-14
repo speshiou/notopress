@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import sharp from 'sharp';
 import { buildSite } from './build-site';
 import { passthroughStageTimer } from '../core/stage-timing';
-import { createVaultStorageFiles, createVaultStorageInventory } from '../infrastructure/native/vault-inventory';
 import { createNativeSitePreparation } from '../infrastructure/native/storage';
 import type { AwsCliRequest } from '../infrastructure/native/aws-cli';
 
@@ -34,8 +33,9 @@ describe('portable prepared native builds', () => {
       expect(firstBuild.generatedArtifacts.map(({ path, size, contentHash }) => ({ path, size, contentHash })))
         .toEqual(secondBuild.generatedArtifacts.map(({ path, size, contentHash }) => ({ path, size, contentHash })));
       expect(firstBuild.generatedArtifacts.map((artifact) => artifact.path)).toEqual(expect.arrayContaining([
-        'AGENTS.md', 'root.json', 'content/index.json', '_rendered/content/article.html', 'public/sitemap.xml',
+        'root.json', 'content/index.json', '_rendered/content/article.html', 'public/sitemap.xml',
       ]));
+      expect(firstBuild.generatedArtifacts.some((artifact) => artifact.path === 'AGENTS.md')).toBe(false);
       expect(firstBuild.generatedArtifacts.filter((artifact) => artifact.path.includes('_thumbnails/'))).toHaveLength(2);
       expect(firstBuild.sourceArtifacts.some((artifact) => artifact.path === '_includes/example-note.md')).toBe(true);
       for (const vault of [firstVault, secondVault]) {
@@ -45,7 +45,7 @@ describe('portable prepared native builds', () => {
       }
 
       const runCli = vi.fn(async ({ args }: AwsCliRequest) => args.includes('--dryrun')
-        ? `(dryrun) upload: ${args[2]}content/article.md to s3://${target.bucket}/${target.siteId}/content/article.md\n`
+        ? `(dryrun) upload: ${args[2]}_rendered/content/article.html to s3://${target.bucket}/${target.siteId}/_rendered/content/article.html\n`
         : '');
       const prepareNative = createNativeSitePreparation({
         resolveConnection: () => ({ target, credentials: { accessKeyId: 'example-key', secretAccessKey: 'example-secret' } }),
@@ -62,11 +62,8 @@ describe('portable prepared native builds', () => {
       expect(await readFile(path.join(secondVault, 'content/hero.png'))).toEqual(image);
 
       const warm = await buildSite({ site: secondSite, registry: { sites: [secondSite] }, dryRun: true, prepareOnly: true, verbose: false, stageTimer: passthroughStageTimer });
-      const inventory = createVaultStorageInventory(createVaultStorageFiles({ vaultPath: secondVault }));
-      const warmObjects = await inventory.collect({ generatedArtifacts: warm.generatedArtifacts });
-      const coldObjects = await createVaultStorageInventory(createVaultStorageFiles({ vaultPath: firstVault })).collect({ generatedArtifacts: firstBuild.generatedArtifacts });
-      expect(warmObjects.map(({ path, size, contentHash }) => ({ path, size, contentHash })))
-        .toEqual(coldObjects.map(({ path, size, contentHash }) => ({ path, size, contentHash })));
+      const warmPrepared = await prepareNative({ site: secondSite, registry: { sites: [secondSite] }, generatedArtifacts: warm.generatedArtifacts, contentSnapshot: warm.contentSnapshot, sourceArtifacts: warm.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer });
+      expect(warmPrepared.plan.fingerprint).toBe(preview.plan.fingerprint);
       runCli.mockClear();
       const migrated = await prepareNative({ site: firstSite, registry: { sites: [firstSite] }, generatedArtifacts: firstBuild.generatedArtifacts, contentSnapshot: firstBuild.contentSnapshot, sourceArtifacts: firstBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer });
       expect(migrated.plan.fingerprint).toBe(preview.plan.fingerprint);
@@ -74,7 +71,7 @@ describe('portable prepared native builds', () => {
       await expect(prepareNative({ site: firstSite, registry: { sites: [firstSite] }, generatedArtifacts: firstBuild.generatedArtifacts, contentSnapshot: firstBuild.contentSnapshot, sourceArtifacts: firstBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer })).rejects.toThrow('Build source changed during preparation');
 
       await writeFile(path.join(firstVault, '_includes/example-note.md'), '# Example Note\n\nIncluded body.');
-      await preview.close(); await live.close(); await migrated.close();
+      await preview.close(); await live.close(); await migrated.close(); await warmPrepared.close();
     } finally {
       log.mockRestore();
       await rm(fixtureRoot, { recursive: true, force: true });

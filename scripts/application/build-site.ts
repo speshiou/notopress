@@ -1,9 +1,7 @@
 import type { Registry, Site } from '../../src/domain/registry';
 import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
-import { hasConfiguredPlatformType } from '../adapters/catalog';
 import { buildContentSnapshot } from '../core/content/content-snapshot';
 import { generateRenderedContent } from '../core/content/rendered-content';
-import { ensureVaultAgentRules } from './agent-rules';
 import { generateIndices } from '../core/content/indices';
 import { generateSitemaps } from '../core/content/sitemaps';
 import type { StageTimer } from '../core/stage-timing';
@@ -30,23 +28,11 @@ export async function buildSite({
   const collectArtifact = prepareOnly ? (artifact: BuildArtifact) => { generatedArtifacts.push(artifact); } : undefined;
   const readOnly = dryRun || prepareOnly;
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
-  await stageTimer.measure({
-    stage: 'build.agent-rules',
-    run: () => ensureVaultAgentRules({
-      vaultPath: site.vaultPath,
-      siteId: site.siteId,
-      isWordPressEnabled: hasConfiguredPlatformType({ site, type: 'wordpress' }),
-      dryRun: readOnly,
-      collectArtifact,
-    }),
-  });
-
   const { rootContentIndex, vaultRootIndex, allIndices } = await stageTimer.measure({
     stage: 'build.indices',
     run: () => generateIndices({
       vaultPath: site.vaultPath,
       thumbnailSizes,
-      noteIncludePaths: site.noteIncludePaths,
       rewrites: site.rewrites,
       dryRun: readOnly,
       verbose,
@@ -72,6 +58,7 @@ export async function buildSite({
       dryRun: readOnly,
       collectArtifact,
       collectSourceArtifact: prepareOnly ? (artifact) => { sourceArtifacts.push(artifact); } : undefined,
+      stageTimer,
       distributionAssetPaths: generatedArtifacts.map((artifact) => artifact.path),
     }),
   });

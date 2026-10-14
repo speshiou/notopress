@@ -170,7 +170,6 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
   if (argv[0] === '--version' || argv[0] === '-V' || argv[0] === 'version') return { kind: 'version' };
 
   const [commandName, ...commandArgs] = argv;
-  if (commandName === 'storage') throw new Error('Storage baseline commands have been removed. Use sync or publish with --dry-run.');
   if (commandArgs.includes('--help') || commandArgs.includes('-h')) return { kind: 'help', topic: commandName };
   const arguments_ = parseArguments(commandArgs);
 

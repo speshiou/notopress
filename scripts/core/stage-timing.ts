@@ -1,7 +1,6 @@
 export type PublicationStage =
   | 'publication.total'
   | 'build.total'
-  | 'build.agent-rules'
   | 'build.indices'
   | 'build.content-scan'
   | 'build.thumbnails.content'

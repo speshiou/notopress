@@ -1,13 +1,11 @@
 import { createReadStream } from 'node:fs';
-import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createStorageInventory, type InventoryFile } from '../../core/storage/inventory';
 import { readVerifiedArtifact, type BuildArtifact } from '../../core/content/build-artifact';
 import { hashByteStream } from './hash-stream';
 import { isRelativeObjectPath } from '../../core/storage/paths';
 
 export type VaultStorageFiles = {
-  listDirectory: (directory: string) => Promise<readonly InventoryFile[]>;
   hashFile: (filePath: string) => Promise<{ size: number; contentHash: string }>;
   readFile: (filePath: string) => Promise<Uint8Array>;
   writeFile: (input: { filePath: string; bytes: Uint8Array }) => Promise<void>;
@@ -15,7 +13,6 @@ export type VaultStorageFiles = {
 
 type NativeVaultFilesystem = {
   lstat: typeof lstat;
-  readdir: (directory: string) => Promise<readonly { name: string; isDirectory: () => boolean; isFile: () => boolean }[]>;
   openReadStream: (filePath: string) => AsyncIterable<unknown>;
   readFile: (filePath: string) => Promise<Uint8Array>;
   mkdir: (directory: string) => Promise<unknown>;
@@ -24,7 +21,6 @@ type NativeVaultFilesystem = {
 
 const nativeFilesystem: NativeVaultFilesystem = {
   lstat,
-  readdir: (directory) => readdir(directory, { withFileTypes: true }),
   openReadStream: createReadStream,
   readFile,
   mkdir: (directory) => mkdir(directory, { recursive: true }),
@@ -49,9 +45,6 @@ export function createVaultStorageFiles({ vaultPath, filesystem = nativeFilesyst
     return current;
   }
   return {
-    listDirectory: async (directory) => (await filesystem.readdir(path.join(vaultPath, directory))).map((entry) => ({
-      path: entry.name, kind: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'unsupported',
-    })),
     hashFile: async (filePath) => hashByteStream(filesystem.openReadStream(await resolveFile(filePath))),
     readFile: async (filePath) => filesystem.readFile(await resolveFile(filePath)),
     writeFile: async ({ filePath, bytes }) => {
@@ -62,9 +55,8 @@ export function createVaultStorageFiles({ vaultPath, filesystem = nativeFilesyst
   };
 }
 
-export function createVaultStorageInventory(files: VaultStorageFiles) {
+export function createDistributionMaterializer(files: VaultStorageFiles) {
   return {
-    collect: createStorageInventory(files),
     async materialize(artifacts: readonly BuildArtifact[]) {
       for (const artifact of artifacts) {
         const bytes = await readVerifiedArtifact(artifact);

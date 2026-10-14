@@ -39,3 +39,15 @@ export function assertArtifactHash({ artifact, actual }: {
     throw new Error(`Prepared artifact changed: ${artifact.path}. Run the dry-run again.`);
   }
 }
+
+export function assertBuildSourceHashes({ artifacts, sources }: {
+  artifacts: readonly Pick<BuildArtifact, 'path' | 'contentHash'>[];
+  sources: readonly Pick<BuildArtifact, 'path' | 'contentHash'>[];
+}): void {
+  const hashes = new Map(artifacts.map((artifact) => [artifact.path, artifact.contentHash]));
+  for (const source of sources) {
+    if (hashes.get(source.path) !== source.contentHash) {
+      throw new Error(`Build source changed during preparation: ${source.path}. Run the dry-run again.`);
+    }
+  }
+}

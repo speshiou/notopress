@@ -1,16 +1,14 @@
 import path from 'node:path';
 import type { Registry, Site } from '../../../src/domain/registry';
 import { DEFAULT_REGISTRY_FILENAME } from '../../../src/lib/constants';
-import { createBuildArtifact, type BuildArtifact } from '../../core/content/build-artifact';
+import { assertBuildSourceHashes, createBuildArtifact, type BuildArtifact } from '../../core/content/build-artifact';
 import type { ContentSnapshot } from '../../core/content/content-snapshot';
-import { assertInventorySourceHashes } from '../../core/storage/inventory';
-import { getStorageKey } from '../../core/storage/paths';
-import { isPublishableVaultPath } from '../../core/storage/paths';
+import { getStorageKey, isPublishableVaultPath } from '../../core/storage/paths';
 import { selectDistributionArtifacts, type DistributionScope } from '../../core/storage/distribution';
 import { mapWithConcurrency } from '../../core/concurrency';
 import { compareStrings } from '../../core/order';
 import type { StageTimer } from '../../core/stage-timing';
-import { createVaultStorageInventory, type VaultStorageFiles } from './vault-inventory';
+import { createDistributionMaterializer, type VaultStorageFiles } from './storage-files';
 
 export type NativeStorageBuildInput = {
   site: Site;
@@ -28,7 +26,7 @@ export async function prepareStorageArtifacts({ input, files }: {
   files: VaultStorageFiles;
 }) {
   const { site, registry, generatedArtifacts, contentSnapshot, sourceArtifacts = [], stageTimer } = input;
-  const inventory = createVaultStorageInventory(files);
+  const materializer = createDistributionMaterializer(files);
   const sources = [
     ...(contentSnapshot?.documents || []).map((document) => ({ path: path.relative(site.vaultPath, document.localPath).replace(/\\/g, '/'), contentHash: document.sourceHash })),
     ...sourceArtifacts,
@@ -36,9 +34,9 @@ export async function prepareStorageArtifacts({ input, files }: {
   async function verifySources() {
     const actual = await mapWithConcurrency({ items: sources, concurrency: 8, worker: async (source) => {
       if (!isPublishableVaultPath(source.path)) throw new Error('Invalid build source path.');
-      return { path: source.path, ...await files.hashFile(source.path), read: () => files.readFile(source.path) };
+      return { path: source.path, ...await files.hashFile(source.path) };
     } });
-    assertInventorySourceHashes({ artifacts: actual, sources });
+    assertBuildSourceHashes({ artifacts: actual, sources });
   }
   const distribution = selectDistributionArtifacts({ generatedArtifacts, scope: input.scope || { kind: 'full' }, publicFiles: input.publicFiles || [] });
   const local = await stageTimer.measure({ stage: 'storage.inventory', run: async () => {
@@ -51,7 +49,7 @@ export async function prepareStorageArtifacts({ input, files }: {
       try { hash = await files.hashFile(asset); }
       catch { throw new Error(`Cannot prepare required distribution asset: ${asset}. Restore its source or generated file before publishing.`); }
       const artifact: BuildArtifact = { path: asset, ...hash, read: () => files.readFile(asset) };
-      artifact.verify = async () => assertInventorySourceHashes({ artifacts: [{ ...artifact, ...await files.hashFile(asset) }], sources: [artifact] });
+      artifact.verify = async () => assertBuildSourceHashes({ artifacts: [{ ...artifact, ...await files.hashFile(asset) }], sources: [artifact] });
       artifacts.set(asset, artifact);
     }
     for (const artifact of artifacts.values()) if (!isPublishableVaultPath(artifact.path)) throw new Error('Invalid distribution path.');
@@ -67,7 +65,7 @@ export async function prepareStorageArtifacts({ input, files }: {
       ...local.map((artifact) => ({ ...artifact, key: getStorageKey({ siteId: site.siteId, path: artifact.path }) })),
       { ...registryArtifact, key: DEFAULT_REGISTRY_FILENAME },
     ],
-    materialize: () => inventory.materialize(distribution.generated),
+    materialize: () => materializer.materialize(distribution.generated),
     verifySources,
   };
 }

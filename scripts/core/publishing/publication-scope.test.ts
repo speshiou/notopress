@@ -12,7 +12,7 @@ function plan(operations: AwsStorageOperation[] = []) {
 }
 
 describe('destination scope explanation', () => {
-  it('distinguishes selected target posts from full-vault backup without interpreting folder names', () => {
+  it('distinguishes selected target posts from full distribution sync without interpreting folder names', () => {
     const storagePlan = plan();
     const fingerprint = storagePlan.fingerprint;
     const output = formatPublicationScope({ publisherId: 'example-main', targetSlugs: ['guides/article'], storagePlan, dryRun: true });

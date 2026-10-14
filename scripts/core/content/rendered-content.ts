@@ -13,6 +13,7 @@ import {
 } from './content-snapshot';
 import { computeContentHash } from '../state/sync-state';
 import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
+import { passthroughStageTimer, type StageTimer } from '../stage-timing';
 import { createDistributionAssetResolver } from './distribution-assets';
 
 type Logger = Pick<typeof console, 'log'>;
@@ -85,6 +86,7 @@ export async function generateRenderedContent({
   collectArtifact,
   collectSourceArtifact,
   distributionAssetPaths = [],
+  stageTimer = passthroughStageTimer,
 }: {
   vaultPath: string;
   siteId: string;
@@ -99,6 +101,7 @@ export async function generateRenderedContent({
   collectArtifact?: CollectBuildArtifact;
   collectSourceArtifact?: CollectBuildArtifact;
   distributionAssetPaths?: readonly string[];
+  stageTimer?: StageTimer;
 }): Promise<RenderedContentResult> {
   const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath, allIndices });
   const assetFiles = rootIndex.assetFiles || rootIndex.publicFiles;
@@ -114,7 +117,10 @@ export async function generateRenderedContent({
     }));
     return content;
   }
-  const privateNoteReferences = await collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths, readSource: readNoteSource });
+  const privateNoteReferences = await stageTimer.measure({
+    stage: 'build.include-scan',
+    run: () => collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths, readSource: readNoteSource }),
+  });
   let renderedCount = 0;
   let changedCount = 0;
   const artifacts: RenderedContentArtifact[] = [];

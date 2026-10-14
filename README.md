@@ -233,9 +233,6 @@ AWS CLI application is not an atomic transaction with its preview: avoid
 concurrent writers to the same storage prefix. Transfers use a single attempt;
 inspect failures before retrying a publication. NotoPress uses the classic S3
 transfer client, as recommended by [Cloudflare's AWS CLI guide](https://developers.cloudflare.com/r2/examples/aws/aws-cli/).
-The removed `storage init`, `--reconcile-storage`, and `--recover-storage`
-commands are no longer supported. Previous manifest-based publication fingerprints
-must be replaced with a newly reviewed AWS CLI plan.
 
 The opt-in live test requires a newly created empty bucket named
 `notopress-cli-integration-<uuid>`. Set `NOTOPRESS_AWS_CLI_INTEGRATION=1` and
