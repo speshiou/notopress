@@ -1,4 +1,19 @@
 const COMMAND_HELP: Record<string, string> = {
+  storage: `Usage: notopress storage init --site <id> --trust-local [options]
+
+Initialize an absent storage manifest without downloading existing objects.
+Trust matching-size local files as synced; same-size differences can be missed.
+Writes only the manifest. No article uploads, deletions, or adapter changes.
+Stop other storage writers first. Existing manifests cannot be overwritten.
+
+Options:
+  --trust-local      Explicitly accept the unverified local baseline
+  --pending <file>   JSON array of exact storage keys to keep pending upload
+  --dry-run          Preview without writing the manifest
+  --expect <hash>    Require the reviewed baseline fingerprint (required live)
+  --verbose, -v      Print the full baseline plan
+  --site, -s <id>    Select a site
+  --registry, -r     Use another registry file`,
   sync: `Usage: notopress sync [site] [options]
 
 Build and synchronize the native NotoPress site.
@@ -81,6 +96,7 @@ Commands:
   publish <publisher> [slug...]       Publish through an adapter
   import <publisher> <resource>       Import one remote resource
   publisher init <publisher>          Mark current adapter payloads as synced
+  storage init                       Initialize a trusted storage baseline
   configure [site]                    Configure local development
 
 Run "notopress help <command>" for command details.`;

@@ -203,6 +203,25 @@ expensive, especially with a large existing site. A bootstrap preview writes
 nothing, so the first reviewed live run repeats these reads before creating state.
 After successful live bootstrap, subsequent runs do not list the full remote site.
 
+To skip initial object downloads, explicitly trust a local baseline instead:
+
+```bash
+npm run storage:init -- --site example-blog --trust-local --pending pending-uploads.json --dry-run
+npm run storage:init -- --site example-blog --trust-local --pending pending-uploads.json --expect <baseline-fingerprint>
+```
+
+`pending-uploads.json` is a JSON array of exact storage keys from a reviewed plan,
+for example `["example-blog/content/article.md", "example-blog/_rendered/content/article.html"]`.
+Initialization writes only an absent manifest, leaving those keys, missing files,
+and size mismatches pending for the next sync. Other matching-size files are
+assumed synced without verifying their bytes, so preserve all known pending
+uploads, including generated outputs. Omit `--pending` only when accepting that
+assumption for every matching-size file. No vault files, remote content objects,
+or WordPress posts are changed. Stop other storage writers first. Remote metadata
+is listed again before conditional manifest creation; existing state is never
+overwritten. After initialization, review a new sync/publish plan: old publication
+fingerprints are obsolete. `--reconcile-storage` remains available to verify bytes.
+
 The manifest tracks NotoPress-owned state. To detect external object changes or
 missing remote files, explicitly reconcile actual remote bytes:
 

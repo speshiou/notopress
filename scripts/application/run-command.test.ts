@@ -8,11 +8,13 @@ import { createNativeSitePlan, createPublicationPlan } from '../core/publishing/
 import { passthroughStageTimer } from '../core/stage-timing';
 import type { PublishCommand } from '../cli/command';
 import type { VaultDirectoryIndex } from '../../src/lib/vault';
+import { initializeStorage } from './initialize-storage';
 
 vi.mock('./build-site', () => ({ buildSite: vi.fn() }));
 vi.mock('../infrastructure/native/storage', () => ({ prepareNativeSite: vi.fn() }));
 vi.mock('../adapters/catalog', () => ({ createConfiguredPlatformAdapters: vi.fn() }));
 vi.mock('../core/files', () => ({ exists: vi.fn(async () => true) }));
+vi.mock('./initialize-storage', () => ({ initializeStorage: vi.fn() }));
 
 function setup() {
   const build = {
@@ -42,6 +44,15 @@ function setup() {
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('composite storage publication ordering', () => {
+  it('routes storage initialization without preparing native uploads or publisher adapters', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const h = setup();
+    await runCommand({ command: { kind: 'initialize-storage-state', siteId: h.site.siteId, trustLocal: true, pendingFile: 'pending.json', dryRun: true, verbose: false }, registry: { sites: [h.site] }, stageTimer: passthroughStageTimer });
+    expect(initializeStorage).toHaveBeenCalledOnce();
+    expect(buildSite).not.toHaveBeenCalled();
+    expect(prepareNativeSite).not.toHaveBeenCalled();
+    expect(createConfiguredPlatformAdapters).not.toHaveBeenCalled();
+  });
   it('rejects changed storage operations before local or remote application and closes resources', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const h = setup();

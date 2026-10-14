@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { parseCliCommand } from './command';
 
 describe('CLI command parser', () => {
+  it('requires explicit trust and a reviewed live baseline, with pending uploads scoped to storage init', () => {
+    expect(parseCliCommand({ argv: ['storage', 'init', '--site', 'example-site', '--trust-local', '--pending', 'pending.json', '--dry-run'] })).toMatchObject({ kind: 'initialize-storage-state', trustLocal: true, pendingFile: 'pending.json', dryRun: true });
+    expect(parseCliCommand({ argv: ['storage', 'init', '--trust-local', '--expect', 'a'.repeat(64)] })).toMatchObject({ kind: 'initialize-storage-state', expectedPlanFingerprint: 'a'.repeat(64) });
+    expect(() => parseCliCommand({ argv: ['storage', 'init', '--dry-run'] })).toThrow('--trust-local');
+    expect(() => parseCliCommand({ argv: ['storage', 'init', '--trust-local'] })).toThrow('reviewed --expect');
+    expect(() => parseCliCommand({ argv: ['storage', 'init', '--trust-local', '--dry-run', '--delete'] })).toThrow('not valid');
+    expect(() => parseCliCommand({ argv: ['sync', '--trust-local'] })).toThrow('not valid');
+    expect(() => parseCliCommand({ argv: ['publish', 'example-main', '--pending', 'pending.json'] })).toThrow('not valid');
+  });
   it('supports reviewed storage plans and explicit reconciliation on native commands', () => {
     expect(parseCliCommand({ argv: ['sync', '--site', 'example-site', '--expect', 'a'.repeat(64), '--reconcile-storage'] })).toMatchObject({
       kind: 'sync', expectedPlanFingerprint: 'a'.repeat(64), reconcileStorage: true,

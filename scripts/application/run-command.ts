@@ -21,6 +21,7 @@ import { configureLocalEnvironment, deployApplication } from '../infrastructure/
 import { buildSite } from './build-site';
 import { publicationStageTimer } from '../infrastructure/stage-timing';
 import type { StageTimer } from '../core/stage-timing';
+import { initializeStorage } from './initialize-storage';
 
 async function selectSite({
   registry,
@@ -43,7 +44,7 @@ async function selectSite({
   if (!site) throw new Error(`Site "${selectedSiteId}" was not found in registry.json.`);
   if (command.kind === 'configure') return site;
   if (!(await exists(site.vaultPath))) throw new Error(`The local vaultPath does not exist: ${site.vaultPath}`);
-  if ((command.kind === 'sync' || command.kind === 'deploy' || command.kind === 'publish') && !site.bucketName) {
+  if ((command.kind === 'sync' || command.kind === 'deploy' || command.kind === 'publish' || command.kind === 'initialize-storage-state') && !site.bucketName) {
     throw new Error(`"bucketName" is not configured for site [${site.siteId}].`);
   }
   return site;
@@ -184,6 +185,10 @@ export async function runCommand({ command, registry, stageTimer = publicationSt
 }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
+  if (command.kind === 'initialize-storage-state') {
+    await stageTimer.measure({ stage: 'publication.total', run: () => initializeStorage({ command, site, registry, stageTimer }) });
+    return;
+  }
   if (command.kind === 'configure') {
     await configureLocalEnvironment({ site, registry });
     return;

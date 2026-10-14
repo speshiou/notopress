@@ -6,8 +6,8 @@ import {
   StorageManifestSchema, StorageTargetSchema, sameStorageTarget,
   type StorageManifest, type StorageEntry, type StorageTarget,
 } from './manifest';
-import { isManagedStorageKey } from './paths';
 import { compareStrings } from '../order';
+import { indexStorageArtifacts, indexStorageEntries, sortStorageEntries } from './validation';
 
 export type StorageArtifact = BuildArtifact & { key: string };
 export type ManifestRead = { etag: string; body: unknown };
@@ -31,10 +31,6 @@ export type PreparedStoragePublication = {
   plan: OperationPlan<StorageOperation>;
   apply: (input: { dryRun: boolean }) => Promise<void>;
 };
-
-function sortEntries(entries: readonly StorageEntry[]): StorageEntry[] {
-  return [...entries].sort((left, right) => compareStrings({ left: left.key, right: right.key }));
-}
 
 export function createStoragePublisher({ remote, newGeneration, materialize, logger }: {
   remote: RemoteStorage;
@@ -66,22 +62,9 @@ export function createStoragePublisher({ remote, newGeneration, materialize, log
       throw new Error('Storage publication is pending or interrupted. Stop the previous publisher, then preview --reconcile-storage --recover-storage.');
     }
     const mode = recover ? 'recover' : reconcile ? 'reconcile' : manifest ? 'incremental' : 'bootstrap';
-    const baseline = new Map<string, StorageEntry>();
     const discovered = mode === 'incremental' ? manifest?.entries || [] : await remote.listObjects();
-    for (const entry of discovered) {
-      if (!isManagedStorageKey({ siteId: target.siteId, key: entry.key }) || baseline.has(entry.key)) {
-        throw new Error('Invalid or duplicate object in the storage inventory.');
-      }
-      baseline.set(entry.key, entry);
-    }
-
-    const expected = new Map<string, StorageArtifact>();
-    for (const artifact of artifacts) {
-      if (!isManagedStorageKey({ siteId: target.siteId, key: artifact.key }) || expected.has(artifact.key)) {
-        throw new Error('Invalid or duplicate expected storage object.');
-      }
-      expected.set(artifact.key, artifact);
-    }
+    const baseline = indexStorageEntries({ target, entries: discovered });
+    const expected = indexStorageArtifacts({ target, artifacts });
 
     // Shared bucket objects require a fresh read even when the site manifest is current.
     for (const artifact of artifacts.filter((artifact) => !artifact.key.startsWith(`${target.siteId}/`))) {
@@ -110,7 +93,7 @@ export function createStoragePublisher({ remote, newGeneration, materialize, log
         key: artifact.key, size: artifact.size, contentHash: artifact.contentHash, expectedEtag: prior?.etag || null,
       });
     }
-    for (const entry of sortEntries([...baseline.values()])) {
+    for (const entry of sortStorageEntries(baseline.values())) {
       if (expected.has(entry.key)) continue;
       // Only site-scoped objects may be deleted; shared bucket state is never pruned here.
       operations.push({ action: deleteRemoteFiles && entry.key.startsWith(`${target.siteId}/`) ? 'delete' : 'retain', entry });
@@ -143,7 +126,7 @@ export function createStoragePublisher({ remote, newGeneration, materialize, log
         if ((current?.etag || null) !== (snapshot?.etag || null)) {
           throw new Error('Storage manifest changed after planning. Run the dry-run again.');
         }
-        const baselineChanged = manifest && JSON.stringify(sortEntries(manifest.entries)) !== JSON.stringify(sortEntries([...baseline.values()]));
+        const baselineChanged = manifest && JSON.stringify(sortStorageEntries(manifest.entries)) !== JSON.stringify(sortStorageEntries(baseline.values()));
         if (mode === 'incremental' && uploads.length === 0 && deletes.length === 0 && !baselineChanged) {
           await materialize();
           return;
@@ -151,7 +134,7 @@ export function createStoragePublisher({ remote, newGeneration, materialize, log
         const generation = newGeneration();
         const reservation: StorageManifest = {
           version: 1, target, generation, status: 'pending', planFingerprint: plan.fingerprint,
-          entries: sortEntries([...baseline.values()]),
+          entries: sortStorageEntries(baseline.values()),
         };
         // CAS both missing and existing manifests. No clock-based lock expiry or automatic takeover.
         let reservationEtag: string;
@@ -183,7 +166,7 @@ export function createStoragePublisher({ remote, newGeneration, materialize, log
             nextEntries.set(operation.key, { key: operation.key, size: operation.size, contentHash: operation.contentHash, etag: operation.expectedEtag });
           }
           await remote.writeManifest({
-            manifest: { ...reservation, status: 'ready', entries: sortEntries([...nextEntries.values()]) },
+            manifest: { ...reservation, status: 'ready', entries: sortStorageEntries(nextEntries.values()) },
             expectedEtag: reservationEtag,
           });
         } catch {

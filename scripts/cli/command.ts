@@ -38,12 +38,20 @@ export type InitializePlatformStateCommand = SharedCommandOptions & {
   publisherId: string;
 };
 
+export type InitializeStorageStateCommand = SharedCommandOptions & {
+  kind: 'initialize-storage-state';
+  trustLocal: boolean;
+  pendingFile?: string;
+  expectedPlanFingerprint?: string;
+};
+
 export type ExecutableCommand =
   | SyncCommand
   | PublishCommand
   | ConfigureCommand
   | ImportCommand
-  | InitializePlatformStateCommand;
+  | InitializePlatformStateCommand
+  | InitializeStorageStateCommand;
 
 export type CliInvocation =
   | ExecutableCommand
@@ -56,8 +64,8 @@ type ParsedArguments = {
   switches: Set<string>;
 };
 
-const VALUE_OPTIONS = new Set(['--site', '--registry', '--expect']);
-const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage']);
+const VALUE_OPTIONS = new Set(['--site', '--registry', '--expect', '--pending']);
+const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage', '--trust-local']);
 const ALIASES = new Map([
   ['-s', '--site'],
   ['-r', '--registry'],
@@ -181,6 +189,22 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
   const [commandName, ...commandArgs] = argv;
   if (commandArgs.includes('--help') || commandArgs.includes('-h')) return { kind: 'help', topic: commandName };
   const arguments_ = parseArguments(commandArgs);
+
+  if (commandName === 'storage') {
+    rejectUnsupportedOptions({ arguments_, command: 'storage init',
+      allowedValues: ['--site', '--registry', '--expect', '--pending'],
+      allowedSwitches: ['--dry-run', '--verbose', '--trust-local'],
+    });
+    requirePositionals({ positionals: arguments_.positionals, count: 1, usage: 'notopress storage init --site <id> --trust-local' });
+    if (arguments_.positionals[0] !== 'init') throw new Error(`Unknown storage action "${arguments_.positionals[0]}". Run "notopress help storage".`);
+    if (!arguments_.switches.has('--trust-local')) throw new Error('Storage initialization requires explicit --trust-local.');
+    const expectedPlanFingerprint = arguments_.values.get('--expect');
+    assertFingerprint(expectedPlanFingerprint);
+    if (!arguments_.switches.has('--dry-run') && !expectedPlanFingerprint) throw new Error('Live storage initialization requires a reviewed --expect fingerprint.');
+    return { ...sharedOptions(arguments_), kind: 'initialize-storage-state', trustLocal: true,
+      pendingFile: arguments_.values.get('--pending'), expectedPlanFingerprint,
+    };
+  }
 
   if (commandName === 'sync' || commandName === 'deploy') {
     rejectUnsupportedOptions({

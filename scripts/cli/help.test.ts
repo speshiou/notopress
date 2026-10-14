@@ -13,5 +13,8 @@ describe('CLI help', () => {
     expect(formatCliHelp({})).toContain('publish <publisher> [slug...]');
     expect(formatCliHelp({ topic: 'publish' })).toContain('Usage: notopress publish <publisher> [slug...]');
     expect(formatCliHelp({ topic: 'publisher' })).toContain('publisher init <publisher>');
+    expect(formatCliHelp({ topic: 'storage' })).toContain('Writes only the manifest');
+    expect(formatCliHelp({ topic: 'storage' })).toContain('--pending <file>');
+    expect(formatCliHelp({ topic: 'storage' })).toContain('required live');
   });
 });
