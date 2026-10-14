@@ -1,6 +1,6 @@
 import type { Registry, Site } from '../../../src/domain/registry';
 import { env } from '../../../src/lib/env';
-import { StorageTargetSchema, type StorageTarget } from '../../core/storage/manifest';
+import { StorageTargetSchema, type StorageTarget } from '../../core/storage/target';
 
 export type StorageConnection = {
   target: StorageTarget;

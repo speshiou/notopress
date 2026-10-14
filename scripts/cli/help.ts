@@ -1,19 +1,4 @@
 const COMMAND_HELP: Record<string, string> = {
-  storage: `Usage: notopress storage init --site <id> --trust-local [options]
-
-Initialize an absent storage manifest without downloading existing objects.
-Trust matching-size local files as synced; same-size differences can be missed.
-Writes only the manifest. No article uploads, deletions, or adapter changes.
-Stop other storage writers first. Existing manifests cannot be overwritten.
-
-Options:
-  --trust-local      Explicitly accept the unverified local baseline
-  --pending <file>   JSON array of exact storage keys to keep pending upload
-  --dry-run          Preview without writing the manifest
-  --expect <hash>    Require the reviewed baseline fingerprint (required live)
-  --verbose, -v      Print the full baseline plan
-  --site, -s <id>    Select a site
-  --registry, -r     Use another registry file`,
   sync: `Usage: notopress sync [site] [options]
 
 Build and synchronize the native NotoPress site.
@@ -24,8 +9,6 @@ Options:
   --dry-run          Preview generated and remote changes
   --delete           Remove remote files missing from expected outputs
   --expect <hash>    Require the reviewed composite plan fingerprint
-  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
-  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
@@ -37,8 +20,6 @@ Options:
   --dry-run          Preview synchronization without deploying
   --delete           Remove remote files missing from expected outputs
   --expect <hash>    Require the reviewed composite plan fingerprint
-  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
-  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
@@ -54,8 +35,6 @@ Options:
   --expect <hash>    Require the reviewed composite plan fingerprint
   --force            Publish even when the adapter payload is unchanged
   --delete           Remove missing native-site objects during sync
-  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
-  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --registry, -r     Use another registry file`,
   import: `Usage: notopress import <publisher> <resource> [options]
@@ -96,7 +75,6 @@ Commands:
   publish <publisher> [slug...]       Publish through an adapter
   import <publisher> <resource>       Import one remote resource
   publisher init <publisher>          Mark current adapter payloads as synced
-  storage init                       Initialize a trusted storage baseline
   configure [site]                    Configure local development
 
 Run "notopress help <command>" for command details.`;

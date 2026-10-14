@@ -21,7 +21,6 @@ import { configureLocalEnvironment, deployApplication } from '../infrastructure/
 import { buildSite } from './build-site';
 import { publicationStageTimer } from '../infrastructure/stage-timing';
 import type { StageTimer } from '../core/stage-timing';
-import { initializeStorage } from './initialize-storage';
 
 async function selectSite({
   registry,
@@ -44,7 +43,7 @@ async function selectSite({
   if (!site) throw new Error(`Site "${selectedSiteId}" was not found in registry.json.`);
   if (command.kind === 'configure') return site;
   if (!(await exists(site.vaultPath))) throw new Error(`The local vaultPath does not exist: ${site.vaultPath}`);
-  if ((command.kind === 'sync' || command.kind === 'deploy' || command.kind === 'publish' || command.kind === 'initialize-storage-state') && !site.bucketName) {
+  if ((command.kind === 'sync' || command.kind === 'deploy' || command.kind === 'publish') && !site.bucketName) {
     throw new Error(`"bucketName" is not configured for site [${site.siteId}].`);
   }
   return site;
@@ -98,9 +97,6 @@ async function runPublication({ command, site, registry, stageTimer }: {
   registry: Registry;
   stageTimer: StageTimer;
 }): Promise<void> {
-  if (command.recoverStorage && !command.dryRun && !command.expectedPlanFingerprint) {
-    throw new Error('Live storage recovery requires a reviewed --expect fingerprint and stopped publishers.');
-  }
   const build = await stageTimer.measure({
     stage: 'build.total',
     run: () => buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, stageTimer, prepareOnly: true }),
@@ -136,8 +132,6 @@ async function runPublication({ command, site, registry, stageTimer }: {
   const storage = await prepareNativeSite({
     site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: build.sourceArtifacts,
     deleteRemoteFiles: command.deleteRemoteFiles,
-    reconcile: command.reconcileStorage,
-    recover: command.recoverStorage,
     verbose: command.verbose, stageTimer,
   });
   try {
@@ -174,7 +168,7 @@ async function runPublication({ command, site, registry, stageTimer }: {
       : '\n✅ Sync and registry upload successfully completed!');
     if (command.kind === 'deploy') await deployApplication({ site, registry });
   } finally {
-    storage.close();
+    await storage.close();
   }
 }
 
@@ -185,10 +179,6 @@ export async function runCommand({ command, registry, stageTimer = publicationSt
 }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
-  if (command.kind === 'initialize-storage-state') {
-    await stageTimer.measure({ stage: 'publication.total', run: () => initializeStorage({ command, site, registry, stageTimer }) });
-    return;
-  }
   if (command.kind === 'configure') {
     await configureLocalEnvironment({ site, registry });
     return;

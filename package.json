@@ -16,7 +16,6 @@
     "publish": "tsx --env-file=.env scripts/cli/main.ts publish",
     "import": "tsx --env-file=.env scripts/cli/main.ts import",
     "publisher:init": "tsx --env-file=.env scripts/cli/main.ts publisher init",
-    "storage:init": "tsx --env-file=.env scripts/cli/main.ts storage init",
     "test": "vitest",
     "type-check": "tsc --noEmit"
   },

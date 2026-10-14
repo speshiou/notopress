@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createOperationPlan } from './operation-plan';
 import { formatPublicationScope } from './publication-scope';
-import type { StorageOperation } from '../storage/publication';
+import type { AwsStorageOperation } from '../storage/aws-cli-plan';
 
-function plan(operations: StorageOperation[] = []) {
-  const allOperations: StorageOperation[] = [
-    { action: 'state', target: { endpoint: 'https://storage.example.invalid', bucket: 'example-bucket', siteId: 'example-site' }, manifestEtag: null, mode: 'bootstrap', deleteRemoteFiles: false },
+function plan(operations: AwsStorageOperation[] = []) {
+  const allOperations: AwsStorageOperation[] = [
+    { action: 'sync', target: { endpoint: 'https://storage.example.invalid', bucket: 'example-bucket', siteId: 'example-site' }, files: [], preview: [], deleteRemoteFiles: false },
     ...operations,
   ];
   return createOperationPlan({ kind: 'notopress-storage', operations: allOperations, serializeOperation: (operation) => operation });
@@ -13,10 +13,7 @@ function plan(operations: StorageOperation[] = []) {
 
 describe('destination scope explanation', () => {
   it('distinguishes selected target posts from full-vault backup without interpreting folder names', () => {
-    const storagePlan = plan([
-      { action: 'upload', key: 'example-site/notes/article.md', size: 4, contentHash: 'hash', expectedEtag: null },
-      { action: 'upload', key: 'example-site/workspace/example.json', size: 4, contentHash: 'hash', expectedEtag: null },
-    ]);
+    const storagePlan = plan();
     const fingerprint = storagePlan.fingerprint;
     const output = formatPublicationScope({ publisherId: 'example-main', targetSlugs: ['guides/article'], storagePlan, dryRun: true });
     expect(output).toContain('DRY RUN: proposed changes only');
@@ -25,7 +22,7 @@ describe('destination scope explanation', () => {
     expect(output).toContain('Target-site publication via adapter: example-main');
     expect(output).toContain('full eligible vault and generated site outputs');
     expect(output).toContain('Selected slugs limit adapter posts only; storage uploads do not create adapter posts');
-    const renamed = plan([{ action: 'upload', key: 'example-site/arbitrary/article.md', size: 4, contentHash: 'hash', expectedEtag: null }]);
+    const renamed = plan([{ action: 'upload-registry', size: 4, contentHash: 'hash' }]);
     expect(formatPublicationScope({ publisherId: 'example-main', targetSlugs: ['guides/article'], storagePlan: renamed, dryRun: true })).toBe(output);
     expect(storagePlan.fingerprint).toBe(fingerprint);
   });

@@ -156,7 +156,7 @@ backup/sync covers the full eligible vault and generated native-site outputs;
 storage uploads do not create WordPress posts. Folder names imply no publication
 or exclusion rules. Review both plans with the composite `--expect` fingerprint.
 
-Sync prepares expected indices, rendered HTML, sitemaps, image variants, and source files under the site's `siteId` prefix. Dry runs and live preparation do not write generated files. After plan validation, a live run materializes changed artifacts and executes explicit storage operations through the S3 SDK; it does not invoke whole-vault AWS CLI sync. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output reports counts and changed keys; `--verbose` also lists unchanged objects.
+Sync prepares expected indices, rendered HTML, sitemaps, image variants, and source files under the site's `siteId` prefix. Dry runs leave the vault and remote storage unchanged. After plan validation, a live run materializes changed artifacts, runs AWS CLI synchronization, and uploads the sanitized registry. Remote objects are preserved unless `--delete` is explicitly supplied. Output reports the CLI's proposed changes; `--verbose` includes build diagnostics.
 
 To sync content and deploy the Next.js runtime to Vercel in one workflow:
 
@@ -175,136 +175,49 @@ do not add `build.indices` or `build.total` to their child durations. A failed
 stage reports its elapsed time with `failed`, rather than a successful benchmark.
 Timing records contain only fixed stage names, elapsed seconds, and outcomes.
 
-`storage.inventory` measures local enumeration and hashing. `storage.compare`
-measures remote manifest comparison or reconciliation, and `storage.sync` measures
-live application. Targeting one adapter article still prepares the full native
-site; source parsing and rendering are not yet incremental.
+`storage.inventory` measures local enumeration and hashing. `storage.snapshot`
+measures temporary snapshot preparation; `storage.compare`
+measures AWS CLI preview, `storage.recheck` measures the pre-apply preview, and
+`storage.sync` measures live application. Targeting one adapter article still
+prepares the full native site; source parsing and rendering are not yet incremental.
 
-### Remote storage manifests
+### AWS CLI storage sync and migration
 
-NotoPress stores authoritative storage state at
-`<site-id>/.notopress/storage-manifest.json`. Entries contain relative object keys,
-SHA-256 byte hashes, sizes, and remote ETags. The manifest includes the destination
-identity and a versioned generation, but no credentials, local paths, or machine
-timestamps. Local caches and generated files are disposable.
+AWS CLI owns remote comparison and transfers. Install it on each machine, restore
+source files and registry/environment configuration, and update the local
+`vaultPath`. There is no storage baseline to initialize or local synchronization
+database to migrate. Existing `.notopress/` state is ignored and excluded from
+uploads and deletion.
 
-A normal run reads the manifest and performs a targeted check of the shared
-bucket-level `registry.json`. It compares expected byte hashes locally and prepares
-uploads, skips, and opt-in deletions. The storage fingerprint contributes to the
-composite publication fingerprint, including remote preconditions and destination
-identity. Same-size edits are detected. Old generated outputs that are no longer
-expected are omitted from the inventory and may be pruned with `--delete`; source
-files remain part of full native-site coverage.
+NotoPress prepares a temporary snapshot, including expected generated outputs,
+so dry runs leave the vault and remote storage unchanged. Where supported, file
+copies use filesystem cloning. Identical generated files retain their timestamps;
+only changed generated files are materialized in the vault after validation.
+The composite fingerprint covers local bytes, destination, deletion policy,
+sanitized registry bytes, and normalized AWS CLI preview output. Storage is
+previewed again before application; changed plans stop before writes.
 
-When no manifest exists, bootstrap lists only the selected site's prefix and
-reads/hashes existing objects that correspond to expected outputs. It does not
-trust object size or ETag as a content hash. This initial comparison can be
-expensive, especially with a large existing site. A bootstrap preview writes
-nothing, so the first reviewed live run repeats these reads before creating state.
-After successful live bootstrap, subsequent runs do not list the full remote site.
+AWS CLI uses its [standard size/mtime comparison](https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html), without the old `--size-only`
+flag. Normal same-size edits with newer timestamps are eligible for upload;
+restoring files or regenerating outputs on another machine may cause additional
+uploads. This is not remote content-hash verification. Preserve source timestamps
+and explicit date frontmatter when practical, and review a new dry run after
+migration. Preserve `.notopress-sync.json` for adapter caches if available.
 
-To skip initial object downloads, explicitly trust a local baseline instead:
+AWS CLI application is not an atomic transaction with its preview: avoid
+concurrent writers to the same storage prefix. Transfers use a single attempt;
+inspect failures before retrying a publication. NotoPress uses the classic S3
+transfer client, as recommended by [Cloudflare's AWS CLI guide](https://developers.cloudflare.com/r2/examples/aws/aws-cli/).
+The removed `storage init`, `--reconcile-storage`, and `--recover-storage`
+commands are no longer supported. Previous manifest-based publication fingerprints
+must be replaced with a newly reviewed AWS CLI plan.
 
-```bash
-npm run storage:init -- --site example-blog --trust-local --pending pending-uploads.json --dry-run
-npm run storage:init -- --site example-blog --trust-local --pending pending-uploads.json --expect <baseline-fingerprint>
-```
-
-`pending-uploads.json` is a JSON array of exact storage keys from a reviewed plan,
-for example `["example-blog/content/article.md", "example-blog/_rendered/content/article.html"]`.
-Initialization writes only an absent manifest, leaving those keys, missing files,
-and size mismatches pending for the next sync. Other matching-size files are
-assumed synced without verifying their bytes, so preserve all known pending
-uploads, including generated outputs. Omit `--pending` only when accepting that
-assumption for every matching-size file. No vault files, remote content objects,
-or WordPress posts are changed. Stop other storage writers first. Remote metadata
-is listed again before conditional manifest creation; existing state is never
-overwritten. After initialization, review a new sync/publish plan: old publication
-fingerprints are obsolete. `--reconcile-storage` remains available to verify bytes.
-
-The manifest tracks NotoPress-owned state. To detect external object changes or
-missing remote files, explicitly reconcile actual remote bytes:
-
-```bash
-npm run sync -- example-blog --dry-run --reconcile-storage
-npm run sync -- example-blog --reconcile-storage --expect <reviewed-fingerprint>
-```
-
-Use the same selection and flags for preview and application. `--expect` is
-supported by `sync`, `deploy`, and `publish`. Changing the destination, expected
-bytes, remote manifest, remote preconditions, reconciliation mode, or deletion
-policy changes the reviewed fingerprint.
-
-### Migration and interrupted publication
-
-On a new machine, restore the source vault and equivalent registry configuration,
-use `npm ci` with the same lockfile, configure credentials, and run a dry run.
-The local `vaultPath` can change. Missing generated files are prepared again and
-compared with the remote manifest; identical output does not require reuploading
-or remote listing. For reproducible date metadata, use explicit `date` and
-`updated` frontmatter or preserve source modification times. Managed agent rules
-use a generic NotoPress path placeholder rather than the current machine's path.
-Preserve `.notopress-sync.json` if available for adapter caches; adapters can
-rediscover remote resource IDs if that state is absent.
-
-A live run first reserves the manifest using a conditional create/update, then
-applies artifact writes and object operations, and commits the next ready manifest
-only after success. Competing NotoPress publishers cannot reserve the same
-generation. There is no time-based expiry or automatic lock takeover. SDK write
-retries are disabled because a lost response can leave a mutation's outcome
-uncertain. Failed or interrupted application normally leaves a pending manifest;
-a lost final response may instead leave an already committed ready manifest.
-
-Inspect uncertain outcomes with a dry run. If state is pending, stop all previous
-publishers and external writers before using explicit recovery:
-
-```bash
-npm run sync -- example-blog --dry-run --reconcile-storage --recover-storage
-npm run sync -- example-blog --reconcile-storage --recover-storage --expect <reviewed-fingerprint>
-```
-
-Live recovery requires the reviewed fingerprint. Recovery checks actual remote
-bytes and conditionally replaces the interrupted reservation; it does not blindly
-replay uploads. Invalid or unsupported manifest state also requires explicit
-recovery. `--delete` remains a separate opt-in and never prunes the shared registry
-or reserved manifest. Deletion checks ETags under the site reservation; external
-writers must be stopped during cleanup because R2 does not document atomic
-conditional deletes. Backends must support conditional `PutObject` operations;
-there is no unguarded-write fallback. The current transport supports single-object
-uploads up to 5 GiB and rejects larger uploads during planning; multipart uploads
-are not implemented. Symbolic links are rejected during inventory discovery, so
-restore source assets as files inside the vault. Conditional write support is
-documented in the [R2 S3 compatibility guide](https://developers.cloudflare.com/r2/api/s3/api/).
-
-Further scaling work remains: share a single parsed source inventory, track build
-dependencies, and cache unchanged parsing, rendering, and image work. The manifest
-workflow removes repeated remote discovery, but does not yet move generated
-variants out of the source tree or reclaim obsolete local derivatives.
-
-### Disposable R2 integration checks
-
-The live suite is skipped by default. It creates synthetic source files in a
-temporary directory and accesses only a unique `notopress-integration-<uuid>`
-bucket. It exercises dry runs, composite fingerprints, migration with an empty
-local cache, conditional-write concurrency, recovery after an injected lost
-upload response, reconciliation, and opt-in deletion. It verifies uploaded bytes
-independently, then removes the objects and bucket. It makes no WordPress requests.
-
-Configure test credentials locally with `NOTOPRESS_R2_TEST_ENDPOINT`,
-`NOTOPRESS_R2_TEST_ACCESS_KEY_ID`, and `NOTOPRESS_R2_TEST_SECRET_ACCESS_KEY`.
-Otherwise the suite uses the registry/environment storage credentials, while
-ignoring every configured vault and bucket. Automated bucket creation/deletion
-requires R2 bucket administration permission.
-
-```bash
-NOTOPRESS_R2_INTEGRATION=1 node --env-file=.env node_modules/vitest/vitest.mjs run scripts/infrastructure/native/r2.integration.test.ts --reporter=verbose
-```
-
-For object-only credentials, first create a new empty bucket named
-`notopress-integration-<uuid>` and set `NOTOPRESS_R2_TEST_MANAGED_BUCKET` to that
-exact name. The suite rejects configured bucket names and nonempty buckets. It
-removes all test objects and verifies the bucket is empty; the creator must then
-delete the bucket through the dashboard. Never select an existing data bucket.
+The opt-in live test requires a newly created empty bucket named
+`notopress-cli-integration-<uuid>`. Set `NOTOPRESS_AWS_CLI_INTEGRATION=1` and
+`NOTOPRESS_AWS_CLI_TEST_BUCKET` to its name, then run the adjacent
+`scripts/infrastructure/native/aws-cli.integration.test.ts` with Vitest.
+It uses synthetic files, rejects configured or nonempty buckets, and removes
+test objects afterward. Delete the empty bucket through its creator's dashboard.
 
 ## Platform adapters
 

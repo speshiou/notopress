@@ -14,6 +14,8 @@ export type PublicationStage =
   | 'publisher.prepare'
   | 'storage.compare'
   | 'storage.inventory'
+  | 'storage.snapshot'
+  | 'storage.recheck'
   | 'storage.sync';
 
 export type StageTiming = {

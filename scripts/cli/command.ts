@@ -8,8 +8,6 @@ export type SharedCommandOptions = {
 type NativeStorageCommandOptions = {
   deleteRemoteFiles: boolean;
   expectedPlanFingerprint?: string;
-  reconcileStorage?: boolean;
-  recoverStorage?: boolean;
 };
 
 export type SyncCommand = SharedCommandOptions & NativeStorageCommandOptions & {
@@ -38,20 +36,12 @@ export type InitializePlatformStateCommand = SharedCommandOptions & {
   publisherId: string;
 };
 
-export type InitializeStorageStateCommand = SharedCommandOptions & {
-  kind: 'initialize-storage-state';
-  trustLocal: boolean;
-  pendingFile?: string;
-  expectedPlanFingerprint?: string;
-};
-
 export type ExecutableCommand =
   | SyncCommand
   | PublishCommand
   | ConfigureCommand
   | ImportCommand
-  | InitializePlatformStateCommand
-  | InitializeStorageStateCommand;
+  | InitializePlatformStateCommand;
 
 export type CliInvocation =
   | ExecutableCommand
@@ -64,8 +54,8 @@ type ParsedArguments = {
   switches: Set<string>;
 };
 
-const VALUE_OPTIONS = new Set(['--site', '--registry', '--expect', '--pending']);
-const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage', '--trust-local']);
+const VALUE_OPTIONS = new Set(['--site', '--registry', '--expect']);
+const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force']);
 const ALIASES = new Map([
   ['-s', '--site'],
   ['-r', '--registry'],
@@ -154,17 +144,9 @@ function assertFingerprint(fingerprint?: string): void {
 function storageOptions(arguments_: ParsedArguments): NativeStorageCommandOptions {
   const expectedPlanFingerprint = arguments_.values.get('--expect');
   assertFingerprint(expectedPlanFingerprint);
-  const reconcileStorage = arguments_.switches.has('--reconcile-storage');
-  const recoverStorage = arguments_.switches.has('--recover-storage');
-  if (recoverStorage && !reconcileStorage) throw new Error('--recover-storage requires --reconcile-storage.');
-  if (recoverStorage && !arguments_.switches.has('--dry-run') && !expectedPlanFingerprint) {
-    throw new Error('Live storage recovery requires the reviewed --expect fingerprint. Stop all previous publishers before recovery.');
-  }
   return {
     deleteRemoteFiles: arguments_.switches.has('--delete'),
     ...(expectedPlanFingerprint ? { expectedPlanFingerprint } : {}),
-    ...(reconcileStorage ? { reconcileStorage: true } : {}),
-    ...(recoverStorage ? { recoverStorage: true } : {}),
   };
 }
 
@@ -187,31 +169,16 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
   if (argv[0] === '--version' || argv[0] === '-V' || argv[0] === 'version') return { kind: 'version' };
 
   const [commandName, ...commandArgs] = argv;
+  if (commandName === 'storage') throw new Error('Storage baseline commands have been removed. Use sync or publish with --dry-run.');
   if (commandArgs.includes('--help') || commandArgs.includes('-h')) return { kind: 'help', topic: commandName };
   const arguments_ = parseArguments(commandArgs);
-
-  if (commandName === 'storage') {
-    rejectUnsupportedOptions({ arguments_, command: 'storage init',
-      allowedValues: ['--site', '--registry', '--expect', '--pending'],
-      allowedSwitches: ['--dry-run', '--verbose', '--trust-local'],
-    });
-    requirePositionals({ positionals: arguments_.positionals, count: 1, usage: 'notopress storage init --site <id> --trust-local' });
-    if (arguments_.positionals[0] !== 'init') throw new Error(`Unknown storage action "${arguments_.positionals[0]}". Run "notopress help storage".`);
-    if (!arguments_.switches.has('--trust-local')) throw new Error('Storage initialization requires explicit --trust-local.');
-    const expectedPlanFingerprint = arguments_.values.get('--expect');
-    assertFingerprint(expectedPlanFingerprint);
-    if (!arguments_.switches.has('--dry-run') && !expectedPlanFingerprint) throw new Error('Live storage initialization requires a reviewed --expect fingerprint.');
-    return { ...sharedOptions(arguments_), kind: 'initialize-storage-state', trustLocal: true,
-      pendingFile: arguments_.values.get('--pending'), expectedPlanFingerprint,
-    };
-  }
 
   if (commandName === 'sync' || commandName === 'deploy') {
     rejectUnsupportedOptions({
       arguments_,
       command: commandName,
       allowedValues: ['--site', '--registry', '--expect'],
-      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--reconcile-storage', '--recover-storage'],
+      allowedSwitches: ['--dry-run', '--verbose', '--delete'],
     });
     return {
       ...sharedOptions(arguments_),
@@ -226,7 +193,7 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
       arguments_,
       command: commandName,
       allowedValues: ['--site', '--registry', '--expect'],
-      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage'],
+      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--force'],
     });
     if (arguments_.positionals.length === 0) {
       throw new Error('Usage: notopress publish <publisher> [slug...]');

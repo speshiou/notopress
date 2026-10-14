@@ -7,11 +7,13 @@ import { buildSite } from './build-site';
 import { passthroughStageTimer } from '../core/stage-timing';
 import { createVaultStorageFiles, createVaultStorageInventory } from '../infrastructure/native/vault-inventory';
 import { createNativeSitePreparation } from '../infrastructure/native/storage';
-import { createStorageHarness, target } from '../core/storage/publication.fixtures';
+import type { AwsCliRequest } from '../infrastructure/native/aws-cli';
+
+const target = { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' };
 import type { Site } from '../../src/domain/registry';
 
 describe('portable prepared native builds', () => {
-  it('prepares identical dry/live bytes on two machines, writes no previews, and reuses remote state without listing', async () => {
+  it('prepares portable bytes, previews through AWS CLI without vault writes, and rejects changed source inputs', async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'notopress-portable-'));
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
@@ -42,19 +44,18 @@ describe('portable prepared native builds', () => {
         await expect(access(path.join(vault, 'root.json'))).rejects.toThrow();
       }
 
-      const h = createStorageHarness();
-      const close = vi.fn();
+      const runCli = vi.fn(async ({ args }: AwsCliRequest) => args.includes('--dryrun')
+        ? `(dryrun) upload: ${args[2]}content/article.md to s3://${target.bucket}/${target.siteId}/content/article.md\n`
+        : '');
       const prepareNative = createNativeSitePreparation({
         resolveConnection: () => ({ target, credentials: { accessKeyId: 'example-key', secretAccessKey: 'example-secret' } }),
-        connect: () => ({ remote: h.remote, close }),
-        createFiles: (vaultPath) => createVaultStorageFiles({ vaultPath }),
-        newGeneration: () => 'generation', logger: { log: vi.fn() },
+        runCli, environment: { NODE_ENV: 'test' }, logger: { log: vi.fn() },
       });
       const preview = await prepareNative({ site: firstSite, registry: { sites: [firstSite] }, generatedArtifacts: firstBuild.generatedArtifacts, contentSnapshot: firstBuild.contentSnapshot, sourceArtifacts: firstBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer });
       const live = await prepareNative({ site: secondSite, registry: { sites: [secondSite] }, generatedArtifacts: secondBuild.generatedArtifacts, contentSnapshot: secondBuild.contentSnapshot, sourceArtifacts: secondBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer });
       expect(live.plan.fingerprint).toBe(preview.plan.fingerprint);
       await preview.apply({ dryRun: true });
-      expect(h.remote.writeManifest).not.toHaveBeenCalled();
+      expect(runCli.mock.calls.every(([request]) => request.args.includes('--dryrun'))).toBe(true);
       expect(await readdir(firstVault)).toEqual(['_includes', 'content']);
       await live.apply({ dryRun: false });
       expect(await readFile(path.join(secondVault, 'content/article.md'), 'utf8')).toBe(source);
@@ -66,22 +67,14 @@ describe('portable prepared native builds', () => {
       const coldObjects = await createVaultStorageInventory(createVaultStorageFiles({ vaultPath: firstVault })).collect({ generatedArtifacts: firstBuild.generatedArtifacts });
       expect(warmObjects.map(({ path, size, contentHash }) => ({ path, size, contentHash })))
         .toEqual(coldObjects.map(({ path, size, contentHash }) => ({ path, size, contentHash })));
-      h.remote.listObjects.mockClear();
-      h.remote.upload.mockClear();
-      h.remote.writeManifest.mockClear();
+      runCli.mockClear();
       const migrated = await prepareNative({ site: firstSite, registry: { sites: [firstSite] }, generatedArtifacts: firstBuild.generatedArtifacts, contentSnapshot: firstBuild.contentSnapshot, sourceArtifacts: firstBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer });
-      expect(h.remote.listObjects).not.toHaveBeenCalled();
-      expect(migrated.plan.operations.filter((operation) => operation.action === 'upload')).toEqual([]);
-      await migrated.apply({ dryRun: false });
-      expect(h.remote.upload).not.toHaveBeenCalled();
-      expect(h.remote.writeManifest).not.toHaveBeenCalled();
-      h.remote.readManifest.mockClear();
+      expect(migrated.plan.fingerprint).toBe(preview.plan.fingerprint);
       await writeFile(path.join(firstVault, '_includes/example-note.md'), 'Changed include body.');
       await expect(prepareNative({ site: firstSite, registry: { sites: [firstSite] }, generatedArtifacts: firstBuild.generatedArtifacts, contentSnapshot: firstBuild.contentSnapshot, sourceArtifacts: firstBuild.sourceArtifacts, deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer })).rejects.toThrow('Build source changed during preparation');
-      expect(h.remote.readManifest).not.toHaveBeenCalled();
+
       await writeFile(path.join(firstVault, '_includes/example-note.md'), '# Example Note\n\nIncluded body.');
-      preview.close(); live.close(); migrated.close();
-      expect(close).toHaveBeenCalledTimes(4);
+      await preview.close(); await live.close(); await migrated.close();
     } finally {
       log.mockRestore();
       await rm(fixtureRoot, { recursive: true, force: true });
