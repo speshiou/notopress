@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { parseCliCommand } from './command';
 
 describe('CLI command parser', () => {
+  it('supports reviewed storage plans and explicit reconciliation on native commands', () => {
+    expect(parseCliCommand({ argv: ['sync', '--site', 'example-site', '--expect', 'a'.repeat(64), '--reconcile-storage'] })).toMatchObject({
+      kind: 'sync', expectedPlanFingerprint: 'a'.repeat(64), reconcileStorage: true,
+    });
+    expect(parseCliCommand({ argv: ['publish', 'example-main', '--dry-run', '--reconcile-storage', '--recover-storage'] })).toMatchObject({
+      kind: 'publish', reconcileStorage: true, recoverStorage: true, dryRun: true,
+    });
+    expect(() => parseCliCommand({ argv: ['sync', '--recover-storage'] })).toThrow('requires --reconcile-storage');
+    expect(() => parseCliCommand({ argv: ['sync', '--reconcile-storage', '--recover-storage'] })).toThrow('reviewed --expect');
+    expect(() => parseCliCommand({ argv: ['import', 'example-main', 'article', '--reconcile-storage'] })).toThrow('not valid');
+  });
   it('uses an optional positional site for native sync commands', () => {
     expect(parseCliCommand({ argv: ['sync', 'example-blog', '--dry-run', '--verbose'] })).toEqual({
       kind: 'sync',

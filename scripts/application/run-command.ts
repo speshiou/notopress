@@ -14,10 +14,13 @@ import {
   type PublicationTarget,
 } from '../core/publishing/platform-adapter';
 import { assertOperationPlanFingerprint } from '../core/publishing/operation-plan';
+import { formatPublicationScope } from '../core/publishing/publication-scope';
 import { exists } from '../core/files';
-import { applyNativeSite } from '../infrastructure/native/storage';
+import { prepareNativeSite } from '../infrastructure/native/storage';
 import { configureLocalEnvironment, deployApplication } from '../infrastructure/vercel/deployment';
 import { buildSite } from './build-site';
+import { publicationStageTimer } from '../infrastructure/stage-timing';
+import type { StageTimer } from '../core/stage-timing';
 
 async function selectSite({
   registry,
@@ -88,27 +91,37 @@ async function runStateInitialization({ command, site, registry }: {
   });
 }
 
-async function runPublication({ command, site, registry }: {
+async function runPublication({ command, site, registry, stageTimer }: {
   command: SyncCommand | PublishCommand;
   site: Site;
   registry: Registry;
+  stageTimer: StageTimer;
 }): Promise<void> {
-  const build = await buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose });
+  if (command.recoverStorage && !command.dryRun && !command.expectedPlanFingerprint) {
+    throw new Error('Live storage recovery requires a reviewed --expect fingerprint and stopped publishers.');
+  }
+  const build = await stageTimer.measure({
+    stage: 'build.total',
+    run: () => buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, stageTimer, prepareOnly: true }),
+  });
   const platformRegistry = platformRegistryFor(site);
   const preparedPublications: PreparedPublication<unknown>[] = [];
   const publisherIds = command.kind === 'publish' ? [command.publisherId] : [];
   for (const publisherId of publisherIds) {
     const adapter = platformRegistry.get({ id: publisherId });
-    const prepared = await adapter.preparePublication({
-      site,
-      registry,
-      allIndices: build.allIndices,
-      contentSnapshot: build.contentSnapshot,
-      rootIndex: build.vaultRootIndex,
-      targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
-      force: command.kind === 'publish' && command.force,
-      dryRun: command.dryRun,
-      verbose: command.verbose,
+    const prepared = await stageTimer.measure({
+      stage: 'publisher.prepare',
+      run: () => adapter.preparePublication({
+        site,
+        registry,
+        allIndices: build.allIndices,
+        contentSnapshot: build.contentSnapshot,
+        rootIndex: build.vaultRootIndex,
+        targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
+        force: command.kind === 'publish' && command.force,
+        dryRun: command.dryRun,
+        verbose: command.verbose,
+      }),
     });
     if (prepared) preparedPublications.push(prepared);
   }
@@ -119,41 +132,56 @@ async function runPublication({ command, site, registry }: {
     renderedArtifacts: build.renderedContent.artifacts,
     deleteRemoteFiles: command.deleteRemoteFiles,
   });
-  const publicationPlan = createPublicationPlan({ nativeSitePlan, publications: preparedPublications });
-  console.log(`\n${formatPublicationPlan({ plan: publicationPlan })}`);
-  assertOperationPlanFingerprint({
-    label: 'NotoPress publication',
-    plan: publicationPlan,
-    expectedFingerprint: command.kind === 'publish' ? command.expectedPlanFingerprint : undefined,
+  const storage = await prepareNativeSite({
+    site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: build.sourceArtifacts,
+    deleteRemoteFiles: command.deleteRemoteFiles,
+    reconcile: command.reconcileStorage,
+    recover: command.recoverStorage,
+    verbose: command.verbose, stageTimer,
   });
-  if (command.kind === 'publish' && command.expectedPlanFingerprint) {
-    console.log(`✅ NotoPress publication plan fingerprint matched: ${publicationPlan.fingerprint}`);
-  }
-
-  const targets: PublicationTarget[] = preparedPublications.map((publication) => ({ publication }));
-  await executePublication({
-    targets,
-    applyNativeSite: () => applyNativeSite({
-      site,
-      registry,
+  try {
+    const publicationPlan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: preparedPublications });
+    console.log(`\n${formatPublicationScope({
+      publisherId: command.kind === 'publish' ? command.publisherId : undefined,
+      targetSlugs: command.kind === 'publish' ? command.targetSlugs : undefined,
+      storagePlan: storage.plan,
       dryRun: command.dryRun,
-      deleteRemoteFiles: command.deleteRemoteFiles,
-      verbose: command.verbose,
-    }),
-    dryRun: command.dryRun,
-  });
+    })}`);
+    console.log(`\n${formatPublicationPlan({ plan: publicationPlan })}`);
+    assertOperationPlanFingerprint({
+      label: 'NotoPress publication',
+      plan: publicationPlan,
+      expectedFingerprint: command.expectedPlanFingerprint,
+    });
+    if (command.expectedPlanFingerprint) {
+      console.log(`✅ NotoPress publication plan fingerprint matched: ${publicationPlan.fingerprint}`);
+    }
 
-  if (command.dryRun) {
-    console.log('\n✅ Dry run completed successfully!');
-    return;
+    const targets: PublicationTarget[] = preparedPublications.map((publication) => ({ publication }));
+    await executePublication({
+      targets,
+      applyNativeSite: () => storage.apply({ dryRun: command.dryRun }),
+      dryRun: command.dryRun,
+    });
+
+    if (command.dryRun) {
+      console.log('\n✅ Dry run completed successfully!');
+      return;
+    }
+    console.log(command.kind === 'publish'
+      ? '\n✅ Native sync and publisher apply completed successfully!'
+      : '\n✅ Sync and registry upload successfully completed!');
+    if (command.kind === 'deploy') await deployApplication({ site, registry });
+  } finally {
+    storage.close();
   }
-  console.log(command.kind === 'publish'
-    ? '\n✅ Native sync and publisher apply completed successfully!'
-    : '\n✅ Sync and registry upload successfully completed!');
-  if (command.kind === 'deploy') await deployApplication({ site, registry });
 }
 
-export async function runCommand({ command, registry }: { command: ExecutableCommand; registry: Registry }): Promise<void> {
+export async function runCommand({ command, registry, stageTimer = publicationStageTimer }: {
+  command: ExecutableCommand;
+  registry: Registry;
+  stageTimer?: StageTimer;
+}): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
   if (command.kind === 'configure') {
@@ -168,5 +196,7 @@ export async function runCommand({ command, registry }: { command: ExecutableCom
     await runStateInitialization({ command, site, registry });
     return;
   }
-  await runPublication({ command, site, registry });
+  await stageTimer.measure({
+    stage: 'publication.total', run: () => runPublication({ command, site, registry, stageTimer }),
+  });
 }

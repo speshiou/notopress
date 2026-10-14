@@ -13,16 +13,24 @@ export async function mapWithConcurrency<TInput, TOutput>({
 
   const results = new Array<TOutput>(items.length);
   let nextIndex = 0;
+  let failed = false;
+  let failure: unknown;
 
   async function runWorker(): Promise<void> {
-    while (nextIndex < items.length) {
+    while (!failed && nextIndex < items.length) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await worker(items[index], index);
+      try {
+        results[index] = await worker(items[index], index);
+      } catch (error: unknown) {
+        if (!failed) failure = error;
+        failed = true;
+      }
     }
   }
 
   const workerCount = Math.min(concurrency, items.length);
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  if (failed) throw failure;
   return results;
 }

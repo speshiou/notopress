@@ -23,7 +23,7 @@ The native site and platform adapters share content discovery and publication pl
 
 ## Getting started
 
-You need Node.js, an S3-compatible bucket, and the AWS CLI. Vercel is optional unless you use the included deployment workflow.
+You need Node.js and an S3-compatible bucket with conditional object writes. Vercel is optional unless you use the included deployment workflow.
 
 ```bash
 npm install
@@ -146,12 +146,17 @@ npm run sync -- example-blog --dry-run
 Run the live sync after reviewing the generated files, warnings, storage operations, and publication fingerprint:
 
 ```bash
-npm run sync -- example-blog
+npm run sync -- example-blog --expect <reviewed-fingerprint>
 ```
 
 `sync` uploads native NotoPress files only, including for sites with WordPress configured. It does not create or update WordPress posts. For a WordPress site-wide push, use `publish <publisher> --site <site-id>` without slugs, first with `--dry-run` and then with the reviewed `--expect` fingerprint.
 
-Sync generates indices, rendered HTML, sitemaps, and image variants before uploading the vault under the site's `siteId` prefix. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output is concise; `--verbose` enables per-file diagnostics.
+For `publish <publisher> [slug...]`, slugs limit adapter posts only. S3/R2
+backup/sync covers the full eligible vault and generated native-site outputs;
+storage uploads do not create WordPress posts. Folder names imply no publication
+or exclusion rules. Review both plans with the composite `--expect` fingerprint.
+
+Sync prepares expected indices, rendered HTML, sitemaps, image variants, and source files under the site's `siteId` prefix. Dry runs and live preparation do not write generated files. After plan validation, a live run materializes changed artifacts and executes explicit storage operations through the S3 SDK; it does not invoke whole-vault AWS CLI sync. Remote objects are preserved unless `--delete` is explicitly supplied. Normal output reports counts and changed keys; `--verbose` also lists unchanged objects.
 
 To sync content and deploy the Next.js runtime to Vercel in one workflow:
 
@@ -160,6 +165,127 @@ npm run deploy -- example-blog
 ```
 
 Use `--registry <path>` to select another registry. The `REGISTRY_PATH` environment variable provides the same override.
+
+### Publication performance
+
+Publication commands emit `[TIMING]` lines for content scanning, thumbnail checks,
+asset and include scanning, snapshot construction, rendering, sitemap generation,
+publisher preparation, and native storage. Stage durations include nested work;
+do not add `build.indices` or `build.total` to their child durations. A failed
+stage reports its elapsed time with `failed`, rather than a successful benchmark.
+Timing records contain only fixed stage names, elapsed seconds, and outcomes.
+
+`storage.inventory` measures local enumeration and hashing. `storage.compare`
+measures remote manifest comparison or reconciliation, and `storage.sync` measures
+live application. Targeting one adapter article still prepares the full native
+site; source parsing and rendering are not yet incremental.
+
+### Remote storage manifests
+
+NotoPress stores authoritative storage state at
+`<site-id>/.notopress/storage-manifest.json`. Entries contain relative object keys,
+SHA-256 byte hashes, sizes, and remote ETags. The manifest includes the destination
+identity and a versioned generation, but no credentials, local paths, or machine
+timestamps. Local caches and generated files are disposable.
+
+A normal run reads the manifest and performs a targeted check of the shared
+bucket-level `registry.json`. It compares expected byte hashes locally and prepares
+uploads, skips, and opt-in deletions. The storage fingerprint contributes to the
+composite publication fingerprint, including remote preconditions and destination
+identity. Same-size edits are detected. Old generated outputs that are no longer
+expected are omitted from the inventory and may be pruned with `--delete`; source
+files remain part of full native-site coverage.
+
+When no manifest exists, bootstrap lists only the selected site's prefix and
+reads/hashes existing objects that correspond to expected outputs. It does not
+trust object size or ETag as a content hash. This initial comparison can be
+expensive, especially with a large existing site. A bootstrap preview writes
+nothing, so the first reviewed live run repeats these reads before creating state.
+After successful live bootstrap, subsequent runs do not list the full remote site.
+
+The manifest tracks NotoPress-owned state. To detect external object changes or
+missing remote files, explicitly reconcile actual remote bytes:
+
+```bash
+npm run sync -- example-blog --dry-run --reconcile-storage
+npm run sync -- example-blog --reconcile-storage --expect <reviewed-fingerprint>
+```
+
+Use the same selection and flags for preview and application. `--expect` is
+supported by `sync`, `deploy`, and `publish`. Changing the destination, expected
+bytes, remote manifest, remote preconditions, reconciliation mode, or deletion
+policy changes the reviewed fingerprint.
+
+### Migration and interrupted publication
+
+On a new machine, restore the source vault and equivalent registry configuration,
+use `npm ci` with the same lockfile, configure credentials, and run a dry run.
+The local `vaultPath` can change. Missing generated files are prepared again and
+compared with the remote manifest; identical output does not require reuploading
+or remote listing. For reproducible date metadata, use explicit `date` and
+`updated` frontmatter or preserve source modification times. Managed agent rules
+use a generic NotoPress path placeholder rather than the current machine's path.
+Preserve `.notopress-sync.json` if available for adapter caches; adapters can
+rediscover remote resource IDs if that state is absent.
+
+A live run first reserves the manifest using a conditional create/update, then
+applies artifact writes and object operations, and commits the next ready manifest
+only after success. Competing NotoPress publishers cannot reserve the same
+generation. There is no time-based expiry or automatic lock takeover. SDK write
+retries are disabled because a lost response can leave a mutation's outcome
+uncertain. Failed or interrupted application normally leaves a pending manifest;
+a lost final response may instead leave an already committed ready manifest.
+
+Inspect uncertain outcomes with a dry run. If state is pending, stop all previous
+publishers and external writers before using explicit recovery:
+
+```bash
+npm run sync -- example-blog --dry-run --reconcile-storage --recover-storage
+npm run sync -- example-blog --reconcile-storage --recover-storage --expect <reviewed-fingerprint>
+```
+
+Live recovery requires the reviewed fingerprint. Recovery checks actual remote
+bytes and conditionally replaces the interrupted reservation; it does not blindly
+replay uploads. Invalid or unsupported manifest state also requires explicit
+recovery. `--delete` remains a separate opt-in and never prunes the shared registry
+or reserved manifest. Deletion checks ETags under the site reservation; external
+writers must be stopped during cleanup because R2 does not document atomic
+conditional deletes. Backends must support conditional `PutObject` operations;
+there is no unguarded-write fallback. The current transport supports single-object
+uploads up to 5 GiB and rejects larger uploads during planning; multipart uploads
+are not implemented. Symbolic links are rejected during inventory discovery, so
+restore source assets as files inside the vault. Conditional write support is
+documented in the [R2 S3 compatibility guide](https://developers.cloudflare.com/r2/api/s3/api/).
+
+Further scaling work remains: share a single parsed source inventory, track build
+dependencies, and cache unchanged parsing, rendering, and image work. The manifest
+workflow removes repeated remote discovery, but does not yet move generated
+variants out of the source tree or reclaim obsolete local derivatives.
+
+### Disposable R2 integration checks
+
+The live suite is skipped by default. It creates synthetic source files in a
+temporary directory and accesses only a unique `notopress-integration-<uuid>`
+bucket. It exercises dry runs, composite fingerprints, migration with an empty
+local cache, conditional-write concurrency, recovery after an injected lost
+upload response, reconciliation, and opt-in deletion. It verifies uploaded bytes
+independently, then removes the objects and bucket. It makes no WordPress requests.
+
+Configure test credentials locally with `NOTOPRESS_R2_TEST_ENDPOINT`,
+`NOTOPRESS_R2_TEST_ACCESS_KEY_ID`, and `NOTOPRESS_R2_TEST_SECRET_ACCESS_KEY`.
+Otherwise the suite uses the registry/environment storage credentials, while
+ignoring every configured vault and bucket. Automated bucket creation/deletion
+requires R2 bucket administration permission.
+
+```bash
+NOTOPRESS_R2_INTEGRATION=1 node --env-file=.env node_modules/vitest/vitest.mjs run scripts/infrastructure/native/r2.integration.test.ts --reporter=verbose
+```
+
+For object-only credentials, first create a new empty bucket named
+`notopress-integration-<uuid>` and set `NOTOPRESS_R2_TEST_MANAGED_BUCKET` to that
+exact name. The suite rejects configured bucket names and nonempty buckets. It
+removes all test objects and verifies the bucket is empty; the creator must then
+delete the bucket through the dashboard. Never select an existing data bucket.
 
 ## Platform adapters
 
@@ -194,7 +320,7 @@ npm run publish -- \
   --dry-run
 ```
 
-The dry-run prints one composite fingerprint for the native site and all selected platform plans. Pass that fingerprint to the corresponding live run:
+The dry-run prints one composite fingerprint for the native build, storage operations, and all selected platform plans. Pass that fingerprint to the corresponding live run:
 
 ```bash
 npm run publish -- \

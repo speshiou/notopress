@@ -64,12 +64,15 @@ export function createNativeSitePlan({
 export function createPublicationPlan({
   nativeSitePlan,
   publications,
+  nativeStoragePlan,
 }: {
   nativeSitePlan: NativeSitePlan;
   publications: readonly PreparedPublication<unknown>[];
+  nativeStoragePlan?: OperationPlan<unknown>;
 }): PublicationPlan {
   const components: PlanComponent[] = [
     { id: 'notopress', kind: nativeSitePlan.kind, fingerprint: nativeSitePlan.fingerprint },
+    ...(nativeStoragePlan ? [{ id: 'notopress-storage', kind: nativeStoragePlan.kind, fingerprint: nativeStoragePlan.fingerprint }] : []),
     ...publications.map((publication) => ({
       id: publication.id,
       kind: publication.plan.kind,

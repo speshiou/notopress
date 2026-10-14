@@ -11,6 +11,10 @@ import { generateImageThumbnails } from './thumbnails';
 import { parseContentTaxonomies } from '../../../src/lib/content-metadata';
 import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../../src/lib/rewrites';
 import { findUnescapedWikilinksInTables, formatUnescapedTableWikilinkWarning } from '../../../src/lib/table-wikilinks';
+import { passthroughStageTimer, type StageTimer } from '../stage-timing';
+import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
+import { isGeneratedArtifactDirectory, isGeneratedSitemapPath } from './generated-paths';
+import { compareStrings } from '../order';
 
 type Logger = Pick<typeof console, 'log' | 'warn' | 'error'>;
 type MatterResult = {
@@ -43,6 +47,7 @@ export type IndexGeneratorDeps = {
     dryRun: boolean;
     thumbnailSizes: readonly number[];
     label: string;
+    collectArtifact?: CollectBuildArtifact;
   }) => Promise<Record<string, number[]>>;
   logger: Logger;
 };
@@ -116,11 +121,11 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           return;
         }
 
-        const entries = await deps.readdir(currentDir, { withFileTypes: true });
+        const entries = [...await deps.readdir(currentDir, { withFileTypes: true })].sort((left, right) => compareStrings({ left: left.name, right: right.name }));
         for (const entry of entries) {
           const fullPath = deps.joinPath(currentDir, entry.name);
           if (entry.isDirectory()) {
-            if (entry.name !== '.git' && entry.name !== 'node_modules') {
+            if (entry.name !== '.git' && entry.name !== 'node_modules' && !isGeneratedArtifactDirectory(entry.name)) {
               await walk(fullPath);
             }
           } else if (entry.isFile() && entry.name.endsWith('.md')) {
@@ -146,7 +151,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       await walk(includeDir);
     }
 
-    return noteIncludes.sort((a, b) => a.fullSlug.localeCompare(b.fullSlug));
+    return noteIncludes.sort((a, b) => compareStrings({ left: a.fullSlug, right: b.fullSlug }));
   }
 
   async function scanAndGenerate({
@@ -160,7 +165,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
     dryRun: boolean;
     allIndices: Map<string, VaultDirectoryIndex>;
   }): Promise<{ index: VaultDirectoryIndex; allDirs: string[] }> {
-    const entries = await deps.readdir(dir, { withFileTypes: true });
+    const entries = [...await deps.readdir(dir, { withFileTypes: true })].sort((left, right) => compareStrings({ left: left.name, right: right.name }));
     const pages: PageMetadata[] = [];
     const allDirs: string[] = [];
 
@@ -170,7 +175,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       const fullPath = deps.joinPath(dir, entry.name);
 
       if (entry.isDirectory()) {
-        if (entry.name !== '.git' && entry.name !== 'node_modules') {
+        if (entry.name !== '.git' && entry.name !== 'node_modules' && !isGeneratedArtifactDirectory(entry.name)) {
           const result = await scanAndGenerate({ dir: fullPath, baseDir, dryRun, allIndices });
           const childRelDir = deps.relativePath(baseDir, fullPath).replace(/\\/g, '/');
           allDirs.push(childRelDir, ...result.allDirs);
@@ -235,7 +240,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       }
     }
 
-    pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    pages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || compareStrings({ left: a.slug, right: b.slug }));
 
     const indexData: VaultDirectoryIndex = {
       version: 1,
@@ -256,6 +261,8 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       rewrites,
       dryRun = false,
       verbose = false,
+      stageTimer = passthroughStageTimer,
+      collectArtifact,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
@@ -263,6 +270,8 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       rewrites?: readonly RewriteRule[];
       dryRun?: boolean;
       verbose?: boolean;
+      stageTimer?: StageTimer;
+      collectArtifact?: CollectBuildArtifact;
     }): Promise<{
       rootContentIndex: VaultDirectoryIndex;
       vaultRootIndex: VaultRootIndex;
@@ -275,11 +284,14 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
 
       deps.logger.log(`\n🔍 Recursively scanning "content" directory in ${contentDir}...`);
       const allIndices = new Map<string, VaultDirectoryIndex>();
-      const { index: rootContentIndex, allDirs } = await scanAndGenerate({
-        dir: contentDir,
-        baseDir: contentDir,
-        dryRun,
-        allIndices,
+      const { index: rootContentIndex, allDirs } = await stageTimer.measure({
+        stage: 'build.content-scan',
+        run: () => scanAndGenerate({
+          dir: contentDir,
+          baseDir: contentDir,
+          dryRun,
+          allIndices,
+        }),
       });
 
       const fullSlugs: string[] = [];
@@ -307,6 +319,10 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         const indexPath = relDir
           ? deps.joinPath(contentDir, relDir, INDEX_JSON)
           : deps.joinPath(contentDir, INDEX_JSON);
+        collectArtifact?.(createBuildArtifact({
+          path: relDir ? `content/${relDir}/${INDEX_JSON}` : `content/${INDEX_JSON}`,
+          content: JSON.stringify(indexData, null, 2),
+        }));
         if (!dryRun) {
           await deps.writeFile(indexPath, JSON.stringify(indexData, null, 2));
           if (verbose) {
@@ -323,25 +339,41 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         await deps.mkdir(publicBaseDir, { recursive: true });
       }
 
-      const contentResponsiveImageWidths = await deps.generateImageThumbnails({
-        sourceDir: contentDir,
-        dryRun,
-        thumbnailSizes,
-        label: 'content',
+      const contentResponsiveImageWidths = await stageTimer.measure({
+        stage: 'build.thumbnails.content',
+        run: () => deps.generateImageThumbnails({
+          sourceDir: contentDir,
+          dryRun,
+          thumbnailSizes,
+          label: 'content',
+          ...(collectArtifact ? { collectArtifact: (artifact) => collectArtifact({ ...artifact, path: `content/${artifact.path}` }) } : {}),
+        }),
       });
-      const publicResponsiveImageWidths = await deps.generateImageThumbnails({
-        sourceDir: publicBaseDir,
-        dryRun,
-        thumbnailSizes,
-        label: 'public',
+      const publicResponsiveImageWidths = await stageTimer.measure({
+        stage: 'build.thumbnails.public',
+        run: () => deps.generateImageThumbnails({
+          sourceDir: publicBaseDir,
+          dryRun,
+          thumbnailSizes,
+          label: 'public',
+          ...(collectArtifact ? { collectArtifact: (artifact) => collectArtifact({ ...artifact, path: `public/${artifact.path}` }) } : {}),
+        }),
       });
 
-      const publicFiles = excludeGeneratedFiles(
-        (await deps.exists(publicBaseDir)) ? await deps.scanPublicFiles({ dir: publicBaseDir }) : []
-      ).sort();
-      const contentAssetFiles = excludeGeneratedFiles(await deps.scanContentAssetFiles({ dir: contentDir }));
+      const { publicFiles, contentAssetFiles } = await stageTimer.measure({
+        stage: 'build.asset-scan',
+        run: async () => ({
+          publicFiles: excludeGeneratedFiles(
+            (await deps.exists(publicBaseDir)) ? await deps.scanPublicFiles({ dir: publicBaseDir }) : []
+          ).filter((file) => !isGeneratedSitemapPath(file)).sort(),
+          contentAssetFiles: excludeGeneratedFiles(await deps.scanContentAssetFiles({ dir: contentDir })),
+        }),
+      });
       const assetFiles = [...new Set([...publicFiles, ...contentAssetFiles])].sort();
-      const noteIncludes = await scanNoteIncludes({ vaultPath, noteIncludePaths });
+      const noteIncludes = await stageTimer.measure({
+        stage: 'build.include-scan',
+        run: () => scanNoteIncludes({ vaultPath, noteIncludePaths }),
+      });
 
       const rootPath = deps.joinPath(vaultPath, ROOT_JSON);
       const vaultRootIndex: VaultRootIndex = {
@@ -359,8 +391,10 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         publicDirectories: routeTable.publicDirectories,
       };
 
+      collectArtifact?.(createBuildArtifact({ path: ROOT_JSON, content: JSON.stringify(vaultRootIndex, null, 2) }));
+
       if (dryRun) {
-        deps.logger.log(`[DRY RUN] Would generate master root index at: ${rootPath}`);
+        deps.logger.log(`${collectArtifact ? '[PLAN]' : '[DRY RUN]'} Would generate master root index at: ${rootPath}`);
       } else {
         await deps.writeFile(rootPath, JSON.stringify(vaultRootIndex, null, 2));
         deps.logger.log(`✨ Generated master root index with ${allDirs.length} directories at: ${rootPath}`);

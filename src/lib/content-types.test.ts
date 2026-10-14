@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import { getContentType, DEFAULT_CONTENT_TYPE } from "./content-types";
 
 describe("getContentType", () => {
+  it("serves rendered HTML and Markdown with text content types", () => {
+    expect(getContentType("_rendered/content/article.html")).toBe("text/html; charset=utf-8");
+    expect(getContentType("content/article.md")).toBe("text/markdown; charset=utf-8");
+  });
   it("maps XML sitemap and feed extensions correctly", () => {
     expect(getContentType("sitemap.xml")).toBe("application/xml; charset=utf-8");
     expect(getContentType("public/sitemap_pages.xml")).toBe("application/xml; charset=utf-8");

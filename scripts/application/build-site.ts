@@ -6,54 +6,85 @@ import { generateRenderedContent } from '../core/content/rendered-content';
 import { ensureVaultAgentRules } from './agent-rules';
 import { generateIndices } from '../core/content/indices';
 import { generateSitemaps } from '../core/content/sitemaps';
+import type { StageTimer } from '../core/stage-timing';
+import { publicationStageTimer } from '../infrastructure/stage-timing';
+import type { BuildArtifact } from '../core/content/build-artifact';
 
 export async function buildSite({
   site,
   registry,
   dryRun,
   verbose,
+  stageTimer = publicationStageTimer,
+  prepareOnly = false,
 }: {
   site: Site;
   registry: Registry;
   dryRun: boolean;
   verbose: boolean;
+  stageTimer?: StageTimer;
+  prepareOnly?: boolean;
 }) {
+  const generatedArtifacts: BuildArtifact[] = [];
+  const sourceArtifacts: BuildArtifact[] = [];
+  const collectArtifact = prepareOnly ? (artifact: BuildArtifact) => { generatedArtifacts.push(artifact); } : undefined;
+  const readOnly = dryRun || prepareOnly;
   const thumbnailSizes = normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes);
-  await ensureVaultAgentRules({
-    vaultPath: site.vaultPath,
-    siteId: site.siteId,
-    isWordPressEnabled: hasConfiguredPlatformType({ site, type: 'wordpress' }),
-    dryRun,
+  await stageTimer.measure({
+    stage: 'build.agent-rules',
+    run: () => ensureVaultAgentRules({
+      vaultPath: site.vaultPath,
+      siteId: site.siteId,
+      isWordPressEnabled: hasConfiguredPlatformType({ site, type: 'wordpress' }),
+      dryRun: readOnly,
+      collectArtifact,
+    }),
   });
 
-  const { rootContentIndex, vaultRootIndex, allIndices } = await generateIndices({
-    vaultPath: site.vaultPath,
-    thumbnailSizes,
-    noteIncludePaths: site.noteIncludePaths,
-    rewrites: site.rewrites,
-    dryRun,
-    verbose,
+  const { rootContentIndex, vaultRootIndex, allIndices } = await stageTimer.measure({
+    stage: 'build.indices',
+    run: () => generateIndices({
+      vaultPath: site.vaultPath,
+      thumbnailSizes,
+      noteIncludePaths: site.noteIncludePaths,
+      rewrites: site.rewrites,
+      dryRun: readOnly,
+      verbose,
+      stageTimer,
+      collectArtifact,
+    }),
   });
-  const contentSnapshot = await buildContentSnapshot({ vaultPath: site.vaultPath, allIndices });
-  const renderedContent = await generateRenderedContent({
-    vaultPath: site.vaultPath,
-    siteId: site.siteId,
-    imageHost: site.imageHost || registry.imageHost,
-    allIndices,
-    contentSnapshot,
-    rootIndex: vaultRootIndex,
-    thumbnailSizes,
-    noteIncludePaths: site.noteIncludePaths,
-    dryRun,
+  const contentSnapshot = await stageTimer.measure({
+    stage: 'build.snapshot', run: () => buildContentSnapshot({ vaultPath: site.vaultPath, allIndices }),
   });
-  await generateSitemaps({
-    vaultPath: site.vaultPath,
-    domain: site.domain,
-    rootContentIndex,
-    allIndices,
-    routes: vaultRootIndex.routes,
-    dryRun,
+  const renderedContent = await stageTimer.measure({
+    stage: 'build.render',
+    run: () => generateRenderedContent({
+      vaultPath: site.vaultPath,
+      siteId: site.siteId,
+      imageHost: site.imageHost || registry.imageHost,
+      allIndices,
+      contentSnapshot,
+      rootIndex: vaultRootIndex,
+      thumbnailSizes,
+      noteIncludePaths: site.noteIncludePaths,
+      dryRun: readOnly,
+      collectArtifact,
+      collectSourceArtifact: prepareOnly ? (artifact) => { sourceArtifacts.push(artifact); } : undefined,
+    }),
+  });
+  await stageTimer.measure({
+    stage: 'build.sitemaps',
+    run: () => generateSitemaps({
+      vaultPath: site.vaultPath,
+      domain: site.domain,
+      rootContentIndex,
+      allIndices,
+      routes: vaultRootIndex.routes,
+      dryRun: readOnly,
+      collectArtifact,
+    }),
   });
 
-  return { allIndices, contentSnapshot, vaultRootIndex, renderedContent };
+  return { allIndices, contentSnapshot, vaultRootIndex, renderedContent, generatedArtifacts, sourceArtifacts };
 }

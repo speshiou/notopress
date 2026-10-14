@@ -23,6 +23,8 @@ export const EXTENSION_MIME_MAP: Record<string, string> = {
   csv: "text/csv; charset=utf-8",
 
   // Code & Web Assets
+  html: "text/html; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
   css: "text/css; charset=utf-8",
   js: "application/javascript; charset=utf-8",
   mjs: "application/javascript; charset=utf-8",

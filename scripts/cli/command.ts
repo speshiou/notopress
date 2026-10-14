@@ -5,18 +5,22 @@ export type SharedCommandOptions = {
   verbose: boolean;
 };
 
-export type SyncCommand = SharedCommandOptions & {
-  kind: 'sync' | 'deploy';
+type NativeStorageCommandOptions = {
   deleteRemoteFiles: boolean;
+  expectedPlanFingerprint?: string;
+  reconcileStorage?: boolean;
+  recoverStorage?: boolean;
 };
 
-export type PublishCommand = SharedCommandOptions & {
+export type SyncCommand = SharedCommandOptions & NativeStorageCommandOptions & {
+  kind: 'sync' | 'deploy';
+};
+
+export type PublishCommand = SharedCommandOptions & NativeStorageCommandOptions & {
   kind: 'publish';
   publisherId: string;
   targetSlugs?: readonly string[];
-  expectedPlanFingerprint?: string;
   force: boolean;
-  deleteRemoteFiles: boolean;
 };
 
 export type ConfigureCommand = SharedCommandOptions & {
@@ -53,7 +57,7 @@ type ParsedArguments = {
 };
 
 const VALUE_OPTIONS = new Set(['--site', '--registry', '--expect']);
-const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force']);
+const SWITCH_OPTIONS = new Set(['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage']);
 const ALIASES = new Map([
   ['-s', '--site'],
   ['-r', '--registry'],
@@ -139,6 +143,23 @@ function assertFingerprint(fingerprint?: string): void {
   }
 }
 
+function storageOptions(arguments_: ParsedArguments): NativeStorageCommandOptions {
+  const expectedPlanFingerprint = arguments_.values.get('--expect');
+  assertFingerprint(expectedPlanFingerprint);
+  const reconcileStorage = arguments_.switches.has('--reconcile-storage');
+  const recoverStorage = arguments_.switches.has('--recover-storage');
+  if (recoverStorage && !reconcileStorage) throw new Error('--recover-storage requires --reconcile-storage.');
+  if (recoverStorage && !arguments_.switches.has('--dry-run') && !expectedPlanFingerprint) {
+    throw new Error('Live storage recovery requires the reviewed --expect fingerprint. Stop all previous publishers before recovery.');
+  }
+  return {
+    deleteRemoteFiles: arguments_.switches.has('--delete'),
+    ...(expectedPlanFingerprint ? { expectedPlanFingerprint } : {}),
+    ...(reconcileStorage ? { reconcileStorage: true } : {}),
+    ...(recoverStorage ? { recoverStorage: true } : {}),
+  };
+}
+
 function requirePositionals({
   positionals,
   count,
@@ -165,14 +186,14 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
     rejectUnsupportedOptions({
       arguments_,
       command: commandName,
-      allowedValues: ['--site', '--registry'],
-      allowedSwitches: ['--dry-run', '--verbose', '--delete'],
+      allowedValues: ['--site', '--registry', '--expect'],
+      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--reconcile-storage', '--recover-storage'],
     });
     return {
       ...sharedOptions(arguments_),
       siteId: optionalSite({ arguments_, command: commandName }),
       kind: commandName,
-      deleteRemoteFiles: arguments_.switches.has('--delete'),
+      ...storageOptions(arguments_),
     };
   }
 
@@ -181,22 +202,21 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
       arguments_,
       command: commandName,
       allowedValues: ['--site', '--registry', '--expect'],
-      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--force'],
+      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--force', '--reconcile-storage', '--recover-storage'],
     });
     if (arguments_.positionals.length === 0) {
       throw new Error('Usage: notopress publish <publisher> [slug...]');
     }
     const [publisherId, ...targetSlugs] = arguments_.positionals;
-    const expectedPlanFingerprint = arguments_.values.get('--expect');
-    assertFingerprint(expectedPlanFingerprint);
+    const nativeOptions = storageOptions(arguments_);
     return {
       ...sharedOptions(arguments_),
       kind: 'publish',
       publisherId,
       targetSlugs: targetSlugs.length > 0 ? [...new Set(targetSlugs)] : undefined,
-      expectedPlanFingerprint,
+      expectedPlanFingerprint: nativeOptions.expectedPlanFingerprint,
       force: arguments_.switches.has('--force'),
-      deleteRemoteFiles: arguments_.switches.has('--delete'),
+      ...nativeOptions,
     };
   }
 

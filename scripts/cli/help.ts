@@ -7,7 +7,10 @@ To publish through an adapter, use "notopress publish <publisher> --site <id>".
 
 Options:
   --dry-run          Preview generated and remote changes
-  --delete           Remove remote files missing from the vault
+  --delete           Remove remote files missing from expected outputs
+  --expect <hash>    Require the reviewed composite plan fingerprint
+  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
+  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
@@ -17,7 +20,10 @@ Synchronize the native site, then deploy the Next.js runtime to Vercel.
 
 Options:
   --dry-run          Preview synchronization without deploying
-  --delete           Remove remote files missing from the vault
+  --delete           Remove remote files missing from expected outputs
+  --expect <hash>    Require the reviewed composite plan fingerprint
+  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
+  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
@@ -25,7 +31,7 @@ Options:
 
 Synchronize the native site and publish through one configured adapter.
 Slugs are full vault slugs. Omit them for a site-wide push of changed documents.
-The native site is synchronized in full even when adapter slugs are specified.
+Slugs restrict adapter posts only; S3/R2 backup/sync covers the full eligible vault.
 
 Options:
   --site, -s <id>    Select a site
@@ -33,6 +39,8 @@ Options:
   --expect <hash>    Require the reviewed composite plan fingerprint
   --force            Publish even when the adapter payload is unchanged
   --delete           Remove missing native-site objects during sync
+  --reconcile-storage  Compare actual remote bytes instead of trusting the manifest
+  --recover-storage    Recover interrupted storage after stopping previous publishers
   --verbose, -v      Show per-file diagnostics
   --registry, -r     Use another registry file`,
   import: `Usage: notopress import <publisher> <resource> [options]

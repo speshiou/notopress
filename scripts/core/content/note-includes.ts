@@ -7,6 +7,8 @@ import {
   type NoteReference,
   type NoteReferenceInput,
 } from '../../../src/lib/note-links';
+import { compareStrings } from '../order';
+import { isGeneratedArtifactDirectory } from './generated-paths';
 
 type NoteIncludeSource = {
   fullSlug: string;
@@ -16,6 +18,10 @@ type NoteIncludeSource = {
 };
 
 type Logger = Pick<typeof console, 'warn'>;
+
+function readMarkdownSource(filePath: string): Promise<string> {
+  return readFile(filePath, 'utf-8');
+}
 
 function stripFirstMarkdownHeading(markdown: string): string {
   return markdown.replace(/^#\s+.+$/m, '').trim();
@@ -38,11 +44,11 @@ async function scanMarkdownFiles({ dir, baseDir }: { dir: string; baseDir: strin
   const files: string[] = [];
 
   async function walk(currentDir: string): Promise<void> {
-    const entries = await readdir(currentDir, { withFileTypes: true });
+    const entries = (await readdir(currentDir, { withFileTypes: true })).sort((left, right) => compareStrings({ left: left.name, right: right.name }));
     for (const entry of entries) {
       const fullPath = path.join(currentDir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== '.git' && entry.name !== 'node_modules') {
+        if (entry.name !== '.git' && entry.name !== 'node_modules' && !isGeneratedArtifactDirectory(entry.name)) {
           await walk(fullPath);
         }
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
@@ -59,10 +65,12 @@ export async function collectPrivateNoteIncludes({
   vaultPath,
   includePaths,
   logger = console,
+  readSource = readMarkdownSource,
 }: {
   vaultPath: string;
   includePaths?: readonly string[];
   logger?: Logger;
+  readSource?: (filePath: string) => Promise<string>;
 }): Promise<NoteReferenceInput[]> {
   const includeSources: NoteIncludeSource[] = [];
   if (!includePaths || includePaths.length === 0) {
@@ -80,7 +88,7 @@ export async function collectPrivateNoteIncludes({
       const markdownFiles = await scanMarkdownFiles({ dir: fullIncludePath, baseDir: fullIncludePath });
       for (const markdownFile of markdownFiles) {
         const filePath = path.join(fullIncludePath, markdownFile);
-        const fileContent = await readFile(filePath, 'utf-8');
+        const fileContent = await readSource(filePath);
         const slug = markdownFile.replace(/\.md$/i, '');
         includeSources.push({
           fullSlug: slug,
@@ -127,12 +135,14 @@ export async function collectNoteReferencesForLocalMarkdown({
   markdown,
   readPublicNote,
   logger = console,
+  readPrivateNote = readMarkdownSource,
 }: {
   publicNoteReferences: readonly NoteReferenceInput[];
   privateNoteReferences?: readonly NoteReferenceInput[];
   markdown: string;
   readPublicNote: ({ fullSlug }: { fullSlug: string }) => Promise<string>;
   logger?: Logger;
+  readPrivateNote?: (filePath: string) => Promise<string>;
 }): Promise<NoteReference[]> {
   const wikilinkTargets = extractWikilinkTargets(markdown);
   if (wikilinkTargets.links.length === 0 && wikilinkTargets.embeds.length === 0) {
@@ -174,7 +184,7 @@ export async function collectNoteReferencesForLocalMarkdown({
 
     try {
       const privateSource = privateSourcesBySlug.get(reference.fullSlug);
-      const embeddedMarkdown = privateSource ? await readFile(privateSource.filePath, 'utf-8') : await readPublicNote(reference);
+      const embeddedMarkdown = privateSource ? await readPrivateNote(privateSource.filePath) : await readPublicNote(reference);
       const { content } = matter(embeddedMarkdown);
       const bodyContent = stripFirstMarkdownHeading(content);
       referencesByFullSlug.set(reference.fullSlug, {

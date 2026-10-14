@@ -240,7 +240,6 @@ export async function prepareWordPressPublication({
 
   console.log(`\n📝 Preparing WordPress Publishing...`);
   console.log(`- Target Endpoint: ${endpoint}`);
-  console.log(`- Authenticated As: ${credentials.username}`);
   if (targetSlugs && targetSlugs.length > 0) {
     console.log(`- Target Post Slugs: ${targetSlugs.join(', ')}`);
   }

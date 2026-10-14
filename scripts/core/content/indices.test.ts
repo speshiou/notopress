@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import { createIndexGenerator } from './indices';
 import { type FileEntry } from '../files';
+import { createStageTimer, type StageTiming } from '../stage-timing';
 
 function file(name: string): FileEntry {
   return { name, isDirectory: () => false, isFile: () => true };
@@ -67,12 +68,20 @@ describe('createIndexGenerator', () => {
       logger,
     });
 
+    const timings: StageTiming[] = [];
     const result = await generator.generateIndices({
       vaultPath: 'vault',
       thumbnailSizes: [320, 640],
       noteIncludePaths: ['_includes'],
       dryRun: false,
+      stageTimer: createStageTimer({ now: () => 0, report: (timing) => timings.push(timing) }),
     });
+
+    expect(timings.map((timing) => timing.stage)).toEqual([
+      'build.content-scan', 'build.thumbnails.content', 'build.thumbnails.public',
+      'build.asset-scan', 'build.include-scan',
+    ]);
+    expect(timings.every((timing) => timing.outcome === 'completed')).toBe(true);
 
     expect(result.rootContentIndex.pages[0].title).toBe('Home');
     expect(result.rootContentIndex.pages[0].categories).toEqual(['docs']);
@@ -81,8 +90,8 @@ describe('createIndexGenerator', () => {
     expect(result.allIndices.get('blog')?.pages[0].publicSlug).toBe('blog/post');
     expect(JSON.parse(writes['vault/root.json'])).toMatchObject({
       directories: ['blog'],
-      publicFiles: ['sitemap.xml'],
-      assetFiles: ['hero.png', 'sitemap.xml'],
+      publicFiles: [],
+      assetFiles: ['hero.png'],
       responsiveImageWidths: { 'hero.png': [320, 640] },
       routes: {
         page: 'page',

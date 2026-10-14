@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import { createSitemapGenerator } from './sitemaps';
+import type { BuildArtifact } from './build-artifact';
 
 describe('createSitemapGenerator', () => {
   it('maps index pages to directory URLs', () => {
@@ -74,5 +75,15 @@ describe('createSitemapGenerator', () => {
     expect(writes['vault/public/blog/sitemap.xml']).toContain('https://example.com/blog/post');
     expect(writes['vault/public/sitemap_pages.xml']).toContain('https://example.com/');
     expect(writes['vault/public/sitemap.xml']).toContain('https://example.com/blog/sitemap.xml');
+
+    const artifacts: BuildArtifact[] = [];
+    await generator.generateSitemaps({
+      vaultPath: 'vault', domain: 'example.com',
+      rootContentIndex: { version: 1, pages: [{ title: 'Home', slug: 'page', date: '2024-01-01', excerpt: '' }] },
+      allIndices, dryRun: true, collectArtifact: (artifact) => artifacts.push(artifact),
+    });
+    for (const artifact of artifacts) {
+      expect(Buffer.from(await artifact.read()).toString('utf8')).toBe(writes[`vault/${artifact.path}`]);
+    }
   });
 });

@@ -3,6 +3,7 @@ import path from 'path';
 import { INDEX_SLUG, SITEMAP_PAGES_XML, SITEMAP_XML } from '../../../src/lib/constants';
 import { PageMetadata, VaultDirectoryIndex } from '../../../src/lib/vault';
 import { composeFullSlug, getNoteHref, isRouteWinner, toPublicSlug } from '../../../src/lib/rewrites';
+import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -90,20 +91,23 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
     content,
     dryRun,
     label,
+    collectArtifact,
   }: {
     fullPath: string;
     relPath: string;
     content: string;
     dryRun: boolean;
     label: string;
+    collectArtifact?: CollectBuildArtifact;
   }) {
+    collectArtifact?.(createBuildArtifact({ path: relPath, content }));
     if (!dryRun) {
       const dir = deps.joinPath(fullPath, '..');
       await deps.mkdir(dir, { recursive: true });
       await deps.writeFile(fullPath, content);
       deps.logger.log(`✨ Generated ${label} at ${relPath}`);
     } else {
-      deps.logger.log(`[DRY RUN] Would generate ${label} at ${relPath}`);
+      deps.logger.log(`${collectArtifact ? '[PLAN]' : '[DRY RUN]'} Would generate ${label} at ${relPath}`);
     }
   }
 
@@ -113,12 +117,14 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
     vaultPath,
     dryRun,
     routes,
+    collectArtifact,
   }: {
     domain: string;
     allIndices: Map<string, VaultDirectoryIndex>;
     vaultPath: string;
     dryRun: boolean;
     routes?: Record<string, string>;
+    collectArtifact?: CollectBuildArtifact;
   }): Promise<string[]> {
     const subSitemaps: string[] = [];
     for (const [relDir, indexData] of allIndices.entries()) {
@@ -138,6 +144,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
         content: sitemapContent,
         dryRun,
         label: `sitemap for "${relDir}"`,
+        collectArtifact,
       });
       subSitemaps.push(`${relDir}/${deps.sitemapXml}`);
     }
@@ -155,6 +162,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
       allIndices,
       routes,
       dryRun,
+      collectArtifact,
     }: {
       vaultPath: string;
       domain: string | undefined;
@@ -162,6 +170,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
       allIndices: Map<string, VaultDirectoryIndex>;
       routes?: Record<string, string>;
       dryRun: boolean;
+      collectArtifact?: CollectBuildArtifact;
     }) {
       if (!domain) {
         deps.logger.log('ℹ️  Skipping sitemap generation because "domain" is not configured in registry.json');
@@ -169,7 +178,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
       }
 
       const publicBaseDir = deps.joinPath(vaultPath, 'public');
-      const subSitemaps = await generateAllSitemaps({ domain, allIndices, vaultPath, dryRun, routes });
+      const subSitemaps = await generateAllSitemaps({ domain, allIndices, vaultPath, dryRun, routes, collectArtifact });
       const rootPages = rootContentIndex.pages;
       const sitemapUrls = rootPages.length > 0 ? mapPagesToSitemapUrls({ pages: rootPages, domain, routes }) : [];
 
@@ -183,6 +192,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
             content: sitemapContent,
             dryRun,
             label: 'sitemap',
+            collectArtifact,
           });
         }
         return;
@@ -199,6 +209,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
           content: sitemapContent,
           dryRun,
           label: 'root pages sitemap',
+          collectArtifact,
         });
         sitemaps.push({ loc: `https://${domain}/${deps.sitemapPagesXml}` });
       }
@@ -216,6 +227,7 @@ export function createSitemapGenerator(deps: SitemapGeneratorDeps) {
           content: sitemapIndexContent,
           dryRun,
           label: 'master sitemap index',
+          collectArtifact,
         });
       }
     },

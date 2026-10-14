@@ -4,6 +4,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { generateRenderedContent, getRenderedContentPath } from './rendered-content';
 import { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
+import type { BuildArtifact } from './build-artifact';
 
 describe('rendered content generator', () => {
   it('generates cached HTML for public content with private note transclusions', async () => {
@@ -80,6 +81,7 @@ describe('rendered content generator', () => {
       }]);
 
       const unchangedLogger = { log: vi.fn() };
+      const artifacts: BuildArtifact[] = [];
       await generateRenderedContent({
         vaultPath,
         siteId: 'test-blog',
@@ -89,10 +91,12 @@ describe('rendered content generator', () => {
         noteIncludePaths: ['templates'],
         dryRun: true,
         logger: unchangedLogger,
+        collectArtifact: (artifact) => artifacts.push(artifact),
       });
 
-      expect(unchangedLogger.log).toHaveBeenCalledWith('[DRY RUN] 0 of 1 rendered HTML file(s) would change');
+      expect(unchangedLogger.log).toHaveBeenCalledWith('[PLAN] 0 of 1 rendered HTML file(s) would change');
       expect(unchangedLogger.log).not.toHaveBeenCalledWith(expect.stringContaining('Would update'));
+      expect(Buffer.from(await artifacts[0].read()).toString('utf8')).toBe(rendered);
 
       await writeFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'stale HTML');
       const changedLogger = { log: vi.fn() };

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import { createThumbnailGenerator } from './thumbnails';
 import { type FileEntry } from '../files';
+import type { BuildArtifact } from './build-artifact';
 
 function file(name: string): FileEntry {
   return { name, isDirectory: () => false, isFile: () => true };
@@ -23,6 +24,8 @@ describe('createThumbnailGenerator', () => {
     };
     const mkdir = vi.fn(async () => undefined);
     const processImage = vi.fn(async () => undefined);
+    const renderImage = vi.fn(async ({ width }: { width: number }) => Buffer.from(`thumbnail-${width}`));
+    const readImage = vi.fn(async () => Buffer.from('existing-thumbnail'));
     const logger = { log: vi.fn() };
 
     const getFileStat = vi.fn(async (filePath: string) => {
@@ -45,16 +48,29 @@ describe('createThumbnailGenerator', () => {
       isGeneratedThumbnailPath: (filePath) => filePath.split('/').includes('_thumbnails'),
       getThumbnailPath: ({ imagePath, width }) => `_thumbnails/${imagePath.replace(/\.[^.]+$/, `-${width}.webp`)}`,
       processImage,
+      renderImage,
+      readImage,
       logger,
     });
 
-    return { generator, mkdir, processImage, logger, getFileStat };
+    return { generator, mkdir, processImage, renderImage, readImage, logger, getFileStat };
   }
 
   it('collects supported source images and skips generated thumbnails', async () => {
     const { generator } = makeGenerator();
 
     await expect(generator.collectSourceImages({ dir: 'root' })).resolves.toEqual(['hero.png', 'gallery/nested.jpg']);
+  });
+
+  it('prepares real missing thumbnail bytes during previews without writing files', async () => {
+    const { generator, renderImage, mkdir, processImage } = makeGenerator();
+    const artifacts: BuildArtifact[] = [];
+    await generator.generateImageThumbnails({ sourceDir: 'root', dryRun: true, thumbnailSizes: [320], label: 'content', collectArtifact: (artifact) => artifacts.push(artifact) });
+    expect(artifacts).toHaveLength(2);
+    expect(await artifacts[0].read()).toEqual(Buffer.from('thumbnail-320'));
+    expect(renderImage).toHaveBeenCalled();
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(processImage).not.toHaveBeenCalled();
   });
 
   it('injects image processing and directory creation for missing generated thumbnails', async () => {

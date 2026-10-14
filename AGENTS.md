@@ -35,6 +35,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
 
 # Platform Adapters & WordPress
+- **Publication scope**: Slugs limit adapter posts only; S3/R2 backup/sync covers the full eligible vault and generated native-site outputs. Report storage changes separately from target-site publication. Folder names imply no publication or exclusion rules.
+- Required full-vault backup/sync needs no extra publication approval merely for including other files. Respect explicit storage restrictions, preserve full native coverage, and validate the reviewed composite fingerprint.
 - **Publisher Commands**:
   - `notopress publish <publisher-id> [slug...] --site <site-id>`: Syncs the native site and publishes through a configured adapter. Slugs are optional full vault slugs.
   - `notopress import <publisher-id> <slug-or-id> --site <site-id>`: Imports one remote resource through an adapter that supports imports.

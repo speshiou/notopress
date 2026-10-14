@@ -4,6 +4,9 @@ import { computeContentHash, createSyncStateManager } from './sync-state';
 
 describe('sync-state core', () => {
   describe('computeContentHash', () => {
+    it('hashes binary UTF-8 input identically to text', () => {
+      expect(computeContentHash(Buffer.from('Example 示例'))).toBe(computeContentHash('Example 示例'));
+    });
     it('computes deterministic SHA-256 hashes for content', () => {
       const content = '# Hello World\n\nThis is a test post.';
       const hash1 = computeContentHash(content);

@@ -28,4 +28,29 @@ describe('mapWithConcurrency', () => {
       worker: async (value) => value,
     })).rejects.toThrow('positive integer');
   });
+
+  it('stops scheduling on failure and waits for in-flight work to settle', async () => {
+    let finish: (() => void) | undefined;
+    const inFlight = new Promise<void>((resolve) => { finish = resolve; });
+    const started: number[] = [];
+    let settled = false;
+    const error = new Error('failed operation');
+    const pending = mapWithConcurrency({
+      items: [1, 2, 3, 4], concurrency: 2,
+      worker: async (value) => {
+        started.push(value);
+        if (value === 1) throw error;
+        await inFlight;
+        return value;
+      },
+    });
+    const observed = pending.catch((failure: unknown) => { settled = true; return failure; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started).toEqual([1, 2]);
+    expect(settled).toBe(false);
+    finish?.();
+    expect(await observed).toBe(error);
+    expect(started).toEqual([1, 2]);
+  });
 });

@@ -16,8 +16,12 @@ export type SyncStateDeps = {
   joinPath: (...paths: string[]) => string;
 };
 
-export function computeContentHash(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
+export function computeContentHash(content: string | Uint8Array): string {
+  return createContentHasher().update(content).digest('hex');
+}
+
+export function createContentHasher() {
+  return crypto.createHash('sha256');
 }
 
 export function createSyncStateManager(deps: SyncStateDeps) {

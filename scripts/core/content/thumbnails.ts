@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { mkdir, readdir, stat } from 'fs/promises';
+import { mkdir, readdir, readFile, stat } from 'fs/promises';
 import path from 'path';
 import { THUMBNAILS_DIR } from '../../../src/lib/constants';
 import {
@@ -9,6 +9,7 @@ import {
   normalizeThumbnailSizes,
 } from '../../../src/lib/responsive-images';
 import { exists, type FileEntry } from '../files';
+import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -27,6 +28,8 @@ export type ThumbnailGeneratorDeps = {
   isGeneratedThumbnailPath: (filePath: string) => boolean;
   getThumbnailPath: ({ imagePath, width }: { imagePath: string; width: number }) => string;
   processImage: ({ inputPath, outputPath, width }: { inputPath: string; outputPath: string; width: number }) => Promise<void>;
+  renderImage?: (input: { inputPath: string; width: number }) => Promise<Uint8Array>;
+  readImage?: (path: string) => Promise<Uint8Array>;
   logger: Logger;
 };
 
@@ -65,11 +68,13 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       dryRun,
       thumbnailSizes,
       label,
+      collectArtifact,
     }: {
       sourceDir: string;
       dryRun: boolean;
       thumbnailSizes: readonly number[];
       label: string;
+      collectArtifact?: CollectBuildArtifact;
     }): Promise<Record<string, number[]>> {
       if (!(await deps.exists(sourceDir))) return {};
 
@@ -112,12 +117,24 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
             targetStat.mtimeMs >= sourceStat.mtimeMs;
 
           if (isUpToDate) {
+            if (collectArtifact) {
+              const readImage = deps.readImage;
+              if (!readImage) throw new Error('Artifact planning requires an injected thumbnail reader.');
+              collectArtifact(createBuildArtifact({ path: thumbnailRelPath, content: await readImage(outputPath), read: () => readImage(outputPath) }));
+            }
             skippedCount += 1;
             continue;
           }
 
+          if (collectArtifact) {
+            const renderImage = deps.renderImage;
+            if (!renderImage) throw new Error('Artifact planning requires an injected thumbnail renderer.');
+            const input = { inputPath, width };
+            collectArtifact(createBuildArtifact({ path: thumbnailRelPath, content: await renderImage(input), read: () => renderImage(input) }));
+          }
+
           if (dryRun) {
-            deps.logger.log(`[DRY RUN] Would generate ${label} thumbnail: ${thumbnailRelPath}`);
+            deps.logger.log(`${collectArtifact ? '[PLAN]' : '[DRY RUN]'} Would generate ${label} thumbnail: ${thumbnailRelPath}`);
             generatedCount += 1;
             continue;
           }
@@ -141,6 +158,10 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       return generatedWidths;
     },
   };
+}
+
+function imagePipeline({ inputPath, width }: { inputPath: string; width: number }) {
+  return sharp(inputPath).rotate().resize({ width, withoutEnlargement: true }).webp({ quality: 82 });
 }
 
 const defaultThumbnailGenerator = createThumbnailGenerator({
@@ -168,12 +189,10 @@ const defaultThumbnailGenerator = createThumbnailGenerator({
   isGeneratedThumbnailPath,
   getThumbnailPath,
   processImage: async ({ inputPath, outputPath, width }) => {
-    await sharp(inputPath)
-      .rotate()
-      .resize({ width, withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toFile(outputPath);
+    await imagePipeline({ inputPath, width }).toFile(outputPath);
   },
+  renderImage: async (input) => imagePipeline(input).toBuffer(),
+  readImage: readFile,
   logger: console,
 });
 

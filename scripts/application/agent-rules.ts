@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { exists } from '../core/files';
+import { createBuildArtifact, type CollectBuildArtifact } from '../core/content/build-artifact';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -101,15 +102,17 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
     async ensureVaultAgentRules({
       vaultPath,
       siteId,
-      notopressPath = process.cwd(),
+      notopressPath,
       isWordPressEnabled,
       dryRun,
+      collectArtifact,
     }: {
       vaultPath: string;
       siteId?: string;
       notopressPath?: string;
       isWordPressEnabled?: boolean;
       dryRun: boolean;
+      collectArtifact?: CollectBuildArtifact;
     }): Promise<void> {
       const baseTemplate = await deps.readTemplate('base');
       const commandTemplate = await deps.readTemplate(isWordPressEnabled ? 'wordpress' : 'native');
@@ -126,6 +129,7 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
       const agentsPath = deps.joinPath(vaultPath, AGENTS_FILENAME);
       const existingContent = (await deps.exists(agentsPath)) ? await deps.readFile(agentsPath, 'utf-8') : '';
       const nextContent = ensureTrailingNewline(replaceManagedBlock({ content: existingContent, block: managedBlock }));
+      collectArtifact?.(createBuildArtifact({ path: AGENTS_FILENAME, content: nextContent }));
 
       if (nextContent === ensureTrailingNewline(existingContent)) {
         deps.logger.log(`✅ ${AGENTS_FILENAME} agent rules are up to date.`);
@@ -133,7 +137,7 @@ export function createAgentRulesWriter(deps: AgentRulesDeps) {
       }
 
       if (dryRun) {
-        deps.logger.log(`[DRY RUN] Would update vault ${AGENTS_FILENAME} at: ${agentsPath}`);
+        deps.logger.log(`${collectArtifact ? '[PLAN]' : '[DRY RUN]'} Would update vault ${AGENTS_FILENAME} at: ${agentsPath}`);
         return;
       }
 

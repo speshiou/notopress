@@ -42,6 +42,9 @@ export const THUMBNAILS_DIR = '_thumbnails';
  */
 export const RENDERED_DIR = '_rendered';
 
+/** Local caches, publication staging, and reserved remote control objects. */
+export const NOTOPRESS_DIR = '.notopress';
+
 /**
  * Default responsive image widths, in pixels.
  */
