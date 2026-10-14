@@ -61,6 +61,7 @@ describe('composite storage publication ordering', () => {
     expect(h.publisher.apply).toHaveBeenCalledExactlyOnceWith({ dryRun: true });
     expect(h.storage.close).toHaveBeenCalledOnce();
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Adapter selection: 1 requested source slug(s):\n  guides/article'));
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('Selected slugs limit adapter posts only; storage uploads do not create adapter posts'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Source Markdown stays in Git. Storage uploads do not create adapter posts'));
+    expect(prepareNativeSite).toHaveBeenCalledWith(expect.objectContaining({ scope: { kind: 'incremental', targetSlugs: ['guides/article'] } }));
   });
 });

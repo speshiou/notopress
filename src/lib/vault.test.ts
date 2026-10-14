@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { resolveVaultRequest, fetchNoteReferencesForMarkdown, VaultConfig, VaultRootIndex, clearVaultCache } from "./vault";
+import { resolveVaultRequest, VaultConfig, VaultRootIndex, clearVaultCache } from "./vault";
 import * as s3 from "./s3";
 import { INDEX_SLUG } from "./constants";
 
@@ -29,19 +29,18 @@ describe("Vault Resolution (Unit Tests)", () => {
     };
 
     vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(JSON.stringify(mockRoot)); // root.json
-    vi.mocked(s3.getFileFromS3).mockRejectedValueOnce(new Error("Rendered HTML not found")); // rendered page.html
-    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce("# Welcome Home"); // page.md
+    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce("<p>Welcome Home</p>");
 
     const result = await resolveVaultRequest(mockConfig, []);
 
-    expect(result?.type).toBe("markdown");
-    if (result?.type === "markdown") {
+    expect(result?.type).toBe("html");
+    if (result?.type === "html") {
       expect(result.metadata.title).toBe("Home");
-      expect(result.content).toBe("# Welcome Home");
+      expect(result.renderedHtml).toBe("<p>Welcome Home</p>");
     }
     
     expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/root.json");
-    expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", `test-vault/content/${INDEX_SLUG}.md`);
+    expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", `test-vault/_rendered/content/${INDEX_SLUG}.html`);
   });
 
   it("should attach cached rendered HTML when available", async () => {
@@ -58,10 +57,9 @@ describe("Vault Resolution (Unit Tests)", () => {
 
     const result = await resolveVaultRequest(mockConfig, []);
 
-    expect(result?.type).toBe("markdown");
-    if (result?.type === "markdown") {
+    expect(result?.type).toBe("html");
+    if (result?.type === "html") {
       expect(result.renderedHtml).toBe("<p>Cached home</p>");
-      expect(result.content).toBe("");
     }
     expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/_rendered/content/page.html");
   });
@@ -71,6 +69,21 @@ describe("Vault Resolution (Unit Tests)", () => {
     
     const result = await resolveVaultRequest(mockConfig, ["non-existent"]);
     expect(result).toBeNull();
+  });
+
+  it('does not request source Markdown when rendered HTML is missing', async () => {
+    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(JSON.stringify({ version: 1, pages: [{ title: 'Example', slug: 'article', date: '2026-01-01', excerpt: '' }], directories: [], publicFiles: [] }))
+      .mockRejectedValueOnce(new Error('Missing distribution'));
+    expect(await resolveVaultRequest(mockConfig, ['article'])).toBeNull();
+    expect(s3.getFileFromS3).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(s3.getFileFromS3).mock.calls.every(([, key]) => !key.endsWith('.md'))).toBe(true);
+  });
+
+  it('accepts an empty rendered article without invoking a fallback', async () => {
+    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(JSON.stringify({ version: 1, pages: [{ title: 'Example', slug: 'article', date: '2026-01-01', excerpt: '' }], directories: [], publicFiles: [] }))
+      .mockResolvedValueOnce('');
+    expect(await resolveVaultRequest(mockConfig, ['article'])).toMatchObject({ type: 'html', renderedHtml: '' });
+    expect(s3.getFileFromS3).toHaveBeenCalledTimes(2);
   });
 
   it("should handle nested directory jumps", async () => {
@@ -91,12 +104,12 @@ describe("Vault Resolution (Unit Tests)", () => {
     vi.mocked(s3.getFileFromS3)
       .mockResolvedValueOnce(JSON.stringify(mockRoot))      // root.json
       .mockResolvedValueOnce(JSON.stringify(mockBlogIndex)) // blog/2024/index.json
-      .mockResolvedValueOnce("# My Deep Post");            // blog/2024/my-post.md
+      .mockResolvedValueOnce("<p>My Deep Post</p>");            // blog/2024/my-post.md
 
     const result = await resolveVaultRequest(mockConfig, ["blog", "2024", "my-post"]);
 
-    expect(result?.type).toBe("markdown");
-    if (result?.type === "markdown") {
+    expect(result?.type).toBe("html");
+    if (result?.type === "html") {
       expect(result.metadata.title).toBe("Deep Post");
     }
   });
@@ -149,193 +162,15 @@ describe("Vault Resolution (Unit Tests)", () => {
     vi.mocked(s3.getFileFromS3)
       .mockResolvedValueOnce(JSON.stringify(mockRoot))
       .mockResolvedValueOnce(JSON.stringify(mockBlogIndex))
-      .mockRejectedValueOnce(new Error("Rendered HTML not found"))
-      .mockResolvedValueOnce("# Welcome to the Blog");
+      .mockResolvedValueOnce("<p>Welcome to the Blog</p>");
 
     const result = await resolveVaultRequest(mockConfig, ["blog"]);
 
-    expect(result?.type).toBe("markdown");
-    if (result?.type === "markdown") {
+    expect(result?.type).toBe("html");
+    if (result?.type === "html") {
       expect(result.metadata.title).toBe("Blog Home");
-      expect(result.content).toBe("# Welcome to the Blog");
+      expect(result.renderedHtml).toBe("<p>Welcome to the Blog</p>");
     }
-  });
-
-  it("should resolve note links and embedded note content from nested directory indices", async () => {
-    const mockRoot = {
-      version: 1,
-      pages: [{ title: "Root Note", slug: "root-note", date: "2024-01-01", excerpt: "" }],
-      directories: ["guides"],
-      publicFiles: [],
-    };
-    const mockGuidesIndex = {
-      version: 1,
-      pages: [{ title: "Example Note", slug: "example-note", date: "2024-01-02", excerpt: "" }],
-    };
-
-    vi.mocked(s3.getFileFromS3)
-      .mockResolvedValueOnce(JSON.stringify(mockGuidesIndex))
-      .mockResolvedValueOnce(
-        [
-          "---",
-          'title: "Example Note"',
-          "---",
-          "# Example Note",
-          "",
-          "Embedded body only.",
-        ].join("\n")
-      );
-
-    const references = await fetchNoteReferencesForMarkdown({
-      config: mockConfig,
-      markdown: "Read [[root-note]] and embed ![[example-note]].",
-      rootIndex: mockRoot,
-    });
-
-    expect(references).toContainEqual({
-      fullSlug: "root-note",
-      title: "Root Note",
-      href: "/root-note",
-      publicSlug: "root-note",
-      shadowed: false,
-    });
-    expect(references).toContainEqual({
-      fullSlug: "guides/example-note",
-      title: "Example Note",
-      href: "/guides/example-note",
-      publicSlug: "guides/example-note",
-      shadowed: false,
-      content: "Embedded body only.",
-    });
-    expect(s3.getFileFromS3).toHaveBeenCalledWith("test-bucket", "test-vault/content/guides/index.json");
-    expect(s3.getFileFromS3).toHaveBeenCalledWith(
-      "test-bucket",
-      "test-vault/content/guides/example-note.md"
-    );
-  });
-
-  it("should recursively resolve note links inside embedded note content", async () => {
-    const mockRoot = {
-      version: 1,
-      pages: [
-        { title: "First Embed", slug: "first-embed", date: "2024-01-01", excerpt: "" },
-        { title: "Second Embed", slug: "second-embed", date: "2024-01-02", excerpt: "" },
-        { title: "Linked Note", slug: "linked-note", date: "2024-01-03", excerpt: "" },
-      ],
-      directories: [],
-      publicFiles: [],
-    };
-
-    vi.mocked(s3.getFileFromS3)
-      .mockResolvedValueOnce(
-        [
-          "---",
-          'title: "First Embed"',
-          "---",
-          "# First Embed",
-          "",
-          "First body.",
-          "",
-          "![[second-embed]]",
-          "",
-          "[[linked-note]]",
-        ].join("\n")
-      )
-      .mockResolvedValueOnce(
-        [
-          "---",
-          'title: "Second Embed"',
-          "---",
-          "# Second Embed",
-          "",
-          "Second body.",
-        ].join("\n")
-      );
-
-    const references = await fetchNoteReferencesForMarkdown({
-      config: mockConfig,
-      markdown: "Main ![[first-embed]].",
-      rootIndex: mockRoot,
-    });
-
-    expect(references).toContainEqual({
-      fullSlug: "first-embed",
-      title: "First Embed",
-      href: "/first-embed",
-      publicSlug: "first-embed",
-      shadowed: false,
-      content: "First body.\n\n![[second-embed]]\n\n[[linked-note]]",
-    });
-    expect(references).toContainEqual({
-      fullSlug: "second-embed",
-      title: "Second Embed",
-      href: "/second-embed",
-      publicSlug: "second-embed",
-      shadowed: false,
-      content: "Second body.",
-    });
-    expect(references).toContainEqual({
-      fullSlug: "linked-note",
-      title: "Linked Note",
-      href: "/linked-note",
-      publicSlug: "linked-note",
-      shadowed: false,
-    });
-  });
-
-  it("should resolve private note includes for embeds without making them linkable", async () => {
-    const privateIncludes: VaultRootIndex["noteIncludes"] = [
-      {
-        fullSlug: "example-note",
-        title: "Example Include",
-        filePath: "_includes/example-note.md",
-        linkable: false,
-      },
-    ];
-    const mockRoot: VaultRootIndex = {
-      version: 1,
-      pages: [{ title: "Public Note", slug: "public-note", date: "2024-01-01", excerpt: "" }],
-      directories: [],
-      publicFiles: [],
-      noteIncludes: privateIncludes,
-    };
-
-    vi.mocked(s3.getFileFromS3).mockResolvedValueOnce(
-      [
-        "---",
-        'title: "Example Include"',
-        "---",
-        "# Example Include",
-        "",
-        "Private include body with [[public-note]].",
-      ].join("\n")
-    );
-
-    const references = await fetchNoteReferencesForMarkdown({
-      config: mockConfig,
-      markdown: "Embed ![[example-note]] and link [[example-note]].",
-      rootIndex: mockRoot,
-    });
-
-    expect(references).toContainEqual(expect.objectContaining({
-      fullSlug: "example-note",
-      title: "Example Include",
-      href: "/example-note",
-      linkable: false,
-      publicSlug: "example-note",
-      content: "Private include body with [[public-note]].",
-    }));
-    expect(references).toContainEqual({
-      fullSlug: "public-note",
-      title: "Public Note",
-      href: "/public-note",
-      publicSlug: "public-note",
-      shadowed: false,
-    });
-    expect(s3.getFileFromS3).toHaveBeenCalledWith(
-      "test-bucket",
-      "test-vault/_includes/example-note.md"
-    );
   });
 
   it("resolves rewritten public slugs from the route map", async () => {
@@ -358,12 +193,11 @@ describe("Vault Resolution (Unit Tests)", () => {
     vi.mocked(s3.getFileFromS3)
       .mockResolvedValueOnce(JSON.stringify(mockRoot))
       .mockResolvedValueOnce(JSON.stringify(mockGuidesIndex))
-      .mockRejectedValueOnce(new Error("Rendered HTML not found"))
-      .mockResolvedValueOnce("# VPN");
+      .mockResolvedValueOnce("<p>VPN</p>");
 
     const result = await resolveVaultRequest(mockConfig, ["vpn"]);
-    expect(result?.type).toBe("markdown");
-    if (result?.type === "markdown") {
+    expect(result?.type).toBe("html");
+    if (result?.type === "html") {
       expect(result.matchedSlug).toBe("guides/vpn");
       expect(result.metadata.title).toBe("VPN");
     }

@@ -39,10 +39,10 @@ export function createFullSyncHistory({ read, write, now }: {
         // Missing or unreadable advisory history must not block publication.
       }
       const status = completedAt
-        ? `Last successful full vault sync: ${completedAt} (${elapsedDays} day(s) ago).`
-        : 'Last successful full vault sync: unknown for this storage destination.';
+        ? `Last successful full distribution sync: ${completedAt} (${elapsedDays} day(s) ago).`
+        : 'Last successful full distribution sync: unknown for this storage destination.';
       if (!remind || (elapsedDays !== undefined && elapsedDays < FULL_SYNC_REMINDER_DAYS)) return status;
-      return `${status}\nConsider a full vault sync. Review it first: notopress sync --site ${JSON.stringify(target.siteId)} --dry-run. This reminder does not start a sync.`;
+      return `${status}\nConsider a full distribution sync. Review it first: notopress sync --site ${JSON.stringify(target.siteId)} --dry-run. This reminder does not start a sync.`;
     },
     async record({ target }) {
       const history = HistorySchema.parse({ version: 1, target, completedAt: now().toISOString() });

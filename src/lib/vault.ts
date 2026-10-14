@@ -1,14 +1,7 @@
 import { z } from "zod";
 import { getFileFromS3 } from "./s3";
-import { DEFAULT_THUMBNAIL_SIZES, INDEX_SLUG, INDEX_JSON, ROOT_JSON, RENDERED_DIR } from "./constants";
+import { INDEX_SLUG, INDEX_JSON, ROOT_JSON, RENDERED_DIR } from "./constants";
 import { createCache } from "./cache";
-import matter from "gray-matter";
-import {
-  createNoteReferenceResolver,
-  extractWikilinkTargets,
-  type NoteReference,
-  type NoteReferenceInput,
-} from "./note-links";
 import { ContentTaxonomiesSchema } from "../domain/content-metadata";
 import {
   composeFullSlug,
@@ -58,12 +51,10 @@ export type VaultIndex = VaultDirectoryIndex | VaultRootIndex;
 
 export type VaultContent =
   | {
-      type: "markdown";
-      content: string;
-      renderedHtml?: string;
+      type: "html";
+      renderedHtml: string;
       matchedSlug: string;
       metadata: PageMetadata;
-      thumbnailSizes: readonly number[];
     }
   | { type: "collection"; pages: PageMetadata[]; requestedSlug: string }
   | { type: "asset"; filePath: string }
@@ -131,166 +122,22 @@ async function fetchRenderedHtml(config: VaultConfig, fullSlug: string): Promise
   }
 }
 
-function stripFirstMarkdownHeading(markdown: string): string {
-  return markdown.replace(/^#\s+.+$/m, "").trim();
-}
-
-function noteReferenceFromPage({
-  directory,
-  page,
-  routes,
-}: {
-  directory: string;
-  page: PageMetadata;
-  routes?: Record<string, string>;
-}): NoteReferenceInput {
-  const fullSlug = composeFullSlug({ directory, slug: page.slug });
-  const publicSlug = page.publicSlug ?? toPublicSlug({ fullSlug });
-  return {
-    fullSlug,
-    title: page.title,
-    publicSlug,
-    shadowed: routes ? !isRouteWinner({ routes, publicSlug, fullSlug }) : false,
-  };
-}
-
-function buildNoteReferenceInputs({
-  rootIndex,
-  directoryIndices,
-}: {
-  rootIndex: VaultRootIndex;
-  directoryIndices: ReadonlyMap<string, VaultDirectoryIndex>;
-}): NoteReferenceInput[] {
-  const noteReferences: NoteReferenceInput[] = rootIndex.pages.map((page) =>
-    noteReferenceFromPage({ directory: "", page, routes: rootIndex.routes })
-  );
-
-  for (const [directory, directoryIndex] of directoryIndices.entries()) {
-    for (const page of directoryIndex.pages) {
-      noteReferences.push(noteReferenceFromPage({ directory, page, routes: rootIndex.routes }));
-    }
-  }
-
-  return noteReferences;
-}
-
-export async function fetchNoteReferencesForMarkdown({
-  config,
-  markdown,
-  rootIndex,
-}: {
-  config: VaultConfig;
-  markdown: string;
-  rootIndex: VaultRootIndex;
-}): Promise<NoteReference[]> {
-  const wikilinkTargets = extractWikilinkTargets(markdown);
-  if (wikilinkTargets.links.length === 0 && wikilinkTargets.embeds.length === 0) {
-    return [];
-  }
-
-  const directoryEntries = await Promise.all(
-    rootIndex.directories.map(async (directory): Promise<[string, VaultDirectoryIndex] | null> => {
-      const directoryIndex = await fetchDirectoryIndex(config, directory);
-      return directoryIndex ? [directory, directoryIndex] : null;
-    })
-  );
-  const directoryIndices = new Map(directoryEntries.filter((entry): entry is [string, VaultDirectoryIndex] => entry !== null));
-  const referenceInputs = buildNoteReferenceInputs({ rootIndex, directoryIndices });
-  const publicResolver = createNoteReferenceResolver({ notes: referenceInputs });
-  const embedResolver = createNoteReferenceResolver({ notes: [...referenceInputs, ...(rootIndex.noteIncludes || [])] });
-  const privateIncludesBySlug = new Map((rootIndex.noteIncludes || []).map((include) => [include.fullSlug, include]));
-  const referencesByFullSlug = new Map<string, NoteReference>();
-  const embedTargetsToFetch = [...wikilinkTargets.embeds];
-  const fetchedEmbedSlugs = new Set<string>();
-
-  for (const target of wikilinkTargets.links) {
-    const reference = publicResolver.resolve({ target });
-    if (reference) {
-      referencesByFullSlug.set(reference.fullSlug, reference);
-    }
-  }
-
-  for (const target of wikilinkTargets.embeds) {
-    const reference = embedResolver.resolve({ target });
-    if (reference) {
-      referencesByFullSlug.set(reference.fullSlug, reference);
-    }
-  }
-
-  while (embedTargetsToFetch.length > 0) {
-    const target = embedTargetsToFetch.shift();
-    if (!target) {
-      continue;
-    }
-
-    const reference = embedResolver.resolve({ target });
-    if (!reference) {
-      continue;
-    }
-    if (fetchedEmbedSlugs.has(reference.fullSlug)) {
-      continue;
-    }
-    fetchedEmbedSlugs.add(reference.fullSlug);
-
-    try {
-      const privateInclude = privateIncludesBySlug.get(reference.fullSlug);
-      const embeddedMarkdown = await getFileFromS3(
-        config.bucketName,
-        privateInclude
-          ? `${config.vaultRoot}/${privateInclude.filePath}`
-          : `${config.vaultRoot}/content/${reference.fullSlug}.md`
-      );
-      const { content } = matter(embeddedMarkdown);
-      const bodyContent = stripFirstMarkdownHeading(content);
-      referencesByFullSlug.set(reference.fullSlug, {
-        ...reference,
-        content: bodyContent,
-      });
-
-      const nestedTargets = extractWikilinkTargets(bodyContent);
-      for (const nestedTarget of nestedTargets.links) {
-        const nestedReference = publicResolver.resolve({ target: nestedTarget });
-        if (nestedReference) {
-          referencesByFullSlug.set(nestedReference.fullSlug, nestedReference);
-        }
-      }
-      for (const nestedTarget of nestedTargets.embeds) {
-        const nestedReference = embedResolver.resolve({ target: nestedTarget });
-        if (nestedReference) {
-          referencesByFullSlug.set(nestedReference.fullSlug, nestedReference);
-        }
-      }
-      embedTargetsToFetch.push(...nestedTargets.embeds);
-    } catch (error) {
-      console.warn(`Failed to fetch embedded note "${reference.fullSlug}" for ${config.vaultRoot}:`, error);
-    }
-  }
-
-  return [...referencesByFullSlug.values()];
-}
-
-async function loadMarkdownPage({
+async function loadHtmlPage({
   config,
   fullSlug,
   metadata,
-  thumbnailSizes,
 }: {
   config: VaultConfig;
   fullSlug: string;
   metadata: PageMetadata;
-  thumbnailSizes: readonly number[];
-}): Promise<Extract<VaultContent, { type: "markdown" }>> {
+}): Promise<Extract<VaultContent, { type: "html" }> | null> {
   const renderedHtml = await fetchRenderedHtml(config, fullSlug);
-  const markdown = renderedHtml
-    ? ""
-    : await getFileFromS3(config.bucketName, `${config.vaultRoot}/content/${fullSlug}.md`);
+  if (renderedHtml === undefined) return null;
   return {
-    type: "markdown",
-    content: markdown,
+    type: "html",
     renderedHtml,
     matchedSlug: fullSlug,
     metadata,
-    thumbnailSizes,
   };
 }
 
@@ -345,7 +192,6 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
 
   const rootIndex = await fetchRootIndex(config);
   if (!rootIndex) return null;
-  const thumbnailSizes = rootIndex.thumbnailSizes || DEFAULT_THUMBNAIL_SIZES;
 
   if (segments.length > 0 && rootIndex.publicFiles.includes(requestedSlug)) {
     return { type: "asset", filePath: requestedSlug };
@@ -364,7 +210,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
       if (!metadata) {
         return null;
       }
-      return loadMarkdownPage({ config, fullSlug: routedFullSlug, metadata, thumbnailSizes });
+      return loadHtmlPage({ config, fullSlug: routedFullSlug, metadata });
     }
 
     const publicDirectories = rootIndex.publicDirectories || [];
@@ -384,7 +230,7 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
       const fullPath = composeFullSlug({ directory: targetDir, slug: INDEX_SLUG });
       const indexPublicSlug = indexMatch.publicSlug ?? toPublicSlug({ fullSlug: fullPath });
       if (!routes[requestedSlug] && isRouteWinner({ routes, publicSlug: indexPublicSlug, fullSlug: fullPath })) {
-        return loadMarkdownPage({ config, fullSlug: fullPath, metadata: indexMatch, thumbnailSizes });
+        return loadHtmlPage({ config, fullSlug: fullPath, metadata: indexMatch });
       }
     }
 
@@ -397,11 +243,10 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
 
   const rootPageMatch = rootIndex.pages.find(p => p.slug === requestedSlug);
   if (rootPageMatch) {
-    return loadMarkdownPage({
+    return loadHtmlPage({
       config,
       fullSlug: rootPageMatch.slug,
       metadata: rootPageMatch,
-      thumbnailSizes,
     });
   }
 
@@ -412,11 +257,10 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
     const dirIndex = await fetchDirectoryIndex(config, parentDir);
     const nestedMatch = dirIndex?.pages.find(p => p.slug === lastSegment);
     if (nestedMatch) {
-      return loadMarkdownPage({
+      return loadHtmlPage({
         config,
         fullSlug: requestedSlug,
         metadata: nestedMatch,
-        thumbnailSizes,
       });
     }
   }
@@ -430,11 +274,10 @@ export async function resolveVaultRequest(config: VaultConfig, slugArray?: strin
       const indexMatch = dirIndex.pages.find(p => p.slug === INDEX_SLUG);
       if (indexMatch) {
         const fullPath = composeFullSlug({ directory: targetDir, slug: INDEX_SLUG });
-        return loadMarkdownPage({
+        return loadHtmlPage({
           config,
           fullSlug: fullPath,
           metadata: indexMatch,
-          thumbnailSizes,
         });
       }
 

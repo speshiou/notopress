@@ -23,6 +23,8 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
 } = {}) {
   return async function prepareNativeSite(input: NativeStorageBuildInput & { deleteRemoteFiles: boolean; verbose: boolean; remindFullSync?: boolean }) {
     const { site, registry, deleteRemoteFiles, verbose, stageTimer } = input;
+    const incremental = input.scope?.kind === 'incremental';
+    if (incremental && deleteRemoteFiles) throw new Error('Incremental publishing cannot delete remote objects. Use sync --delete with a reviewed plan.');
     const connection = resolveConnection({ site, registry });
     const history = createHistory({ vaultPath: site.vaultPath });
     logger.log(await history.describe({ target: connection.target, remind: input.remindFullSync === true }));
@@ -34,24 +36,27 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
       AWS_DEFAULT_REGION: environment.AWS_REGION || environment.AWS_DEFAULT_REGION || 'auto',
       AWS_RETRY_MODE: 'standard', AWS_MAX_ATTEMPTS: '1', AWS_PAGER: '', AWS_CLI_AUTO_PROMPT: 'off',
     };
-    const args = (dryRun: boolean) => buildS3SyncArgs({ vaultPath: staged.snapshotPath, target: connection.target, deleteRemoteFiles, dryRun, verbose });
+    const args = (dryRun: boolean) => buildS3SyncArgs({ vaultPath: staged.snapshotPath, target: connection.target, deleteRemoteFiles, dryRun, verbose, incremental });
     async function preview() {
       const output = await runCli({ args: args(true), environment: cliEnvironment });
       return normalizeAwsPreview({ output, snapshotPath: staged.snapshotPath });
     }
     try {
-      logger.log('\nVault backup/sync: comparing the full eligible vault with AWS CLI (size and modification time).');
+      logger.log(incremental
+        ? '\nIncremental distribution: preparing explicit AWS CLI uploads without remote listing. Required files are uploaded even if already present.'
+        : '\nFull distribution sync: comparing all distribution files with AWS CLI (size and modification time).');
       const changes = await stageTimer.measure({ stage: 'storage.compare', run: preview });
-      const plan = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: changes });
+      const plan = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: changes, incremental });
       logger.log(`AWS CLI storage plan ${plan.fingerprint}: ${changes.length} proposed change(s), plus the sanitized registry upload.`);
       for (const line of changes) logger.log(`  storage-preview: ${line}`);
       return {
         plan,
         async apply({ dryRun }: { dryRun: boolean }) {
           if (dryRun) return;
+          await prepared.verifySources();
           for (const artifact of prepared.artifacts) if (artifact.verify) await artifact.verify();
           await staged.verify();
-          const fresh = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: await stageTimer.measure({ stage: 'storage.recheck', run: preview }) });
+          const fresh = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: await stageTimer.measure({ stage: 'storage.recheck', run: preview }), incremental });
           assertOperationPlanFingerprint({ label: 'AWS CLI storage', plan: fresh, expectedFingerprint: plan.fingerprint });
           await prepared.materialize();
           await stageTimer.measure({ stage: 'storage.sync', run: async () => {
@@ -59,8 +64,8 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
             if (verbose) for (const line of normalizeAwsPreview({ output, snapshotPath: staged.snapshotPath })) logger.log(`  storage-result: ${line}`);
             await runCli({ args: ['s3', 'cp', staged.registryPath, `s3://${connection.target.bucket}/${DEFAULT_REGISTRY_FILENAME}`, '--endpoint-url', connection.target.endpoint, '--only-show-errors'], environment: cliEnvironment });
           } });
-          logger.log('Vault backup/sync completed with AWS CLI.');
-          try {
+          logger.log(incremental ? 'Incremental distribution upload completed with AWS CLI.' : 'Full distribution sync completed with AWS CLI.');
+          if (!incremental) try {
             await history.record({ target: connection.target });
           } catch {
             logger.log('Storage sync succeeded, but its completion time could not be saved. A later run may still show a full-sync reminder.');

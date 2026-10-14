@@ -72,6 +72,14 @@ describe('createThumbnailGenerator', () => {
     expect(mkdir).not.toHaveBeenCalled();
     expect(processImage).not.toHaveBeenCalled();
   });
+  it('captures original image bytes for fingerprint source validation without writing them', async () => {
+    const { generator, mkdir, processImage } = makeGenerator();
+    const sources: BuildArtifact[] = [];
+    await generator.generateImageThumbnails({ sourceDir: 'root', dryRun: true, thumbnailSizes: [320], label: 'content', collectSourceArtifact: (artifact) => sources.push(artifact) });
+    expect(sources.map((source) => source.path)).toEqual(['hero.png', 'gallery/nested.jpg']);
+    expect(sources.every((source) => source.contentHash.length === 64)).toBe(true);
+    expect(mkdir).not.toHaveBeenCalled(); expect(processImage).not.toHaveBeenCalled();
+  });
 
   it('injects image processing and directory creation for missing generated thumbnails', async () => {
     const { generator, mkdir, processImage } = makeGenerator();

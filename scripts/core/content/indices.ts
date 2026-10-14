@@ -12,7 +12,7 @@ import { parseContentTaxonomies } from '../../../src/lib/content-metadata';
 import { buildRouteTable, composeFullSlug, type RewriteRule } from '../../../src/lib/rewrites';
 import { findUnescapedWikilinksInTables, formatUnescapedTableWikilinkWarning } from '../../../src/lib/table-wikilinks';
 import { passthroughStageTimer, type StageTimer } from '../stage-timing';
-import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
+import { createBuildArtifact, type CollectBuildArtifact, type BuildArtifact } from './build-artifact';
 import { isGeneratedArtifactDirectory, isGeneratedSitemapPath } from './generated-paths';
 import { compareStrings } from '../order';
 
@@ -48,6 +48,7 @@ export type IndexGeneratorDeps = {
     thumbnailSizes: readonly number[];
     label: string;
     collectArtifact?: CollectBuildArtifact;
+    collectSourceArtifact?: CollectBuildArtifact;
   }) => Promise<Record<string, number[]>>;
   logger: Logger;
 };
@@ -263,6 +264,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       verbose = false,
       stageTimer = passthroughStageTimer,
       collectArtifact,
+      collectSourceArtifact,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
@@ -272,6 +274,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       verbose?: boolean;
       stageTimer?: StageTimer;
       collectArtifact?: CollectBuildArtifact;
+      collectSourceArtifact?: CollectBuildArtifact;
     }): Promise<{
       rootContentIndex: VaultDirectoryIndex;
       vaultRootIndex: VaultRootIndex;
@@ -347,6 +350,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           thumbnailSizes,
           label: 'content',
           ...(collectArtifact ? { collectArtifact: (artifact) => collectArtifact({ ...artifact, path: `content/${artifact.path}` }) } : {}),
+          ...(collectSourceArtifact ? { collectSourceArtifact: (artifact: BuildArtifact) => collectSourceArtifact({ ...artifact, path: `content/${artifact.path}` }) } : {}),
         }),
       });
       const publicResponsiveImageWidths = await stageTimer.measure({
@@ -357,6 +361,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           thumbnailSizes,
           label: 'public',
           ...(collectArtifact ? { collectArtifact: (artifact) => collectArtifact({ ...artifact, path: `public/${artifact.path}` }) } : {}),
+          ...(collectSourceArtifact ? { collectSourceArtifact: (artifact: BuildArtifact) => collectSourceArtifact({ ...artifact, path: `public/${artifact.path}` }) } : {}),
         }),
       });
 

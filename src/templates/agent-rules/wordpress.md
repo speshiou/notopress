@@ -2,9 +2,9 @@
 - **Command scope**:
   - For a WordPress site, a request to publish or push the whole site means `publish wordpress` without slugs. Use full vault slugs when the user requests a specific article.
   - `sync` uploads native NotoPress files only. It does not create or update WordPress posts, even when WordPress is configured. Use it only when native-only synchronization is intended.
-  - Every `publish` command also synchronizes the entire native site. Article slugs limit the WordPress selection, not the native upload. Review both parts of the plan.
+  - `publish` uploads selected native HTML, dependent notes, required assets, indexes and sitemaps. `sync` reconciles the full distribution. Sources stay in Git; review storage and WordPress plans separately.
 - **Publish Commands**:
-  - `npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}`: Synchronizes the entire native site and pushes changed content site-wide to WordPress.
+  - `npm --prefix {{notopressPath}} run publish -- wordpress --site {{siteId}}`: Uploads the site-wide distribution and pushes changed content site-wide to WordPress.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}}`: Publishes specific full vault slugs.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --dry-run`: Previews the native and publisher plans without mutations.
   - `npm --prefix {{notopressPath}} run publish -- wordpress <slug1> <slug2> --site {{siteId}} --expect <fingerprint>`: Applies the exact composite plan reviewed in a dry-run.

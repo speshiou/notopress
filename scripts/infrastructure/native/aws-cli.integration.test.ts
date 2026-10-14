@@ -47,7 +47,7 @@ async function localSnapshot() {
 async function prepare(deleteRemoteFiles = false) {
   const { site, registry } = ctx();
   const build = await buildSite({ site, registry, dryRun: true, prepareOnly: true, verbose: false, stageTimer: passthroughStageTimer });
-  const storage = await prepareNativeSite({ site, registry, ...build, deleteRemoteFiles, verbose: false, stageTimer: passthroughStageTimer });
+  const storage = await prepareNativeSite({ site, registry, ...build, publicFiles: build.vaultRootIndex.publicFiles, deleteRemoteFiles, verbose: false, stageTimer: passthroughStageTimer });
   const nativeSitePlan = createNativeSitePlan({ contentSnapshot: build.contentSnapshot, rootIndex: build.vaultRootIndex, renderedArtifacts: build.renderedContent.artifacts, deleteRemoteFiles });
   const plan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: [] });
   await storage.close();
@@ -116,10 +116,10 @@ describe.skipIf(!enabled).sequential('AWS CLI workflow against disposable R2 sto
     expect(await remoteSnapshot()).toEqual(beforeRemote);
     expect(await localSnapshot()).toEqual(beforeLocal);
     const edited = await prepare();
-    expect(edited.storagePlan.operations.find((operation) => operation.action === 'sync')?.preview.some((line) => line.includes('content/article.md'))).toBe(true);
+    expect(edited.storagePlan.operations.find((operation) => operation.action === 'sync')?.preview.some((line) => line.includes('_rendered/content/article.html'))).toBe(true);
     await runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: edited.fingerprint }, registry: c.registry, stageTimer: passthroughStageTimer });
     const downloaded = path.join(c.root, 'downloaded.md');
-    await aws(['s3', 'cp', `s3://${bucket}/integration-site/content/article.md`, downloaded, '--only-show-errors']);
+    await aws(['s3', 'cp', `s3://${bucket}/integration-site/_rendered/content/article.html`, downloaded, '--only-show-errors']);
     expect(await readFile(downloaded, 'utf8')).toContain('EDIT');
     progress('PASS: stale fingerprint blocked writes and standard CLI comparison uploaded the same-size edit.');
     await rm(path.join(c.site.vaultPath, 'public/example.txt'));

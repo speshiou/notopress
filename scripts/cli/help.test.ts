@@ -5,8 +5,9 @@ describe('CLI help', () => {
   it('distinguishes native sync from site-wide and targeted adapter publication', () => {
     expect(formatCliHelp({ topic: 'sync' })).toContain('Configured publishing adapters are not applied');
     expect(formatCliHelp({ topic: 'publish' })).toContain('site-wide push of changed documents');
-    expect(formatCliHelp({ topic: 'publish' })).toContain('Slugs restrict adapter posts only');
-    expect(formatCliHelp({ topic: 'publish' })).toContain('S3/R2 backup/sync covers the full eligible vault');
+    expect(formatCliHelp({ topic: 'publish' })).toContain('incremental native distribution');
+    expect(formatCliHelp({ topic: 'publish' })).toContain('Use sync for the full distribution');
+    expect(formatCliHelp({ topic: 'sources' })).toContain('No commits or pushes');
   });
 
   it('documents action-oriented commands and their operands', () => {

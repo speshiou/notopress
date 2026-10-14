@@ -21,6 +21,8 @@ import { configureLocalEnvironment, deployApplication } from '../infrastructure/
 import { buildSite } from './build-site';
 import { publicationStageTimer } from '../infrastructure/stage-timing';
 import type { StageTimer } from '../core/stage-timing';
+import { prepareSourceRepository } from '../infrastructure/native/source-repository';
+import { formatOperationPlan } from '../core/publishing/operation-plan';
 
 async function selectSite({
   registry,
@@ -134,6 +136,8 @@ async function runPublication({ command, site, registry, stageTimer }: {
     deleteRemoteFiles: command.deleteRemoteFiles,
     verbose: command.verbose, stageTimer,
     remindFullSync: command.kind === 'publish',
+    scope: command.kind === 'publish' ? { kind: 'incremental', targetSlugs: command.targetSlugs } : { kind: 'full' },
+    publicFiles: build.vaultRootIndex.publicFiles,
   });
   try {
     const publicationPlan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: preparedPublications });
@@ -180,6 +184,14 @@ export async function runCommand({ command, registry, stageTimer = publicationSt
 }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
+  if (command.kind === 'initialize-sources') {
+    const prepared = await prepareSourceRepository({ vaultPath: site.vaultPath });
+    console.log(formatOperationPlan({ label: 'Source Git initialization', plan: prepared.plan, serializeOperation: (operation) => operation }));
+    assertOperationPlanFingerprint({ label: 'Source Git initialization', plan: prepared.plan, expectedFingerprint: command.expectedPlanFingerprint });
+    await prepared.apply({ dryRun: command.dryRun });
+    console.log(command.dryRun ? 'Source Git dry run completed. No files changed.' : 'Source Git ready. No source files were committed or pushed. Review git status before committing.');
+    return;
+  }
   if (command.kind === 'configure') {
     await configureLocalEnvironment({ site, registry });
     return;

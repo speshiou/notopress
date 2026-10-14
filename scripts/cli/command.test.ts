@@ -68,6 +68,12 @@ describe('CLI command parser', () => {
     expect(parseCliCommand({ argv: ['--version'] })).toEqual({ kind: 'version' });
   });
 
+  it('supports reviewed source Git setup and reserves deletion for full sync', () => {
+    expect(parseCliCommand({ argv: ['sources', 'init', '--site', 'example-site', '--dry-run', '--expect', 'a'.repeat(64)] })).toMatchObject({ kind: 'initialize-sources', dryRun: true, expectedPlanFingerprint: 'a'.repeat(64) });
+    expect(() => parseCliCommand({ argv: ['publish', 'example-main', '--delete'] })).toThrow('--delete is not valid');
+    expect(parseCliCommand({ argv: ['sync', '--delete'] })).toMatchObject({ kind: 'sync', deleteRemoteFiles: true });
+  });
+
   it('rejects removed option-driven actions and malformed operands', () => {
     expect(() => parseCliCommand({ argv: ['sync', '--wp'] })).toThrow('Unknown option "--wp"');
     expect(() => parseCliCommand({ argv: ['publish', '--site', 'example-blog'] })).toThrow(

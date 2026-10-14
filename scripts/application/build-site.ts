@@ -52,6 +52,7 @@ export async function buildSite({
       verbose,
       stageTimer,
       collectArtifact,
+      collectSourceArtifact: prepareOnly ? (artifact) => { sourceArtifacts.push(artifact); } : undefined,
     }),
   });
   const contentSnapshot = await stageTimer.measure({
@@ -71,6 +72,7 @@ export async function buildSite({
       dryRun: readOnly,
       collectArtifact,
       collectSourceArtifact: prepareOnly ? (artifact) => { sourceArtifacts.push(artifact); } : undefined,
+      distributionAssetPaths: generatedArtifacts.map((artifact) => artifact.path),
     }),
   });
   await stageTimer.measure({

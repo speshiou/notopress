@@ -37,6 +37,7 @@ export type InitializePlatformStateCommand = SharedCommandOptions & {
 };
 
 export type ExecutableCommand =
+  | (SharedCommandOptions & { kind: 'initialize-sources'; expectedPlanFingerprint?: string })
   | SyncCommand
   | PublishCommand
   | ConfigureCommand
@@ -173,6 +174,15 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
   if (commandArgs.includes('--help') || commandArgs.includes('-h')) return { kind: 'help', topic: commandName };
   const arguments_ = parseArguments(commandArgs);
 
+  if (commandName === 'sources') {
+    rejectUnsupportedOptions({ arguments_, command: 'sources init', allowedValues: ['--site', '--registry', '--expect'], allowedSwitches: ['--dry-run', '--verbose'] });
+    requirePositionals({ positionals: arguments_.positionals, count: 1, usage: 'notopress sources init --site <id>' });
+    if (arguments_.positionals[0] !== 'init') throw new Error('Unknown sources action. Use sources init.');
+    const expectedPlanFingerprint = arguments_.values.get('--expect');
+    assertFingerprint(expectedPlanFingerprint);
+    return { ...sharedOptions(arguments_), kind: 'initialize-sources', expectedPlanFingerprint };
+  }
+
   if (commandName === 'sync' || commandName === 'deploy') {
     rejectUnsupportedOptions({
       arguments_,
@@ -193,7 +203,7 @@ export function parseCliCommand({ argv }: { argv: readonly string[] }): CliInvoc
       arguments_,
       command: commandName,
       allowedValues: ['--site', '--registry', '--expect'],
-      allowedSwitches: ['--dry-run', '--verbose', '--delete', '--force'],
+      allowedSwitches: ['--dry-run', '--verbose', '--force'],
     });
     if (arguments_.positionals.length === 0) {
       throw new Error('Usage: notopress publish <publisher> [slug...]');

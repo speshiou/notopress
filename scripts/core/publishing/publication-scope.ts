@@ -16,9 +16,11 @@ export function formatPublicationScope({ publisherId, targetSlugs, storagePlan, 
       lines.push(`Adapter selection: ${targetSlugs.length} requested source slug(s):`, ...targetSlugs.map((slug) => `  ${slug}`));
     } else lines.push('Adapter selection: site-wide changed documents.');
   }
-  const state = storagePlan.operations.find((operation) => operation.action === 'sync');
+  const state = storagePlan.operations.find((operation) => operation.action === 'sync' || operation.action === 'upload-distribution');
   const destination = state ? `; bucket ${state.target.bucket}; site prefix ${state.target.siteId}/` : '';
-  lines.push(`Vault backup/sync (S3/R2): full eligible vault and generated site outputs${destination}.`);
-  lines.push('Selected slugs limit adapter posts only; storage uploads do not create adapter posts.');
+  lines.push(state?.action === 'upload-distribution'
+    ? `Incremental distribution (S3/R2): selected articles, dependent HTML, required assets, indexes and sitemaps${destination}.`
+    : `Full distribution sync (S3/R2): all generated native-site outputs and distribution assets${destination}.`);
+  lines.push('Source Markdown stays in Git. Storage uploads do not create adapter posts. Use sync for full distribution reconciliation.');
   return lines.join('\n');
 }

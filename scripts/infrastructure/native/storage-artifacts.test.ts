@@ -22,3 +22,27 @@ describe('shared native storage artifacts', () => {
     await expect(prepareStorageArtifacts({ input: { ...input, sourceArtifacts: [{ ...source, contentHash: 'changed' }] }, files })).rejects.toThrow('Build source changed');
   });
 });
+
+describe('bounded distribution inventory', () => {
+  it('hashes required files directly without walking the vault or distributing sources and local state', async () => {
+    const source = createBuildArtifact({ path: 'content/article.md', content: 'Source' });
+    const used = createBuildArtifact({ path: 'content/diagram.svg', content: 'SVG' });
+    const generated = { ...createBuildArtifact({ path: '_rendered/content/article.html', content: '<img>' }), distribution: { sourceSlug: 'article', noteSlugs: ['article'], assets: [used.path] } };
+    const entries = new Map([source, used].map((artifact) => [artifact.path, artifact]));
+    const files = { listDirectory: vi.fn(async () => { throw new Error('Vault walking forbidden'); }),
+      hashFile: vi.fn(async (file: string) => { const artifact = entries.get(file); if (!artifact) throw new Error('Missing'); return { size: artifact.size, contentHash: artifact.contentHash }; }),
+      readFile: async (file: string) => { const artifact = entries.get(file); if (!artifact) throw new Error('Missing'); return artifact.read(); },
+      writeFile: vi.fn(async () => undefined),
+    };
+    const site = { siteId: 'example-site', vaultPath: 'vault', bucketName: 'example-bucket' };
+    const prepared = await prepareStorageArtifacts({ input: { site, registry: { sites: [site] }, sourceArtifacts: [source],
+      generatedArtifacts: [generated, createBuildArtifact({ path: 'root.json', content: '{}' }), createBuildArtifact({ path: 'AGENTS.md', content: 'Instructions' })],
+      scope: { kind: 'incremental', targetSlugs: ['article'] }, stageTimer: passthroughStageTimer,
+    }, files });
+    expect(prepared.artifacts.map((artifact) => artifact.path)).toEqual(['_rendered/content/article.html', 'content/diagram.svg', 'root.json', 'registry.json']);
+    expect(files.listDirectory).not.toHaveBeenCalled();
+    expect(files.writeFile).not.toHaveBeenCalled();
+    entries.set(source.path, createBuildArtifact({ path: source.path, content: 'EDITED' }));
+    await expect(prepared.verifySources()).rejects.toThrow('Build source changed');
+  });
+});

@@ -7,6 +7,11 @@ export type BuildArtifact = {
   contentHash: string;
   read: () => Promise<Uint8Array>;
   verify?: () => Promise<void>;
+  distribution?: {
+    sourceSlug: string;
+    noteSlugs: readonly string[];
+    assets: readonly string[];
+  };
 };
 
 export type CollectBuildArtifact = (artifact: BuildArtifact) => void;

@@ -13,6 +13,7 @@ import {
 } from './content-snapshot';
 import { computeContentHash } from '../state/sync-state';
 import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
+import { createDistributionAssetResolver } from './distribution-assets';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -83,6 +84,7 @@ export async function generateRenderedContent({
   logger = console,
   collectArtifact,
   collectSourceArtifact,
+  distributionAssetPaths = [],
 }: {
   vaultPath: string;
   siteId: string;
@@ -96,10 +98,14 @@ export async function generateRenderedContent({
   logger?: Logger;
   collectArtifact?: CollectBuildArtifact;
   collectSourceArtifact?: CollectBuildArtifact;
+  distributionAssetPaths?: readonly string[];
 }): Promise<RenderedContentResult> {
   const snapshot = contentSnapshot || await buildContentSnapshot({ vaultPath, allIndices });
   const assetFiles = rootIndex.assetFiles || rootIndex.publicFiles;
   const publicNoteReferences = buildPublicNoteReferences({ contentSnapshot: snapshot, routes: rootIndex.routes });
+  const resolveAssets = createDistributionAssetResolver({ siteId, imageHost, assetFiles,
+    publicFiles: rootIndex.publicFiles, generatedPaths: distributionAssetPaths,
+  });
   async function readNoteSource(filePath: string): Promise<string> {
     const content = await readFile(filePath, 'utf-8');
     collectSourceArtifact?.(createBuildArtifact({
@@ -145,7 +151,14 @@ export async function generateRenderedContent({
       path: getRenderedContentPath({ fullSlug: document.sourceSlug }),
       contentHash: computeContentHash(html),
     });
-    collectArtifact?.(createBuildArtifact({ path: getRenderedContentPath({ fullSlug: document.sourceSlug }), content: html }));
+    collectArtifact?.({
+      ...createBuildArtifact({ path: getRenderedContentPath({ fullSlug: document.sourceSlug }), content: html }),
+      distribution: {
+        sourceSlug: document.sourceSlug,
+        noteSlugs: [...new Set([document.sourceSlug, ...noteReferences.map((note) => note.fullSlug)])].sort(),
+        assets: resolveAssets({ html, sourceDirectory: document.directory }),
+      },
+    });
 
     if (dryRun) {
       const change = await getRenderedContentChange({ renderedPath, renderedHtml: html });

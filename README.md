@@ -151,12 +151,35 @@ npm run sync -- example-blog --expect <reviewed-fingerprint>
 
 `sync` uploads native NotoPress files only, including for sites with WordPress configured. It does not create or update WordPress posts. For a WordPress site-wide push, use `publish <publisher> --site <site-id>` without slugs, first with `--dry-run` and then with the reviewed `--expect` fingerprint.
 
-For `publish <publisher> [slug...]`, slugs limit adapter posts only. S3/R2
-backup/sync covers the full eligible vault and generated native-site outputs;
-storage uploads do not create WordPress posts. Folder names imply no publication
-or exclusion rules. Review both plans with the composite `--expect` fingerprint.
+Git owns source Markdown, original assets, configuration and lockfiles. R2 serves
+rendered HTML, JSON indexes, sitemaps, thumbnails and visitor-facing attachments;
+source Markdown, vault agent instructions and local state are not distributed.
+The reader requires rendered HTML and never falls back to Markdown.
 
-Sync prepares expected indices, rendered HTML, sitemaps, image variants, and source files under the site's `siteId` prefix. Dry runs leave the vault and remote storage unchanged. After plan validation, a live run materializes changed artifacts, runs AWS CLI synchronization, and uploads the sanitized registry. Remote objects are preserved unless `--delete` is explicitly supplied. Output reports the CLI's proposed changes; `--verbose` includes build diagnostics.
+`publish <publisher> [slug...]` prepares the full build, then uploads selected
+articles, notes that depend on them, their required assets, and shared indexes
+and sitemaps using AWS CLI `s3 cp --recursive`. This avoids whole-bucket listing.
+The bounded file set is uploaded every time, including unchanged required assets;
+there is no upload-baseline database. Omit slugs for site-wide publication.
+
+`sync` (and `deploy`) reconciles the full distribution using AWS CLI `s3 sync`.
+It is not a source backup. Source backup belongs to your Git upstream or another
+source copy. Run a reviewed full sync for initial distribution setup, after
+migration or global changes, and to repair missing files outside a targeted
+publication. Only full sync accepts `--delete`; publishing never deletes remote
+objects. Existing remote source files remain until an explicitly reviewed cleanup.
+
+Initialize source version control explicitly:
+
+```bash
+npm run sources:init -- --site example-blog --dry-run
+npm run sources:init -- --site example-blog --expect <reviewed-fingerprint>
+```
+
+Source setup preserves existing ignore rules and excludes generated outputs,
+local state and credentials. It makes no commits, adds no upstream and does not
+untrack files already in Git. Review `git status`, commit your sources, and connect
+an upstream when wanted. Use Git LFS if original binary history becomes large.
 
 To sync content and deploy the Next.js runtime to Vercel in one workflow:
 
@@ -183,38 +206,28 @@ prepares the full native site; source parsing and rendering are not yet incremen
 
 ### AWS CLI storage sync and migration
 
-AWS CLI owns remote comparison and transfers. Install it on each machine, restore
-source files and registry/environment configuration, and update the local
-`vaultPath`. There is no storage baseline to initialize or local synchronization
-database to migrate. Existing `.notopress/` state is ignored and excluded from
-uploads and deletion.
+Install AWS CLI on each machine, clone or copy the sources, restore registry and
+environment configuration, and set the local `vaultPath`. Rebuild generated
+outputs locally; they do not need to travel in Git. There is no storage baseline
+to initialize. Copy `.notopress-sync.json` separately to retain adapter caches.
 
-NotoPress prepares a temporary snapshot, including expected generated outputs,
-so dry runs leave the vault and remote storage unchanged. Where supported, file
-copies use filesystem cloning. Identical generated files retain their timestamps;
-only changed generated files are materialized in the vault after validation.
-The composite fingerprint covers local bytes, destination, deletion policy,
-sanitized registry bytes, and normalized AWS CLI preview output. Storage is
-previewed again before application; changed plans stop before writes.
+Preparation freezes selected distribution bytes in a temporary directory. Dry
+runs write neither source/generated files nor remote storage. The composite
+fingerprint covers the full native build, selected upload bytes, destination,
+delete policy, sanitized registry and normalized AWS CLI preview. Source inputs
+and staged bytes are verified and the CLI preview is repeated before applying.
+Incremental previews describe explicit overwrites, not verified remote equality.
 
-AWS CLI uses its [standard size/mtime comparison](https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html), without the old `--size-only`
-flag. Normal same-size edits with newer timestamps are eligible for upload;
-restoring files or regenerating outputs on another machine may cause additional
-uploads. This is not remote content-hash verification. Preserve source timestamps
-and explicit date frontmatter when practical, and review a new dry run after
-migration. Preserve `.notopress-sync.json` for adapter caches if available.
+Full sync uses AWS CLI's [standard size/mtime comparison](https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html).
+Restoring files on another machine may cause additional uploads. Review a fresh
+dry run after migration; this does not verify remote content hashes.
 
-Successful full storage syncs record their completion time in
-`.notopress/full-sync.json`, after both vault transfer and registry upload succeed.
-Publication reports the last completion and suggests reviewing a full `sync`
-when the record is missing or at least seven days old. This is advisory: it does
-not start a sync, skip remote checks, or change publication fingerprints. Dry
-runs and failed transfers do not update the record. Publication currently also
-performs a full storage sync, so successful live publication updates it too.
-Copy the hidden `.notopress` directory when moving the vault to another machine.
-This local history is excluded from storage backup; restoring from R2 alone
-leaves the timestamp unknown. Changing the storage destination also makes an
-existing timestamp inapplicable.
+Successful full distribution syncs record their time in `.notopress/full-sync.json`
+after both transfers and registry upload succeed. Publishing suggests a reviewed
+full sync when that record is unknown or seven days old. Incremental publishing,
+dry runs and failures do not refresh it. Copy `.notopress` separately to preserve
+this local advisory history; R2 and Git do not contain it. Reminders never trigger
+a sync or bypass fingerprint checks.
 
 AWS CLI application is not an atomic transaction with its preview: avoid
 concurrent writers to the same storage prefix. Transfers use a single attempt;
@@ -274,7 +287,7 @@ npm run publish -- \
   --expect <reviewed-fingerprint>
 ```
 
-If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. A requested site-wide push requires a site-wide dry run. Avoid unbounded WordPress planning merely for verification. Target slugs limit adapter publication only: the native site upload remains site-wide.
+If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. A requested site-wide push requires a site-wide dry run. Avoid unbounded WordPress planning merely for verification. Target slugs select adapter posts and the incremental native dependency set; shared indexes and sitemaps remain site-wide.
 
 Adapters may also provide import and state-initialization capabilities:
 

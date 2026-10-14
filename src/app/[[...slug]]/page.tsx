@@ -1,9 +1,7 @@
-import { resolveVaultRequest, fetchRootIndex, fetchNoteReferencesForMarkdown } from "@/lib/vault";
+import { resolveVaultRequest } from "@/lib/vault";
 import { env } from "@/lib/env";
 import { INDEX_SLUG } from "@/lib/constants";
-import { renderMarkdownContent } from "@/lib/markdown";
 import { getNoteHref, toPublicSlug } from "@/lib/rewrites";
-import matter from "gray-matter";
 import Link from "next/link";
 import { notFound, permanentRedirect, redirect } from "next/navigation";
 import type { Metadata } from "next";
@@ -16,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
   };
   const result = await resolveVaultRequest(vaultConfig, slugArray);
 
-  if (!result || result.type !== "markdown") {
+  if (!result || result.type !== "html") {
     return {};
   }
 
@@ -67,33 +65,9 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug?:
     redirect(`/api/vault-public/${result.filePath}`);
   }
 
-  // 1. Render matched Markdown file
-  if (result.type === "markdown") {
-    const { content: markdownBody } = result.renderedHtml ? { content: "" } : matter(result.content);
-
-    // Strip the first H1 from the body if it exists, to avoid double titles
-    const bodyWithoutTitle = result.renderedHtml ? "" : markdownBody.replace(/^#\s+.+$/m, "").trim();
-
-    const rootIndex = result.renderedHtml ? null : await fetchRootIndex(vaultConfig);
-    const assetFiles = rootIndex?.assetFiles || rootIndex?.publicFiles || [];
-    const noteReferences =
-      !result.renderedHtml && rootIndex
-        ? await fetchNoteReferencesForMarkdown({
-            config: vaultConfig,
-            markdown: bodyWithoutTitle,
-            rootIndex,
-          })
-        : [];
-
-    const contentHtml =
-      result.renderedHtml ||
-      (await renderMarkdownContent({
-        markdown: bodyWithoutTitle,
-        thumbnailSizes: result.thumbnailSizes,
-        assetFiles,
-        responsiveImageWidths: rootIndex?.responsiveImageWidths,
-        noteReferences,
-      }));
+  // 1. Render the prepared article distribution
+  if (result.type === "html") {
+    const contentHtml = result.renderedHtml;
     const { metadata } = result;
 
     const publishedDate = new Date(metadata.date);

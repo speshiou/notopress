@@ -20,5 +20,9 @@ describe('AWS CLI storage fingerprints', () => {
       { ...input, artifacts: [file, { ...registry, contentHash: 'changed' }] },
     ]) expect(createAwsStoragePlan(changed).fingerprint).not.toBe(original.fingerprint);
     expect(() => createAwsStoragePlan({ ...input, artifacts: [file] })).toThrow('registry artifact');
+    const incremental = createAwsStoragePlan({ ...input, incremental: true });
+    expect(incremental.fingerprint).not.toBe(original.fingerprint);
+    expect(incremental.operations[0].action).toBe('upload-distribution');
+    expect(() => createAwsStoragePlan({ ...input, incremental: true, deleteRemoteFiles: true })).toThrow('cannot delete');
   });
 });

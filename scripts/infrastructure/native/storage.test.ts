@@ -28,6 +28,18 @@ function setup() {
 }
 
 describe('AWS CLI storage boundary', () => {
+  it('previews and applies incremental copy operations without updating full-sync history', async () => {
+    const h = setup();
+    const prepared = await h.prepare({ ...h.input, scope: { kind: 'incremental' } });
+    await prepared.apply({ dryRun: true });
+    expect(h.writeFile).not.toHaveBeenCalled();
+    expect(h.runCli.mock.calls[0][0].args.slice(0, 2)).toEqual(['s3', 'cp']);
+    expect(h.runCli.mock.calls[0][0].args).toContain('--recursive');
+    await prepared.apply({ dryRun: false });
+    expect(h.history.record).not.toHaveBeenCalled();
+    expect(h.runCli.mock.calls.every(([request]) => !request.args.includes('sync') && !request.args.includes('--delete'))).toBe(true);
+    await prepared.close();
+  });
   it('previews read-only, then validates the same plan before generated writes and full CLI sync/registry upload', async () => {
     const h = setup();
     const prepared = await h.prepare(h.input);

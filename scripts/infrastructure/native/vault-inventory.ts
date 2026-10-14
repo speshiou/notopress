@@ -1,9 +1,10 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createStorageInventory, type InventoryFile } from '../../core/storage/inventory';
 import { readVerifiedArtifact, type BuildArtifact } from '../../core/content/build-artifact';
 import { hashByteStream } from './hash-stream';
+import { isRelativeObjectPath } from '../../core/storage/paths';
 
 export type VaultStorageFiles = {
   listDirectory: (directory: string) => Promise<readonly InventoryFile[]>;
@@ -13,6 +14,7 @@ export type VaultStorageFiles = {
 };
 
 type NativeVaultFilesystem = {
+  lstat: typeof lstat;
   readdir: (directory: string) => Promise<readonly { name: string; isDirectory: () => boolean; isFile: () => boolean }[]>;
   openReadStream: (filePath: string) => AsyncIterable<unknown>;
   readFile: (filePath: string) => Promise<Uint8Array>;
@@ -21,6 +23,7 @@ type NativeVaultFilesystem = {
 };
 
 const nativeFilesystem: NativeVaultFilesystem = {
+  lstat,
   readdir: (directory) => readdir(directory, { withFileTypes: true }),
   openReadStream: createReadStream,
   readFile,
@@ -32,12 +35,25 @@ export function createVaultStorageFiles({ vaultPath, filesystem = nativeFilesyst
   vaultPath: string;
   filesystem?: NativeVaultFilesystem;
 }): VaultStorageFiles {
+  async function resolveFile(filePath: string) {
+    if (!isRelativeObjectPath(filePath)) throw new Error('Invalid vault file path.');
+    const segments = filePath.split('/');
+    let current = vaultPath;
+    for (let index = 0; index < segments.length; index += 1) {
+      current = path.join(current, segments[index]);
+      const info = await filesystem.lstat(current);
+      if (info.isSymbolicLink() || (index === segments.length - 1 ? !info.isFile() : !info.isDirectory())) {
+        throw new Error(`Unsupported storage entry: ${filePath}. Replace symbolic links with vault files.`);
+      }
+    }
+    return current;
+  }
   return {
     listDirectory: async (directory) => (await filesystem.readdir(path.join(vaultPath, directory))).map((entry) => ({
       path: entry.name, kind: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'unsupported',
     })),
-    hashFile: (filePath) => hashByteStream(filesystem.openReadStream(path.join(vaultPath, filePath))),
-    readFile: (filePath) => filesystem.readFile(path.join(vaultPath, filePath)),
+    hashFile: async (filePath) => hashByteStream(filesystem.openReadStream(await resolveFile(filePath))),
+    readFile: async (filePath) => filesystem.readFile(await resolveFile(filePath)),
     writeFile: async ({ filePath, bytes }) => {
       const destination = path.join(vaultPath, filePath);
       await filesystem.mkdir(path.dirname(destination));

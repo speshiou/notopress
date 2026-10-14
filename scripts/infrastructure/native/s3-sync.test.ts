@@ -15,4 +15,13 @@ describe('mature AWS CLI synchronization', () => {
     expect(live).toContain('--delete');
     expect(live).not.toContain('--dryrun');
   });
+  it('copies an incremental prepared directory without destination listing or deletion', () => {
+    const input = { vaultPath: 'prepared', target: { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' }, dryRun: true, deleteRemoteFiles: false, incremental: true };
+    const args = buildS3SyncArgs(input);
+    expect(args.slice(0, 4)).toEqual(['s3', 'cp', 'prepared/', 's3://example-bucket/example-site/']);
+    expect(args).toContain('--recursive');
+    expect(args).toContain('--dryrun');
+    expect(args).not.toContain('sync');
+    expect(() => buildS3SyncArgs({ ...input, deleteRemoteFiles: true })).toThrow('cannot delete');
+  });
 });

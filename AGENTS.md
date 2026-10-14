@@ -35,10 +35,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
 
 # Platform Adapters & WordPress
-- **Publication scope**: Slugs limit adapter posts only; S3/R2 backup/sync covers the full eligible vault and generated native-site outputs. Report storage changes separately from target-site publication. Folder names imply no publication or exclusion rules.
-- Required full-vault backup/sync needs no extra publication approval merely for including other files. Respect explicit storage restrictions, preserve full native coverage, and validate the reviewed composite fingerprint.
+- **Publication scope**: Git owns source articles and original assets; R2 serves HTML, metadata and distribution assets. `publish` uploads selected articles, dependent HTML, required assets and shared indexes/sitemaps; `sync` reconciles the complete distribution. Report storage changes separately from adapter posts.
+- Preserve dry-run read-only behavior and validate the reviewed composite fingerprint. Full distribution coverage and optional remote deletion belong to `sync`; publishing must not list the whole bucket or treat Git commits as upload confirmation.
 - **Publisher Commands**:
-  - `notopress publish <publisher-id> [slug...] --site <site-id>`: Syncs the native site and publishes through a configured adapter. Slugs are optional full vault slugs.
+  - `notopress publish <publisher-id> [slug...] --site <site-id>`: Uploads an incremental distribution and publishes through a configured adapter. Slugs are optional full vault slugs.
   - `notopress import <publisher-id> <slug-or-id> --site <site-id>`: Imports one remote resource through an adapter that supports imports.
   - `notopress publisher init <publisher-id> --site <site-id>`: Initializes state through an adapter that supports it.
 - **WP-CLI Utility Commands** (for managing local/remote WordPress instances):

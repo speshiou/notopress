@@ -69,12 +69,14 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       thumbnailSizes,
       label,
       collectArtifact,
+      collectSourceArtifact,
     }: {
       sourceDir: string;
       dryRun: boolean;
       thumbnailSizes: readonly number[];
       label: string;
       collectArtifact?: CollectBuildArtifact;
+      collectSourceArtifact?: CollectBuildArtifact;
     }): Promise<Record<string, number[]>> {
       if (!(await deps.exists(sourceDir))) return {};
 
@@ -92,6 +94,11 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
 
       for (const imageFile of imageFiles) {
         const inputPath = deps.joinPath(sourceDir, imageFile);
+        if (collectSourceArtifact) {
+          const readImage = deps.readImage;
+          if (!readImage) throw new Error('Source validation requires an injected image reader.');
+          collectSourceArtifact(createBuildArtifact({ path: imageFile, content: await readImage(inputPath), read: () => readImage(inputPath) }));
+        }
         const sourceStat = await deps.getFileStat(inputPath);
         const sourceWidth = await deps.getImageWidth(inputPath);
         const widths = sourceWidth === null

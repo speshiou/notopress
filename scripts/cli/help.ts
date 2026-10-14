@@ -1,7 +1,7 @@
 const COMMAND_HELP: Record<string, string> = {
   sync: `Usage: notopress sync [site] [options]
 
-Build and synchronize the native NotoPress site.
+Build and synchronize the full native-site distribution. Sources stay in Git.
 Configured publishing adapters are not applied.
 To publish through an adapter, use "notopress publish <publisher> --site <id>".
 
@@ -25,16 +25,16 @@ Options:
   --registry, -r     Use another registry file`,
   publish: `Usage: notopress publish <publisher> [slug...] [options]
 
-Synchronize the native site and publish through one configured adapter.
+Upload an incremental native distribution and publish through one configured adapter.
 Slugs are full vault slugs. Omit them for a site-wide push of changed documents.
-Slugs restrict adapter posts only; S3/R2 backup/sync covers the full eligible vault.
+Slugs select adapter posts and their native HTML dependencies and assets.
+Indexes and sitemaps are also uploaded. Use sync for the full distribution.
 
 Options:
   --site, -s <id>    Select a site
   --dry-run          Prepare and print the complete publication plan
   --expect <hash>    Require the reviewed composite plan fingerprint
   --force            Publish even when the adapter payload is unchanged
-  --delete           Remove missing native-site objects during sync
   --verbose, -v      Show per-file diagnostics
   --registry, -r     Use another registry file`,
   import: `Usage: notopress import <publisher> <resource> [options]
@@ -63,6 +63,17 @@ Write the selected site's runtime configuration to .env.local.
 Options:
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
+  sources: `Usage: notopress sources init [options]
+
+Initialize a local source Git repository and ignore generated distribution files.
+Preserve articles, original assets and existing ignore rules. No commits or pushes.
+Already tracked generated files remain tracked; review git status and untrack them explicitly if needed.
+
+Options:
+  --site, -s <id>    Select a site
+  --dry-run          Preview Git initialization without changing the vault
+  --expect <hash>    Require the reviewed source setup fingerprint
+  --registry, -r     Use another registry file`,
 };
 
 const ROOT_HELP = `Usage: notopress <command> [options]
@@ -76,6 +87,7 @@ Commands:
   import <publisher> <resource>       Import one remote resource
   publisher init <publisher>          Mark current adapter payloads as synced
   configure [site]                    Configure local development
+  sources init                       Initialize source Git and ignore generated files
 
 Run "notopress help <command>" for command details.`;
 

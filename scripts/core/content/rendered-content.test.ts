@@ -92,6 +92,7 @@ describe('rendered content generator', () => {
         dryRun: true,
         logger: unchangedLogger,
         collectArtifact: (artifact) => artifacts.push(artifact),
+        distributionAssetPaths: ['content/_thumbnails/hero-320.webp'],
       });
 
       expect(unchangedLogger.log).toHaveBeenCalledWith('[PLAN] 0 of 1 rendered HTML file(s) would change');

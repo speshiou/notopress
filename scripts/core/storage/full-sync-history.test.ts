@@ -14,7 +14,7 @@ function setup({ content = saved, currentTime = '2026-01-02T00:00:00.000Z' } = {
 describe('full sync advisory history', () => {
   it('shows the successful completion time without writing or prompting for a recent sync', async () => {
     const h = setup();
-    expect(await h.history.describe({ target, remind: true })).toBe(`Last successful full vault sync: ${completedAt} (1 day(s) ago).`);
+    expect(await h.history.describe({ target, remind: true })).toBe(`Last successful full distribution sync: ${completedAt} (1 day(s) ago).`);
     expect(h.write).not.toHaveBeenCalled();
   });
 
