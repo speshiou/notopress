@@ -136,6 +136,7 @@ export async function generateRenderedContent({
     });
     const html = await renderMarkdownContent({
       markdown: document.markdown,
+      sourceDirectory: document.directory,
       thumbnailSizes,
       assetFiles,
       responsiveImageWidths: rootIndex.responsiveImageWidths,

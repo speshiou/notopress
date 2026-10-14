@@ -48,6 +48,17 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('<figcaption>My Alt Text</figcaption></figure>');
   });
 
+  it("keeps decorative images accessible without generating a caption", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "### Example provider\n\n![](image.png)",
+      thumbnailSizes: [128],
+      assetFiles: ["image.png"],
+    });
+    expect(html).toContain('alt=""');
+    expect(html).not.toContain("<figcaption>");
+  });
+
   it("resolves standard markdown image references through known asset files", async () => {
     const { renderMarkdownContent } = await import("./markdown");
     const html = await renderMarkdownContent({
@@ -74,6 +85,21 @@ describe("createMarkdownRenderer", () => {
     expect(html).toContain('sizes="(max-width: 128px) 100vw, 128px"');
     expect(html).not.toContain("-320.webp");
     expect(html).not.toContain("-640.webp");
+    expect(html).not.toContain("-1280.webp");
+  });
+
+  it("renders a parent-relative small asset with its actual generated width", async () => {
+    const { renderMarkdownContent } = await import("./markdown");
+    const html = await renderMarkdownContent({
+      markdown: "![Example](../attachments/brands/example/logo.png)",
+      sourceDirectory: "guides",
+      thumbnailSizes: [320, 640, 960, 1280],
+      assetFiles: ["attachments/brands/example/logo.png", "attachments/brands/other/logo.png"],
+      responsiveImageWidths: { "attachments/brands/example/logo.png": [128] },
+      assetUrlConfig: { imageHost: "https://cdn.example.com", siteId: "example", mode: "absolute" },
+    });
+    expect(html).toContain('src="https://cdn.example.com/example/content/_thumbnails/attachments/brands/example/logo-128.webp"');
+    expect(html).not.toContain("../");
     expect(html).not.toContain("-1280.webp");
   });
 

@@ -55,4 +55,18 @@ describe("local image helpers", () => {
       "![A](<attachments/Pasted image example.png>)\n![Remote](https://example.com/image.png)"
     );
   });
+
+  it("resolves parent-relative paths before ambiguous basename fallback", () => {
+    expect(resolveLocalImagePath({
+      src: "../attachments/brands/example/logo.png",
+      sourceDirectory: "guides",
+      availableFiles: ["attachments/brands/example/logo.png", "attachments/brands/other/logo.png"],
+    })).toBe("attachments/brands/example/logo.png");
+  });
+
+  it("prefers the document directory for relative paths but preserves root references", () => {
+    const files = ["guides/logo.png", "logo.png"];
+    expect(resolveLocalImagePath({ src: "logo.png", sourceDirectory: "guides", availableFiles: files })).toBe("guides/logo.png");
+    expect(resolveLocalImagePath({ src: "/logo.png", sourceDirectory: "guides", availableFiles: files })).toBe("logo.png");
+  });
 });

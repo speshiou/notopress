@@ -343,6 +343,7 @@ export async function prepareWordPressPublication({
         const publicationEntry = wordpressPublicationState[post.slug];
         const inputHash = computeWordPressPublicationInputHash({
           sourceHash,
+          sourceDirectory: post.document.directory,
           markdown: post.document.markdown,
           title: post.title,
           wordpressSlug: wpSlug,
@@ -385,6 +386,7 @@ export async function prepareWordPressPublication({
 
         const htmlContent = await renderMarkdownContent({
           markdown: post.document.markdown,
+          sourceDirectory: post.document.directory,
           thumbnailSizes: sizes,
           assetFiles,
           responsiveImageWidths,

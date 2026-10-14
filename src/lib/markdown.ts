@@ -134,10 +134,8 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
             const imgProperties: Record<string, string> = {
               src: srcVal,
               style: "max-width: 100%;",
+              alt: altText,
             };
-            if (altText) {
-              imgProperties.alt = altText;
-            }
             if (attributes) {
               imgProperties.srcset = attributes.srcSet;
               imgProperties.sizes = `(max-width: ${largestWidth}px) 100vw, ${largestWidth}px`;
@@ -295,6 +293,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       markdown,
       thumbnailSizes,
       assetFiles,
+      sourceDirectory,
       publicFiles,
       responsiveImageWidths,
       getFigureProperties,
@@ -305,6 +304,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       markdown: string;
       thumbnailSizes: readonly number[];
       assetFiles?: readonly string[];
+      sourceDirectory?: string;
       publicFiles?: readonly string[];
       responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
       getFigureProperties?: (largestWidth: number) => FigureProperties;
@@ -314,7 +314,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
       let preprocessed = preprocessWikilinks(markdown, availableFiles || [], noteReferences);
-      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles }) : preprocessed;
+      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles, sourceDirectory }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,

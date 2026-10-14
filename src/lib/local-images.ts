@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export function safelyDecodeUriComponent({ value, maxPasses = 3 }: { value: string; maxPasses?: number }): string {
   let decodedValue = value;
   for (let attempt = 0; attempt < maxPasses; attempt += 1) {
@@ -60,9 +62,11 @@ function getLocalImageIndex(availableFiles: readonly string[]): LocalImageIndex 
 export function resolveLocalImagePath({
   src,
   availableFiles,
+  sourceDirectory,
 }: {
   src: string;
   availableFiles?: readonly string[];
+  sourceDirectory?: string;
 }): string {
   const cleanSrc = safelyDecodeUriComponent({ value: src.replace(/^\//, "") });
   if (!availableFiles || availableFiles.length === 0) {
@@ -70,6 +74,12 @@ export function resolveLocalImagePath({
   }
 
   const imageIndex = getLocalImageIndex(availableFiles);
+  if (sourceDirectory !== undefined && !src.startsWith("/")) {
+    const documentRelativePath = path.posix.normalize(path.posix.join(sourceDirectory, cleanSrc));
+    if (!documentRelativePath.startsWith("../") && imageIndex.availableFileSet.has(documentRelativePath)) {
+      return documentRelativePath;
+    }
+  }
   if (imageIndex.availableFileSet.has(cleanSrc)) {
     return cleanSrc;
   }
@@ -84,9 +94,11 @@ export function resolveLocalImagePath({
 export function resolveMarkdownImagePaths({
   markdown,
   availableFiles,
+  sourceDirectory,
 }: {
   markdown: string;
   availableFiles: readonly string[];
+  sourceDirectory?: string;
 }): string {
   return markdown.replace(/!\[([^\]]*)\]\((<[^>]+>|[^)\s]+)([^)]*)\)/g, (match, alt, rawUrl, suffix) => {
     const url = rawUrl.startsWith("<") && rawUrl.endsWith(">") ? rawUrl.slice(1, -1) : rawUrl;
@@ -94,7 +106,7 @@ export function resolveMarkdownImagePaths({
       return match;
     }
 
-    const resolvedPath = resolveLocalImagePath({ src: url, availableFiles });
+    const resolvedPath = resolveLocalImagePath({ src: url, availableFiles, sourceDirectory });
     const trimmedSuffix = suffix.trim();
     const suffixText = trimmedSuffix ? ` ${trimmedSuffix}` : "";
     return `![${alt}](${formatMarkdownImageDestination({ src: resolvedPath })}${suffixText})`;

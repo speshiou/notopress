@@ -43,4 +43,15 @@ describe('computeWordPressPublicationInputHash', () => {
       imageHost: 'https://media.example.com',
     })).not.toBe(original);
   });
+
+  it('tracks the same document-relative image and widths as the renderer', () => {
+    const input = { ...baseInput, markdown: '![Image](logo.png)', sourceDirectory: 'guides',
+      assetFiles: ['logo.png', 'guides/logo.png'],
+      responsiveImageWidths: { 'logo.png': [640], 'guides/logo.png': [128] },
+    };
+    const original = computeWordPressPublicationInputHash(input);
+    expect(computeWordPressPublicationInputHash({ ...input, sourceDirectory: '' })).not.toBe(original);
+    expect(computeWordPressPublicationInputHash({ ...input, responsiveImageWidths: { 'logo.png': [640], 'guides/logo.png': [256] } })).not.toBe(original);
+    expect(computeWordPressPublicationInputHash({ ...input, responsiveImageWidths: { 'logo.png': [1280], 'guides/logo.png': [128] } })).toBe(original);
+  });
 });

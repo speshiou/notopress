@@ -8,18 +8,20 @@ import type { NoteReference } from '../../../src/lib/note-links';
 import { computeContentHash } from '../../core/state/sync-state';
 import type { WordPressPublishContentType } from './publish-payload';
 
-const WORDPRESS_RENDERER_REVISION = 1;
+const WORDPRESS_RENDERER_REVISION = 2;
 
 function collectLocalImageInputs({
   markdown,
   assetFiles,
   responsiveImageWidths,
+  sourceDirectory,
 }: {
   markdown: string;
   assetFiles: readonly string[];
   responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
+  sourceDirectory?: string;
 }) {
-  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown, availableFiles: assetFiles });
+  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown, availableFiles: assetFiles, sourceDirectory });
   const inputs: { path: string; widths: readonly number[] | null }[] = [];
   const imagePattern = /!\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)/g;
   let match: RegExpExecArray | null;
@@ -50,6 +52,7 @@ export function computeWordPressPublicationInputHash({
   thumbnailSizes,
   assetFiles,
   responsiveImageWidths,
+  sourceDirectory,
 }: {
   sourceHash: string;
   markdown: string;
@@ -63,6 +66,7 @@ export function computeWordPressPublicationInputHash({
   thumbnailSizes: readonly number[];
   assetFiles: readonly string[];
   responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
+  sourceDirectory?: string;
 }): string {
   const embeddedMarkdown = noteReferences
     .map((reference) => reference.content || '')
@@ -86,10 +90,12 @@ export function computeWordPressPublicationInputHash({
       siteId,
       imageHost,
       thumbnailSizes,
+      sourceDirectory: sourceDirectory || '',
       images: collectLocalImageInputs({
         markdown: `${markdown}\n${embeddedMarkdown}`,
         assetFiles,
         responsiveImageWidths,
+        sourceDirectory,
       }),
     },
   }));
