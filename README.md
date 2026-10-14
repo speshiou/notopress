@@ -204,6 +204,18 @@ uploads. This is not remote content-hash verification. Preserve source timestamp
 and explicit date frontmatter when practical, and review a new dry run after
 migration. Preserve `.notopress-sync.json` for adapter caches if available.
 
+Successful full storage syncs record their completion time in
+`.notopress/full-sync.json`, after both vault transfer and registry upload succeed.
+Publication reports the last completion and suggests reviewing a full `sync`
+when the record is missing or at least seven days old. This is advisory: it does
+not start a sync, skip remote checks, or change publication fingerprints. Dry
+runs and failed transfers do not update the record. Publication currently also
+performs a full storage sync, so successful live publication updates it too.
+Copy the hidden `.notopress` directory when moving the vault to another machine.
+This local history is excluded from storage backup; restoring from R2 alone
+leaves the timestamp unknown. Changing the storage destination also makes an
+existing timestamp inapplicable.
+
 AWS CLI application is not an atomic transaction with its preview: avoid
 concurrent writers to the same storage prefix. Transfers use a single attempt;
 inspect failures before retrying a publication. NotoPress uses the classic S3

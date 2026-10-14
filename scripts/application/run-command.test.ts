@@ -49,6 +49,7 @@ describe('composite storage publication ordering', () => {
     expect(h.storage.apply).not.toHaveBeenCalled();
     expect(h.publisher.apply).not.toHaveBeenCalled();
     expect(h.storage.close).toHaveBeenCalledOnce();
+    expect(prepareNativeSite).toHaveBeenCalledWith(expect.objectContaining({ remindFullSync: true }));
     expect(buildSite).toHaveBeenCalledWith(expect.objectContaining({ prepareOnly: true }));
     expect(h.adapter.preparePublication).toHaveBeenCalledWith(expect.objectContaining({ targetSlugs: ['guides/article'] }));
   });

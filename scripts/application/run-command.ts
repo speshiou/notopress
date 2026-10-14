@@ -133,6 +133,7 @@ async function runPublication({ command, site, registry, stageTimer }: {
     site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: build.sourceArtifacts,
     deleteRemoteFiles: command.deleteRemoteFiles,
     verbose: command.verbose, stageTimer,
+    remindFullSync: command.kind === 'publish',
   });
   try {
     const publicationPlan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: preparedPublications });

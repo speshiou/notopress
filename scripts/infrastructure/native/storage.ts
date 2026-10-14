@@ -7,9 +7,11 @@ import { createStorageSnapshot } from './storage-snapshot';
 import { buildS3SyncArgs } from './s3-sync';
 import { runAwsCli, type AwsCliRunner } from './aws-cli';
 import { DEFAULT_REGISTRY_FILENAME } from '../../../src/lib/constants';
+import { createVaultFullSyncHistory } from './full-sync-history';
 
 export function createNativeSitePreparation({ resolveConnection = getStorageConnection, createFiles = createVaultStorageFiles,
   snapshot = createStorageSnapshot, runCli = runAwsCli, environment = process.env, logger = console,
+  createHistory = createVaultFullSyncHistory,
 }: {
   resolveConnection?: typeof getStorageConnection;
   createFiles?: typeof createVaultStorageFiles;
@@ -17,10 +19,13 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
   runCli?: AwsCliRunner;
   environment?: NodeJS.ProcessEnv;
   logger?: Pick<typeof console, 'log'>;
+  createHistory?: typeof createVaultFullSyncHistory;
 } = {}) {
-  return async function prepareNativeSite(input: NativeStorageBuildInput & { deleteRemoteFiles: boolean; verbose: boolean }) {
+  return async function prepareNativeSite(input: NativeStorageBuildInput & { deleteRemoteFiles: boolean; verbose: boolean; remindFullSync?: boolean }) {
     const { site, registry, deleteRemoteFiles, verbose, stageTimer } = input;
     const connection = resolveConnection({ site, registry });
+    const history = createHistory({ vaultPath: site.vaultPath });
+    logger.log(await history.describe({ target: connection.target, remind: input.remindFullSync === true }));
     const prepared = await prepareStorageArtifacts({ input, files: createFiles({ vaultPath: site.vaultPath }) });
     const staged = await stageTimer.measure({ stage: 'storage.snapshot', run: () => snapshot({ vaultPath: site.vaultPath, artifacts: prepared.artifacts }) });
     const cliEnvironment: NodeJS.ProcessEnv = {
@@ -55,6 +60,11 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
             await runCli({ args: ['s3', 'cp', staged.registryPath, `s3://${connection.target.bucket}/${DEFAULT_REGISTRY_FILENAME}`, '--endpoint-url', connection.target.endpoint, '--only-show-errors'], environment: cliEnvironment });
           } });
           logger.log('Vault backup/sync completed with AWS CLI.');
+          try {
+            await history.record({ target: connection.target });
+          } catch {
+            logger.log('Storage sync succeeded, but its completion time could not be saved. A later run may still show a full-sync reminder.');
+          }
         },
         close: staged.close,
       };
