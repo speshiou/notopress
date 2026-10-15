@@ -14,6 +14,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - If generated index files appear in a diff after article edits, leave them unstaged and revert only those generated artifacts after confirming they were not intentionally requested.
 
 # Architecture
+- Preserve owner-managed source paths and links. Resolve Markdown links and wikilinks at build time; publishing must not move originals or rewrite source references.
 - Keep main entrance files clean as orchestrators. Move feature logic, parsing, file scanning, rendering transforms, and other reusable behavior into focused modules instead of letting scripts or page files grow bloated.
 - Treat dry-run planning and fingerprinting as core NotoPress infrastructure. Build stages and publishing adapters should contribute typed operations to a shared plan/apply boundary; do not implement a separate approximation of live behavior inside an integration. Keep integration-specific gates explicitly named until the core plan includes every affected stage.
 - Keep publishing platforms behind `ContentPlatformAdapter`: core owns the canonical content snapshot, selection, plan validation, and apply ordering; adapters own target rendering, remote discovery, mutations, and namespaced state. Prepare every selected plan before the first remote mutation.
