@@ -8,7 +8,7 @@ description: Guidelines for migrating registry.json data to match the latest sch
 As the project evolves, the structure of `registry.json` may change. This skill provides guidelines for migrating your registry data to match the latest schema.
 
 ## Schema Source of Truth
-The canonical schema is defined in [src/domain/registry.ts](../../src/domain/registry.ts) using Zod. Always refer to this file to see the expected structure.
+The canonical schema is defined in [src/domain/registry.ts](../../../src/domain/registry.ts) using Zod. Always refer to this file to see the expected structure.
 
 ## Migration Workflow
 
@@ -22,16 +22,16 @@ You can use the following snippet to validate your registry file:
 
 ```typescript
 // scripts/validate-registry.ts
-import { getRegistry } from './lib/registry';
+import { getRegistry } from './infrastructure/config/registry';
 
 async function main() {
   try {
     const registry = await getRegistry();
     console.log('✅ Registry is valid!');
     console.log(`Loaded ${registry.sites.length} sites.`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Registry validation failed:');
-    console.error(error.message);
+    console.error(error instanceof Error ? error.message : 'Registry validation failed.');
     process.exit(1);
   }
 }
@@ -45,13 +45,7 @@ npx tsx scripts/validate-registry.ts
 ```
 
 ## Automated Migrations
-For significant structure changes, it is recommended to create a one-off migration script in the `scripts/` directory:
-
-```typescript
-// Example migration: Rename 'domain' to 'host'
-import fs from 'fs';
-const data = JSON.parse(fs.readFileSync('registry.json', 'utf8'));
-data.sites = data.sites.map(s => ({ host: s.domain, ...s }));
-data.sites.forEach(s => delete s.domain);
-fs.writeFileSync('registry.json', JSON.stringify(data, null, 2));
-```
+For significant structure changes, use a one-off script with explicit input and
+output schemas. Read the file as `unknown`, validate it with Zod before transforming
+it, and validate the result with `RegistrySchema` before writing. Keep credentials
+out of logs, preserve unrelated settings, and keep the backup outside Git.

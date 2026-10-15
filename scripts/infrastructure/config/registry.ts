@@ -26,8 +26,7 @@ export async function getRegistry(customPath?: string): Promise<Registry> {
     return RegistrySchema.parse(jsonData);
   } catch (error: unknown) {
     const migrationGuidance = `
-Tip: If your registry.json is outdated, you can use AI agents like Claude Code, OpenClaw, or other tools to help you migrate to the new schema. 
-Refer to skills/registry-migration.md for detailed migration instructions and the current schema definition.`;
+Tip: See skills/registry-migration/SKILL.md for migration guidance and src/domain/registry.ts for the current schema.`;
 
     if (error instanceof z.ZodError) {
       throw new Error(`Invalid registry structure: ${JSON.stringify(error.format(), null, 2)}${migrationGuidance}`);

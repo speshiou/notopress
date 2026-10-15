@@ -1,6 +1,6 @@
 # NotoPress
 
-NotoPress turns a local Markdown vault into a content-driven Next.js site. Markdown remains the source of truth. NotoPress builds the site artifacts, stores them in S3-compatible storage, and can publish the same canonical content through optional adapters such as WordPress.
+NotoPress turns a local Markdown vault into a content-driven Next.js site. Markdown remains the source of truth. Git keeps source articles and original assets. NotoPress builds a distribution of HTML, metadata and visitor-facing assets, uploads it to S3-compatible storage, and can publish the same canonical content through optional adapters such as WordPress.
 
 > [!CAUTION]
 > NotoPress is under active development. Command and configuration compatibility may change before a stable release.
@@ -8,14 +8,14 @@ NotoPress turns a local Markdown vault into a content-driven Next.js site. Markd
 ## How it works
 
 ```text
-Markdown vault
+Git sources → local Markdown vault
     ↓
 canonical content snapshot
     ↓
 indices · routes · rendered HTML · sitemaps · responsive images
     ↓
 reviewable publication plan
-    ├── native site → S3-compatible storage → Next.js runtime
+    ├── selected distribution → AWS CLI → S3-compatible storage → HTML-only Next.js reader
     └── publishers  → configured publication targets
 ```
 
@@ -23,7 +23,7 @@ The native site and platform adapters share content discovery and publication pl
 
 ## Getting started
 
-You need Node.js and an S3-compatible bucket with conditional object writes. Vercel is optional unless you use the included deployment workflow.
+You need Node.js, AWS CLI, and an S3-compatible bucket. Git is needed for source version control. Vercel is optional unless you use the included deployment workflow.
 
 ```bash
 npm install
@@ -48,7 +48,7 @@ Edit `registry.json`, then point `vaultPath` at a local vault:
 }
 ```
 
-Configure the local Next.js runtime for that site and start development:
+After reviewing and applying an initial full distribution sync (see [Sync and deployment](#sync-and-deployment)), configure the local Next.js runtime for that site and start development:
 
 ```bash
 npm run configure -- example-blog
@@ -151,7 +151,9 @@ npm run sync -- example-blog --expect <reviewed-fingerprint>
 
 `sync` uploads native NotoPress files only, including for sites with WordPress configured. It does not create or update WordPress posts. For a WordPress site-wide push, use `publish <publisher> --site <site-id>` without slugs, first with `--dry-run` and then with the reviewed `--expect` fingerprint.
 
-Git owns source Markdown, original assets, configuration and lockfiles. R2 serves
+Git owns source Markdown, original assets, non-secret configuration and project
+lockfiles. Keep credential-bearing registry and environment files outside Git.
+R2 serves
 rendered HTML, JSON indexes, sitemaps, thumbnails and visitor-facing attachments;
 source Markdown, vault agent instructions and local state are not distributed.
 The reader requires rendered HTML and never falls back to Markdown.
@@ -176,8 +178,10 @@ npm run sources:init -- --site example-blog --dry-run
 npm run sources:init -- --site example-blog --expect <reviewed-fingerprint>
 ```
 
-Source setup preserves existing ignore rules and excludes generated outputs,
-local state and credentials. It makes no commits, adds no upstream and does not
+Source setup preserves existing ignore rules and excludes `_rendered/`,
+`**/_thumbnails/`, generated indexes and sitemaps, `.notopress/`, adapter state,
+registry credentials and environment files (except `.env.example`). It does not
+scan source content for embedded secrets. It makes no commits, adds no upstream and does not
 untrack files already in Git. Review `git status`, commit your sources, and connect
 an upstream when wanted. Use Git LFS if original binary history becomes large.
 
@@ -198,7 +202,7 @@ do not add `build.indices` or `build.total` to their child durations. A failed
 stage reports its elapsed time with `failed`, rather than a successful benchmark.
 Timing records contain only fixed stage names, elapsed seconds, and outcomes.
 
-`storage.inventory` measures local enumeration and hashing. `storage.snapshot`
+`storage.inventory` measures source verification and hashing of selected distribution assets. `storage.snapshot`
 measures temporary snapshot preparation; `storage.compare`
 measures AWS CLI preview, `storage.recheck` measures the pre-apply preview, and
 `storage.sync` measures live application. Targeting one adapter article still
@@ -334,7 +338,7 @@ migration and is not performed automatically.
 
 ## Generated artifacts
 
-NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets.
+NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets. Vault `AGENTS.md` instructions are maintained by the vault owner; builds do not generate or update them.
 
 When image dimensions are known, generated responsive variants preserve aspect ratio and do not upscale beyond the source. The renderer uses the widths that were actually generated rather than assuming every configured size exists.
 
@@ -350,6 +354,11 @@ scripts/
 ├── infrastructure/  storage, configuration, processes, and deployment
 └── cli/             typed command parsing and dispatch
 ```
+
+Storage uploads use AWS CLI: bounded `s3 cp --recursive` during publication and
+`s3 sync` for full reconciliation. The Next.js runtime uses the official AWS SDK
+to read rendered HTML, JSON and assets; it does not parse source Markdown. There
+is no remote upload manifest or local upload-baseline database.
 
 Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic `ContentPlatformAdapter` contract. Architecture tests enforce these boundaries.
 
