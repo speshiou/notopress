@@ -120,6 +120,32 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       expect(render).not.toHaveBeenCalled();
       expect(apiPayloads).toHaveLength(1);
       expect([...uploaded.keys()].sort()).toEqual(['content/diagram.svg', 'content/hero.svg']);
+      uploaded.clear();
+      harness.runCli.mockClear();
+      const warmBefore = await filesUnder(vaultPath);
+      await runCommand({ command: { ...command, targetSlugs: undefined, dryRun: true }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
+      expect(uploaded.size).toBe(0);
+      expect(harness.runCli).not.toHaveBeenCalled();
+      expect(await filesUnder(vaultPath)).toEqual(warmBefore);
+      await runCommand({ command: { ...command, targetSlugs: undefined, dryRun: false }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
+      expect(harness.runCli).not.toHaveBeenCalled();
+      // Block-only image changes must upload even when Markdown and the API HTML stay unchanged.
+      await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Replacement hero</svg>');
+      await runCommand({ command: { ...command, targetSlugs: undefined, dryRun: true }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
+      const changedFingerprint = log.mock.calls.map(([message]) => String(message)).findLast((line) => line.includes('NotoPress publication plan '))?.match(/NotoPress publication plan ([a-f0-9]{64}):/)?.[1];
+      await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Another replacement</svg>');
+      await expect(runCommand({ command: { ...command, targetSlugs: undefined, dryRun: false, expectedPlanFingerprint: changedFingerprint }, registry: { sites: [site] }, stageTimer: passthroughStageTimer })).rejects.toThrow('plan changed');
+      expect(uploaded.size).toBe(0);
+      await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Replacement hero</svg>');
+      await runCommand({ command: { ...command, targetSlugs: undefined, dryRun: false, expectedPlanFingerprint: changedFingerprint }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
+      expect([...uploaded.keys()]).toEqual(['content/hero.svg']);
+      expect(apiPayloads).toHaveLength(1);
+      uploaded.clear();
+      harness.runCli.mockClear();
+      await writeFile(path.join(vaultPath, 'content/article.md'), `${await readFile(path.join(vaultPath, 'content/article.md'), 'utf8')}\nText update.\n`);
+      await run(false);
+      expect(apiPayloads).toHaveLength(2);
+      expect(harness.runCli).not.toHaveBeenCalled();
       render.mockRestore();
     } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); log.mockRestore(); await rm(vaultPath, { recursive: true, force: true }); }
   });

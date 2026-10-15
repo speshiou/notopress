@@ -5,14 +5,15 @@ import { passthroughStageTimer } from '../../core/stage-timing';
 import type { AwsCliRunner } from './aws-cli';
 
 function setup() {
-  const source = createBuildArtifact({ path: 'article.md', content: 'body' });
+  const source = createBuildArtifact({ path: 'article.svg', content: 'body' });
   const writeFile = vi.fn(async () => undefined);
   const close = vi.fn(async () => undefined);
   const verify = vi.fn(async () => undefined);
   const staged = { snapshotPath: 'snapshot', registryPath: 'registry.json', configPath: 'aws-config', verify, close };
-  const runCli = vi.fn<AwsCliRunner>(async () => '(dryrun) upload: snapshot/article.md to s3://example-bucket/example-site/article.md\n');
+  const runCli = vi.fn<AwsCliRunner>(async () => '(dryrun) upload: snapshot/article.svg to s3://example-bucket/example-site/article.svg\n');
   const logger = { log: vi.fn() };
   const history = { describe: vi.fn(async () => 'Last successful full distribution sync: unknown.'), record: vi.fn(async () => undefined) };
+  const uploadCache = { load: vi.fn(async (): Promise<Record<string, string>> => ({})), record: vi.fn(async () => undefined), forget: vi.fn(async () => undefined) };
   const prepare = createNativeSitePreparation({
     resolveConnection: () => ({ target: { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' }, credentials: { accessKeyId: 'example-key', secretAccessKey: 'example-secret' } }),
     createFiles: () => ({ hashFile: async (file) => {
@@ -21,10 +22,11 @@ function setup() {
     }, readFile: source.read, writeFile }),
     snapshot: async () => staged, runCli, environment: { NODE_ENV: 'test' }, logger,
     createHistory: () => history,
+    createUploadCache: () => uploadCache,
   });
   const site = { siteId: 'example-site', vaultPath: 'vault', bucketName: 'example-bucket' };
   const input = { site, registry: { sites: [site] }, generatedArtifacts: [createBuildArtifact({ path: 'root.json', content: '{}' })], deleteRemoteFiles: false, verbose: false, stageTimer: passthroughStageTimer };
-  return { prepare, input, writeFile, close, verify, runCli, logger, history };
+  return { prepare, input, writeFile, close, verify, runCli, logger, history, uploadCache, source };
 }
 
 describe('AWS CLI storage boundary', () => {
@@ -46,9 +48,9 @@ describe('AWS CLI storage boundary', () => {
     expect(prepared.plan.operations.some((operation) => operation.action === 'upload-registry')).toBe(false);
     expect(h.history.describe).not.toHaveBeenCalled();
     await prepared.apply({ dryRun: true });
-    expect(h.runCli).toHaveBeenCalledOnce();
+    expect(h.runCli).not.toHaveBeenCalled();
     await prepared.apply({ dryRun: false });
-    expect(h.runCli).toHaveBeenCalledTimes(3);
+    expect(h.runCli).not.toHaveBeenCalled();
     expect(h.writeFile).not.toHaveBeenCalled();
     expect(h.history.record).not.toHaveBeenCalled();
   });
@@ -59,6 +61,7 @@ describe('AWS CLI storage boundary', () => {
     expect(h.writeFile).not.toHaveBeenCalled();
     expect(h.runCli).toHaveBeenCalledTimes(1);
     expect(h.history.record).not.toHaveBeenCalled();
+    expect(h.uploadCache.record).not.toHaveBeenCalled();
     expect(h.runCli.mock.calls[0][0]).toEqual(expect.objectContaining({ args: expect.arrayContaining(['--dryrun']), environment: expect.objectContaining({ AWS_MAX_ATTEMPTS: '1', AWS_CONFIG_FILE: 'aws-config' }) }));
     expect(JSON.stringify(h.logger.log.mock.calls)).not.toContain('example-secret');
     await prepared.apply({ dryRun: false });
@@ -67,6 +70,7 @@ describe('AWS CLI storage boundary', () => {
     expect(h.runCli.mock.calls[2][0]).toEqual(expect.objectContaining({ args: expect.arrayContaining(['s3', 'sync', 'snapshot/', 's3://example-bucket/example-site/']) }));
     expect(h.runCli.mock.calls[3][0]).toEqual(expect.objectContaining({ args: expect.arrayContaining(['s3', 'cp', 'registry.json', 's3://example-bucket/registry.json']) }));
     expect(h.history.record).toHaveBeenCalledExactlyOnceWith({ target: { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' } });
+    expect(h.uploadCache.record).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
     await prepared.close();
     expect(h.close).toHaveBeenCalledOnce();
   });
@@ -78,6 +82,7 @@ describe('AWS CLI storage boundary', () => {
     await expect(prepared.apply({ dryRun: false })).rejects.toThrow('plan changed');
     expect(h.writeFile).not.toHaveBeenCalled();
     expect(h.history.record).not.toHaveBeenCalled();
+    expect(h.uploadCache.record).not.toHaveBeenCalled();
     expect(h.runCli.mock.calls.every(([request]) => request.args.includes('--dryrun'))).toBe(true);
     h.verify.mockRejectedValueOnce(new Error('tampered'));
     await expect(prepared.apply({ dryRun: false })).rejects.toThrow('tampered');
@@ -92,7 +97,7 @@ describe('AWS CLI storage boundary', () => {
     expect(failed.close).toHaveBeenCalledOnce();
     const h = setup();
     const prepared = await h.prepare(h.input);
-    h.runCli.mockResolvedValueOnce('(dryrun) upload: snapshot/article.md to s3://example-bucket/example-site/article.md\n').mockRejectedValueOnce(new Error('uncertain'));
+    h.runCli.mockResolvedValueOnce('(dryrun) upload: snapshot/article.svg to s3://example-bucket/example-site/article.svg\n').mockRejectedValueOnce(new Error('uncertain'));
     await expect(prepared.apply({ dryRun: false })).rejects.toThrow('uncertain');
     expect(h.runCli).toHaveBeenCalledTimes(3);
     expect(h.history.record).not.toHaveBeenCalled();
@@ -103,10 +108,11 @@ describe('AWS CLI storage boundary', () => {
     const failed = setup();
     const storage = await failed.prepare({ ...failed.input, remindFullSync: true });
     expect(failed.history.describe).toHaveBeenCalledWith(expect.objectContaining({ remind: true }));
-    failed.runCli.mockResolvedValueOnce('(dryrun) upload: snapshot/article.md to s3://example-bucket/example-site/article.md\n')
+    failed.runCli.mockResolvedValueOnce('(dryrun) upload: snapshot/article.svg to s3://example-bucket/example-site/article.svg\n')
       .mockResolvedValueOnce('').mockRejectedValueOnce(new Error('registry failed'));
     await expect(storage.apply({ dryRun: false })).rejects.toThrow('registry failed');
     expect(failed.history.record).not.toHaveBeenCalled();
+    expect(failed.uploadCache.record).not.toHaveBeenCalled();
     await storage.close();
     const h = setup();
     const prepared = await h.prepare(h.input);
@@ -114,6 +120,45 @@ describe('AWS CLI storage boundary', () => {
     await expect(prepared.apply({ dryRun: false })).resolves.toBeUndefined();
     expect(h.logger.log).toHaveBeenCalledWith(expect.stringContaining('completion time could not be saved'));
     expect(h.runCli).toHaveBeenCalledTimes(4);
+    await prepared.close();
+  });
+
+  it('records successful adapter uploads only after AWS succeeds and skips matching bytes on the next run', async () => {
+    const h = setup();
+    const input = { ...h.input, scope: { kind: 'assets', paths: ['article.svg'] } as const };
+    const planned = await h.prepare(input);
+    await planned.apply({ dryRun: true });
+    expect(h.uploadCache.record).not.toHaveBeenCalled();
+    expect(h.uploadCache.forget).not.toHaveBeenCalled();
+    h.runCli.mockResolvedValueOnce('(dryrun) upload: snapshot/article.svg to s3://example-bucket/example-site/article.svg\n').mockRejectedValueOnce(new Error('transfer interrupted'));
+    await expect(planned.apply({ dryRun: false })).rejects.toThrow('transfer interrupted');
+    expect(h.uploadCache.record).not.toHaveBeenCalled();
+    expect(h.uploadCache.forget).toHaveBeenCalledOnce();
+    await planned.close();
+    const retry = await h.prepare(input);
+    await retry.apply({ dryRun: false });
+    expect(h.uploadCache.record).toHaveBeenCalledWith({ artifacts: [expect.objectContaining({ key: 'example-site/article.svg', contentHash: expect.stringMatching(/^[a-f0-9]{64}$/) })], replace: false });
+    await retry.close();
+    h.uploadCache.load.mockResolvedValue({ 'example-site/article.svg': createBuildArtifact({ path: 'article.svg', content: 'body' }).contentHash });
+    h.runCli.mockClear();
+    const warm = await h.prepare(input);
+    const originalHash = h.source.contentHash;
+    h.source.contentHash = createBuildArtifact({ path: h.source.path, content: 'changed' }).contentHash;
+    await expect(warm.apply({ dryRun: false })).rejects.toThrow('Build source changed');
+    expect(h.runCli).not.toHaveBeenCalled();
+    h.source.contentHash = originalHash;
+    await warm.apply({ dryRun: false });
+    expect(h.runCli).not.toHaveBeenCalled();
+    await warm.close();
+  });
+
+  it('stops before remote writes if old upload receipts cannot be invalidated', async () => {
+    const h = setup();
+    const prepared = await h.prepare({ ...h.input, scope: { kind: 'assets', paths: ['article.svg'] } });
+    h.uploadCache.forget.mockRejectedValueOnce(new Error('local record unavailable'));
+    await expect(prepared.apply({ dryRun: false })).rejects.toThrow('local record unavailable');
+    expect(h.runCli.mock.calls.every(([request]) => request.args.includes('--dryrun'))).toBe(true);
+    expect(h.uploadCache.record).not.toHaveBeenCalled();
     await prepared.close();
   });
 });

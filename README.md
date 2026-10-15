@@ -173,8 +173,14 @@ An adapter without overrides uses the native default: build and upload the
 complete native output set. Shared indexes and sitemaps stay consistent with the
 HTML they advertise. Adapter post selection can still be narrower than the native
 distribution. Both publication policies use AWS CLI `s3 cp --recursive` without
-whole-bucket listing. Required files are copied even if unchanged; there is no
-upload-baseline database.
+whole-bucket listing. Publication skips files whose bytes match successful uploads
+recorded locally in `.notopress/uploads-*.json`, scoped to endpoint, bucket and site.
+Changed bytes upload even when the referencing post is unchanged. Records are
+saved only after successful transfers; dry runs never update them. A missing or
+corrupt record safely uploads the required files once. Full `sync` always compares
+with storage and refreshes the local record after success; remove the local upload
+record to re-upload required adapter assets if remote files were removed outside
+NotoPress.
 
 `sync` (and `deploy`) reconciles the full native distribution using AWS CLI
 `s3 sync`. This is an explicit native-site operation, not a WordPress asset sync
@@ -230,9 +236,11 @@ Native-default publication builds the complete native site.
 
 Install AWS CLI on each machine, clone or copy the sources, restore registry and
 environment configuration, and set the local `vaultPath`. Rebuild generated
-outputs locally; they do not need to travel in Git. There is no storage baseline
-to initialize. Copy `.notopress-sync.json` separately to retain adapter caches
-and WordPress import image mappings. Legacy image references can depend on these
+outputs locally; they do not need to travel in Git. There is no manual storage
+baseline initialization. Optionally copy `.notopress/uploads-*.json` to retain
+successful upload records; without them, required files upload once. Copy
+`.notopress-sync.json` separately to retain adapter caches and WordPress import
+image mappings. Legacy image references can depend on these
 endpoint-scoped mappings to locate originals that an earlier import relocated.
 
 Preparation freezes selected distribution bytes in a temporary directory. Dry
@@ -391,7 +399,7 @@ scripts/
 Storage uploads use AWS CLI: bounded `s3 cp --recursive` during publication and
 `s3 sync` for full reconciliation. The Next.js runtime uses the official AWS SDK
 to read rendered HTML, JSON and assets; it does not parse source Markdown. There
-is no remote upload manifest or local upload-baseline database.
+is no remote upload manifest. Local successful-upload hashes avoid repeated transfers.
 
 Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic `ContentPlatformAdapter` contract. Architecture tests enforce these boundaries.
 

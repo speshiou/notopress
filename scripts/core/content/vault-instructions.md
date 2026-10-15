@@ -7,6 +7,6 @@
 - `sources:init` initializes source Git and generated-file ignore rules without committing or pushing. Already tracked generated files require separate untracking. Keep credentials and local state outside Git; do not edit generated files manually.
 - `import <publisher-id> <resource> --site <site-id>` imports locally without modifying remote posts. `publisher:init <publisher-id> --site <site-id>` trusts current local payloads as the adapter baseline without remote verification or publication; use only when deliberately requested.
 - Preserve source frontmatter and registered Gutenberg blocks. Escape wikilink alias separators inside Markdown tables: `[[note-slug\|Display label]]`. Keep remote checks scoped and verify affected live pages after publication.
-- On another machine, clone sources, restore registry credentials separately, set the local vault path and rebuild. Adapter caches and full-sync history can be copied separately; there is no storage baseline to initialize.
+- On another machine, clone sources, restore registry credentials separately, set the local vault path and rebuild. Adapter caches, upload records and full-sync history can be copied separately; there is no storage baseline to initialize.
 
 NotoPress refreshes only this managed block on vault commands, reports changes, and keeps it out of distribution storage. Read updated guidance before continuing. See the [NotoPress README](https://github.com/speshiou/notopress#readme) for configuration and command details.
