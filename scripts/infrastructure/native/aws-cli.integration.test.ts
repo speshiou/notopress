@@ -7,10 +7,7 @@ import type { Registry, Site } from '../../../src/domain/registry';
 import { getRegistry } from '../config/registry';
 import { runAwsCli } from './aws-cli';
 import { getStorageConnection } from './storage-config';
-import { prepareNativeSite } from './storage';
-import { buildSite } from '../../application/build-site';
 import { runCommand } from '../../application/run-command';
-import { createNativeSitePlan, createPublicationPlan } from '../../core/publishing/publication-plan';
 import { passthroughStageTimer } from '../../core/stage-timing';
 import { computeContentHash } from '../../core/state/sync-state';
 
@@ -46,12 +43,14 @@ async function localSnapshot() {
 }
 async function prepare(deleteRemoteFiles = false) {
   const { site, registry } = ctx();
-  const build = await buildSite({ site, registry, dryRun: true, prepareOnly: true, verbose: false, stageTimer: passthroughStageTimer });
-  const storage = await prepareNativeSite({ site, registry, ...build, publicFiles: build.vaultRootIndex.publicFiles, deleteRemoteFiles, verbose: false, stageTimer: passthroughStageTimer });
-  const nativeSitePlan = createNativeSitePlan({ contentSnapshot: build.contentSnapshot, rootIndex: build.vaultRootIndex, renderedArtifacts: build.renderedContent.artifacts, deleteRemoteFiles });
-  const plan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: [] });
-  await storage.close();
-  return { storagePlan: storage.plan, fingerprint: plan.fingerprint };
+  const log = vi.mocked(console.log);
+  const before = log.mock.calls.length;
+  await runCommand({ command: { kind: 'sync', siteId: site.siteId, dryRun: true, verbose: false, deleteRemoteFiles }, registry, stageTimer: passthroughStageTimer });
+  const messages = log.mock.calls.slice(before).map(([message]) => String(message));
+  const fingerprint = messages.findLast((message) => message.includes('NotoPress publication plan '))?.match(/NotoPress publication plan ([a-f0-9]{64}):/)?.[1];
+  if (!fingerprint) throw new Error('Reviewed composite publication fingerprint was not reported.');
+  const preview = messages.filter((message) => message.startsWith('  storage-preview: ')).map((message) => message.slice('  storage-preview: '.length));
+  return { preview, fingerprint };
 }
 
 describe.skipIf(!enabled).sequential('AWS CLI workflow against disposable R2 storage', () => {
@@ -104,8 +103,8 @@ describe.skipIf(!enabled).sequential('AWS CLI workflow against disposable R2 sto
     await runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: first.fingerprint }, registry: c.registry, stageTimer: passthroughStageTimer });
     expect((await remoteSnapshot()).length).toBeGreaterThan(5);
     const warm = await prepare();
-    expect(warm.storagePlan.operations.find((operation) => operation.action === 'sync')?.preview).toEqual([]);
-    progress('PASS: reviewed apply uploaded real artifacts; unchanged vault had zero AWS CLI sync operations.');
+    expect(warm.preview).toEqual([]);
+    progress('PASS: reviewed apply uploaded real artifacts; unchanged vault comparison proposed zero distribution transfers.');
     const source = path.join(c.site.vaultPath, 'content/article.md');
     await writeFile(source, (await readFile(source, 'utf8')).replace('body', 'EDIT'));
     const newer = new Date(Date.now() + 3000);
@@ -116,7 +115,7 @@ describe.skipIf(!enabled).sequential('AWS CLI workflow against disposable R2 sto
     expect(await remoteSnapshot()).toEqual(beforeRemote);
     expect(await localSnapshot()).toEqual(beforeLocal);
     const edited = await prepare();
-    expect(edited.storagePlan.operations.find((operation) => operation.action === 'sync')?.preview.some((line) => line.includes('_rendered/content/article.html'))).toBe(true);
+    expect(edited.preview.some((line) => line.includes('_rendered/content/article.html'))).toBe(true);
     await runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: edited.fingerprint }, registry: c.registry, stageTimer: passthroughStageTimer });
     const downloaded = path.join(c.root, 'downloaded.html');
     await aws(['s3', 'cp', `s3://${bucket}/integration-site/_rendered/content/article.html`, downloaded, '--only-show-errors']);

@@ -1062,7 +1062,7 @@ describe('WordPress Deployment Library', () => {
     it('initializes all publication state without calling the WordPress REST API', async () => {
       const writes: Record<string, string> = {};
       vi.mocked(existsSync).mockReturnValue(false);
-      vi.mocked(readFile).mockResolvedValue('# Post content');
+      vi.mocked(readFile).mockResolvedValue('---\ncategories: [engineering]\ntags: [publishing]\n---\n# Post content');
       vi.mocked(writeFile).mockImplementation(async (filePath, content) => {
         writes[String(filePath)] = String(content);
       });
@@ -1136,33 +1136,6 @@ describe('WordPress Deployment Library', () => {
           contentType: 'post',
         })
       );
-    });
-
-    it('should not resolve taxonomies when marking posts as synced', async () => {
-      const indicesWithTaxonomies = new Map<string, VaultDirectoryIndex>([
-        ['', {
-          version: 1,
-          pages: [{
-            title: 'Post One',
-            slug: 'post-one',
-            date: '2026-06-16T12:00:00.000Z',
-            excerpt: 'An excerpt.',
-            categories: ['engineering'],
-            tags: ['publishing'],
-          }],
-        }],
-      ]);
-      global.fetch = vi.fn();
-
-      await publishToWordPress({
-        site: mockSite,
-        registry: mockRegistry,
-        allIndices: indicesWithTaxonomies,
-        initializeState: true,
-        dryRun: false,
-      });
-
-      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 

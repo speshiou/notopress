@@ -26,7 +26,7 @@ export async function getRegistry(customPath?: string): Promise<Registry> {
     return RegistrySchema.parse(jsonData);
   } catch (error: unknown) {
     const migrationGuidance = `
-Tip: See skills/registry-migration/SKILL.md for migration guidance and src/domain/registry.ts for the current schema.`;
+Tip: See AGENTS.md for migration safeguards and src/domain/registry.ts for the current schema.`;
 
     if (error instanceof z.ZodError) {
       throw new Error(`Invalid registry structure: ${JSON.stringify(error.format(), null, 2)}${migrationGuidance}`);

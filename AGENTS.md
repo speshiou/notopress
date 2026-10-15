@@ -5,55 +5,24 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- END:nextjs-agent-rules -->
 
 # Verification
-- Always run `npm run type-check` after making changes to verify basic syntax errors.
-- **Strictly avoid using `any` type** anywhere in the codebase. Always write proper TypeScript types, schemas, or interfaces for safety and clarity.
-
-# Generated Content Indexes
-- Treat vault `root.json` files and generated `index.json` files as build artifacts. Do not edit them during article/content edits.
-- Article agents should update source Markdown and source assets only. Regenerate indexes with the existing sync/deploy tooling when explicitly requested.
-- If generated index files appear in a diff after article edits, leave them unstaged and revert only those generated artifacts after confirming they were not intentionally requested.
+- Run `npm run type-check`, `npm run lint` and `npm test -- --run` after code changes; always type-check after any change.
+- Test supported behavior beside its owning module. Remove obsolete or redundant assertions without weakening regression coverage.
 
 # Architecture
+- Keep entry points as orchestrators and feature logic in focused modules. Reuse shared helpers and constants instead of duplicating behavior.
+- Use proper TypeScript types, never `any`. Validate untrusted data with Zod; do not bypass validation with type assertions. Prefer named parameters and inject side-effect dependencies explicitly.
+- Dependencies flow toward domain and library code: `src/domain/` imports no other layer; `src/lib/` never imports application or scripts. Script core never imports application, infrastructure, CLI or adapters. Application uses the adapter catalog, not concrete adapters. Avoid circular imports.
+- Keep platform behavior behind `ContentPlatformAdapter`: core owns canonical snapshots, selection, plan validation and apply ordering; adapters own target rendering, remote discovery, mutations and namespaced state. Keep WordPress implementation and tests in `scripts/adapters/wordpress/`.
+- Build stages and adapters contribute typed operations to one shared plan/apply boundary. Prepare every selected plan before remote mutation; preserve read-only dry runs and reviewed composite fingerprint validation. Do not build separate approximations of live behavior.
 - Preserve owner-managed source paths and links. Resolve Markdown links and wikilinks at build time; publishing must not move originals or rewrite source references.
-- Keep main entrance files clean as orchestrators. Move feature logic, parsing, file scanning, rendering transforms, and other reusable behavior into focused modules instead of letting scripts or page files grow bloated.
-- Treat dry-run planning and fingerprinting as core NotoPress infrastructure. Build stages and publishing adapters should contribute typed operations to a shared plan/apply boundary; do not implement a separate approximation of live behavior inside an integration. Keep integration-specific gates explicitly named until the core plan includes every affected stage.
-- Keep publishing platforms behind `ContentPlatformAdapter`: core owns the canonical content snapshot, selection, plan validation, and apply ordering; adapters own target rendering, remote discovery, mutations, and namespaced state. Prepare every selected plan before the first remote mutation.
-- Module functions should strictly follow dependency injection patterns: pass filesystem, network, parser, logger, process, and other side-effect dependencies through explicit factory inputs or function parameters so modules stay extensible and testable.
-- Add unit tests beside the module file at the same directory level whenever creating or substantially changing a module.
-- **Single Source of Truth**: Strictly avoid duplicating code, logic, data structures, configurations, patterns (such as URL/path composition, file/folder resolution, parsing, etc.), or abstractions across the codebase. Consolidate runtime helpers in `src/lib/` and script-side behavior in its owning `scripts/core/`, `scripts/application/`, `scripts/infrastructure/`, or `scripts/adapters/` module.
-- **Layered Architecture & Cross-Imports**: Strictly maintain a unidirectional layered dependency model. Under no circumstances should cross-layer or circular imports occur:
-  - **Domain layer** (`src/domain/`) holds pure types and configurations. It must never import from other layers.
-  - **Library layer** (`src/lib/`) contains business logic/services. It can import from `src/domain/`, but never from the application (`src/app/`) or scripts (`scripts/`).
-  - **Application/Presentation layer** (`src/app/` / Next.js) can import from `src/lib/` and `src/domain/`.
-  - **Scripts layer** (`scripts/` / CLI tools) can import from `src/lib/`, `src/domain/`, and lower-level script modules. Core must not import application, infrastructure, CLI, or adapters. Application may import the adapter catalog but not concrete adapters.
 
+# Vault and publication safety
+- Git owns source articles and originals; storage serves distribution artifacts. WordPress sends HTML through its API and uploads required assets; native publication keeps its complete HTML and metadata together. Report storage uploads separately from adapter post changes.
+- `publish` must not list the whole bucket or treat Git commits as upload confirmation. Full distribution reconciliation and optional remote deletion belong to explicit `sync`. Do not retry ambiguous remote writes automatically.
+- Preview production WordPress updates with `--dry-run` before applying the reviewed plan. Do not add `--force` or remote deletion without authorization.
+- During article edits, change only source Markdown and source assets. Treat `root.json`, generated `index.json`, rendered HTML and thumbnails as build artifacts; regenerate only when requested. Leave unexpected generated changes unstaged; revert them only after confirming they were unintended.
+- Before registry migrations, keep a backup outside Git, validate input and output schemas, and preserve unrelated settings.
 
-# Privacy & Paths
-- **Never** include absolute filesystem paths (e.g., `/Users/username/...`) in any code, documentation, or commit messages.
-- Always use **relative paths** for internal links and documentation.
-- If an absolute path is required for local configuration, use placeholder strings or rely strictly on environment variables.
-- Use generic examples in code comments, tests, documentation, and commit messages. Avoid exposing user-specific or developer-specific details, private identifiers, production values, credentials, or personal content unless the user explicitly asks to edit or document that exact information.
-- In tests, use generic fixtures such as `example-note`, `article.md`, and `[[note-slug|Display label]]`. Do not copy production vault article slugs, titles, screenshot filenames, brand names, or other site-specific content into tests. Keep Unicode or encoding coverage with generic names when a test needs it.
-
-# Platform Adapters & WordPress
-- **Publication scope**: Git owns source articles and original assets; R2 serves HTML, metadata and distribution assets. `publish` uses adapter build/distribution overrides: WordPress sends HTML to its API and uploads only required assets; the native default distributes its complete HTML and metadata together. `sync` reconciles the native distribution. Report storage changes separately from adapter posts.
-- Preserve dry-run read-only behavior and validate the reviewed composite fingerprint. Full distribution coverage and optional remote deletion belong to `sync`; publishing must not list the whole bucket or treat Git commits as upload confirmation.
-- **Publisher Commands**:
-  - `notopress publish <publisher-id> [slug...] --site <site-id>`: Uploads an incremental distribution and publishes through a configured adapter. Slugs are optional full vault slugs; build and storage policy belong to the adapter.
-  - `notopress import <publisher-id> <slug-or-id> --site <site-id>`: Imports one remote resource through an adapter that supports imports.
-  - `notopress publisher init <publisher-id> --site <site-id>`: Initializes state through an adapter that supports it.
-- **WP-CLI Utility Commands** (for managing local/remote WordPress instances):
-  - `wp post list --post_type=post`: Lists published WordPress posts.
-  - `wp cache flush`: Clears WordPress object cache.
-  - `wp plugin list`: Displays installed WordPress plugins.
-- **WordPress Conventions & Safety**:
-  - Keep WordPress-specific publishing, importing, Gutenberg conversion, remote state, and tests isolated under `scripts/adapters/wordpress/`.
-  - Pass WordPress credentials (`endpoint`, `username`, `applicationPassword`) via `registry.json` or environment variables; never hardcode API keys or credentials in code or tests.
-  - Always verify WordPress post updates using `--dry-run` before applying batch sync operations to production endpoints.
-- Keep platform-independent contracts under `scripts/core/`, orchestration under `scripts/application/`, side effects under `scripts/infrastructure/`, and argument parsing under `scripts/cli/`.
-
-# Skills
-Consult the `skills/` directory for specific guides and automation patterns:
-- [Pull Request Creation](skills/pull-request/SKILL.md)
-- [Registry Migration](skills/registry-migration/SKILL.md)
-- [Coding Conventions](skills/coding-conventions/SKILL.md)
+# Privacy
+- Never log or hardcode credentials. Keep credential-bearing registry and environment files outside Git.
+- Use relative paths in documentation and generic fixtures in tests and examples; never include personal filesystem paths, production identifiers or private content. Use environment variables or placeholders for machine-specific configuration.
