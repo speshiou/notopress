@@ -55,3 +55,11 @@ describe('computeWordPressPublicationInputHash', () => {
     expect(computeWordPressPublicationInputHash({ ...input, responsiveImageWidths: { 'logo.png': [1280], 'guides/logo.png': [128] } })).toBe(original);
   });
 });
+
+it('invalidates cached publication inputs when a recorded image mapping changes', () => {
+  const input = { ...baseInput, markdown: '![Example](/legacy/old.png)', assetFiles: ['assets/first.png', 'assets/second.png'],
+    responsiveImageWidths: { 'assets/first.png': [320], 'assets/second.png': [640] },
+  };
+  const first = computeWordPressPublicationInputHash({ ...input, resolveImageAlias: () => 'assets/first.png' });
+  expect(computeWordPressPublicationInputHash({ ...input, resolveImageAlias: () => 'assets/second.png' })).not.toBe(first);
+});

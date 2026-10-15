@@ -231,7 +231,9 @@ Native-default publication builds the complete native site.
 Install AWS CLI on each machine, clone or copy the sources, restore registry and
 environment configuration, and set the local `vaultPath`. Rebuild generated
 outputs locally; they do not need to travel in Git. There is no storage baseline
-to initialize. Copy `.notopress-sync.json` separately to retain adapter caches.
+to initialize. Copy `.notopress-sync.json` separately to retain adapter caches
+and WordPress import image mappings. Legacy image references can depend on these
+endpoint-scoped mappings to locate originals that an earlier import relocated.
 
 Preparation freezes selected distribution bytes in a temporary directory. Dry
 runs write neither source/generated files nor remote storage. The composite

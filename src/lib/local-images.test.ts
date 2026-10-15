@@ -70,3 +70,11 @@ describe("local image helpers", () => {
     expect(resolveLocalImagePath({ src: "/logo.png", sourceDirectory: "guides", availableFiles: files })).toBe("logo.png");
   });
 });
+
+it('uses an injected recorded alias for unresolved paths while preferring an existing local original', () => {
+  const resolveImageAlias = () => 'assets/original.png';
+  const files = ['assets/original.png', 'current.png'];
+  expect(resolveLocalImagePath({ src: '/legacy/old.png', availableFiles: files, resolveImageAlias })).toBe('assets/original.png');
+  expect(resolveLocalImagePath({ src: '/current.png', availableFiles: files, resolveImageAlias })).toBe('current.png');
+  expect(resolveMarkdownImagePaths({ markdown: '![Example](https://assets.example.com/old.png)', availableFiles: files, resolveImageAlias })).toBe('![Example](<assets/original.png>)');
+});

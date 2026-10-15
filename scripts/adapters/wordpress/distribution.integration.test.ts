@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import * as markdownRenderer from '../../../src/lib/markdown';
+import { computeContentHash } from '../../core/state/sync-state';
+import { getWordPressAssetScope, getWordPressAssetKey } from './import-assets';
 import { getWordPressPublicationStateFromObject } from './publication-state';
 import { runCommand } from '../../application/run-command';
 import { passthroughStageTimer } from '../../core/stage-timing';
@@ -60,11 +62,16 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       await mkdir(path.join(vaultPath, '_includes'));
       const source = (title: string, body: string) => `---\ntitle: ${title}\ndate: 2026-01-01\nupdated: 2026-01-01\n---\n# ${title}\n\n${body}\n`;
       await writeFile(path.join(vaultPath, 'AGENTS.md'), '# Owner instructions\n');
-      await writeFile(path.join(vaultPath, 'content/article.md'), source('Article', '![Diagram](diagram.svg)\n\n![[example-note]]\n\n<!-- wp:example/visual {"imageUrl":"https://assets.example.com/example-site/content/hero.svg"} /-->'));
+      await writeFile(path.join(vaultPath, 'content/article.md'), source('Article', '![Diagram](/legacy/%E6%B8%AC%E8%A9%A6.svg)\n\n![[example-note]]\n\n<!-- wp:example/visual {"imageUrl":"https://assets.example.com/example-site/content/hero.svg"} /-->'));
       await writeFile(path.join(vaultPath, 'content/unrelated-new.md'), source('Unrelated', '![Missing](missing.svg)'));
       await writeFile(path.join(vaultPath, '_includes/example-note.md'), '# Example note\n\nIncluded body.');
       await writeFile(path.join(vaultPath, 'content/diagram.svg'), '<svg>Diagram</svg>');
       await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Hero</svg>');
+      const originalUrl = 'https://assets.example.com/example-site/content/legacy/%25E6%25B8%25AC%25E8%25A9%25A6.svg';
+      const scope = getWordPressAssetScope({ endpoint: 'https://wordpress.example.com/wp-json', hash: computeContentHash });
+      await writeFile(path.join(vaultPath, '.notopress-sync.json'), JSON.stringify({ wordpressAssets: {
+        [getWordPressAssetKey({ scope, source: originalUrl })]: { root: 'content', path: 'diagram.svg', originalUrl, contentHash: computeContentHash('<svg>Diagram</svg>') },
+      } }));
       const before = await filesUnder(vaultPath);
       const site = { siteId: 'example-site', vaultPath, bucketName: 'example-bucket', noteIncludePaths: ['_includes'], imageHost: 'https://assets.example.com',
         publishers: [{ id: 'wordpress-main', type: 'wordpress', config: { endpoint: 'https://wordpress.example.com/wp-json', username: 'editor', applicationPassword: 'example-password' } }],
@@ -87,9 +94,11 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       expect([...uploaded.keys()].sort()).toEqual(['content/diagram.svg', 'content/hero.svg']);
       expect(apiPayloads).toHaveLength(1);
       expect(apiPayloads[0]).toContain('Included body.');
+      expect(apiPayloads[0]).toContain('/content/diagram.svg');
+      expect(apiPayloads[0]).not.toContain('/legacy/');
       expect(apiPayloads[0]).toContain('wp:example/visual');
       const after = await filesUnder(vaultPath);
-      for (const [file, bytes] of before) if (file !== 'AGENTS.md') expect(after.get(file)).toEqual(bytes);
+      for (const [file, bytes] of before) if (file !== 'AGENTS.md' && file !== '.notopress-sync.json') expect(after.get(file)).toEqual(bytes);
       expect([...after.keys()].some((file) => file.startsWith('_rendered/') || file === 'root.json' || file.startsWith('public/'))).toBe(false);
       expect(log).toHaveBeenCalledWith(expect.stringContaining('only adapter-declared assets; no native HTML, indexes or sitemaps'));
       expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('unrelated-new'))).toBe(true);

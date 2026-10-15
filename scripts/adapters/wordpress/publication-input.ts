@@ -3,25 +3,28 @@ import {
   isExternalOrInlineAsset,
   resolveMarkdownImagePaths,
   safelyDecodeUriComponent,
+  type ResolveImageAlias,
 } from '../../../src/lib/local-images';
 import type { NoteReference } from '../../../src/lib/note-links';
 import { computeContentHash } from '../../core/state/sync-state';
 import type { WordPressPublishContentType } from './publish-payload';
 
-const WORDPRESS_RENDERER_REVISION = 2;
+const WORDPRESS_RENDERER_REVISION = 3;
 
 function collectLocalImageInputs({
   markdown,
   assetFiles,
   responsiveImageWidths,
   sourceDirectory,
+  resolveImageAlias,
 }: {
   markdown: string;
   assetFiles: readonly string[];
   responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
   sourceDirectory?: string;
+  resolveImageAlias?: ResolveImageAlias;
 }) {
-  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown, availableFiles: assetFiles, sourceDirectory });
+  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown, availableFiles: assetFiles, sourceDirectory, resolveImageAlias });
   const inputs: { path: string; widths: readonly number[] | null }[] = [];
   const imagePattern = /!\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)/g;
   let match: RegExpExecArray | null;
@@ -53,6 +56,7 @@ export function computeWordPressPublicationInputHash({
   assetFiles,
   responsiveImageWidths,
   sourceDirectory,
+  resolveImageAlias,
 }: {
   sourceHash: string;
   markdown: string;
@@ -67,6 +71,7 @@ export function computeWordPressPublicationInputHash({
   assetFiles: readonly string[];
   responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
   sourceDirectory?: string;
+  resolveImageAlias?: ResolveImageAlias;
 }): string {
   const embeddedMarkdown = noteReferences
     .map((reference) => reference.content || '')
@@ -96,6 +101,7 @@ export function computeWordPressPublicationInputHash({
         assetFiles,
         responsiveImageWidths,
         sourceDirectory,
+        resolveImageAlias,
       }),
     },
   }));

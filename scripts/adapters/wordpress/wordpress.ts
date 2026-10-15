@@ -65,6 +65,7 @@ import {
   assertPublicationTargetFingerprint,
   type PreparedPublication,
 } from '../../core/publishing/platform-adapter';
+import { createWordPressImageAliasResolver } from './image-aliases';
 import { collectWordPressAssetUrls } from './distribution-assets';
 import { createDistributionAssetResolver } from '../../core/content/distribution-assets';
 import { createTrackedSourceReader, type BuildArtifact } from '../../core/content/build-artifact';
@@ -275,6 +276,12 @@ export async function prepareWordPressPublication({
     }
   }
 
+  const resolveImageAlias = createWordPressImageAliasResolver({
+    scope: getWordPressAssetScope({ endpoint, hash: computeContentHash }),
+    state: WordPressAssetStateSchema.parse(syncState[WORDPRESS_ASSET_STATE_SECTION] || {}),
+    siteId: site.siteId, imageHost, availableFiles: assetFiles,
+  });
+
   const postsToPublish: {
     document: ContentSnapshotDocument;
     slug: string;
@@ -362,6 +369,7 @@ export async function prepareWordPressPublication({
         const inputHash = computeWordPressPublicationInputHash({
           sourceHash,
           sourceDirectory: post.document.directory,
+          resolveImageAlias,
           markdown: post.document.markdown,
           title: post.title,
           wordpressSlug: wpSlug,
@@ -407,6 +415,7 @@ export async function prepareWordPressPublication({
         const htmlContent = await renderMarkdownContent({
           markdown: post.document.markdown,
           sourceDirectory: post.document.directory,
+          resolveImageAlias,
           thumbnailSizes: sizes,
           assetFiles,
           responsiveImageWidths,

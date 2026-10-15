@@ -3,7 +3,7 @@ import html from "remark-html";
 import gfm from "remark-gfm";
 import type { Plugin } from "unified";
 import { getAssetUrl, getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
-import { isExternalOrInlineAsset, resolveMarkdownImagePaths } from "./local-images";
+import { isExternalOrInlineAsset, resolveMarkdownImagePaths, type ResolveImageAlias } from "./local-images";
 import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
 
 export type MarkdownNode = {
@@ -294,6 +294,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       thumbnailSizes,
       assetFiles,
       sourceDirectory,
+      resolveImageAlias,
       publicFiles,
       responsiveImageWidths,
       getFigureProperties,
@@ -305,6 +306,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       thumbnailSizes: readonly number[];
       assetFiles?: readonly string[];
       sourceDirectory?: string;
+      resolveImageAlias?: ResolveImageAlias;
       publicFiles?: readonly string[];
       responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
       getFigureProperties?: (largestWidth: number) => FigureProperties;
@@ -314,7 +316,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
     }): Promise<string> {
       const availableFiles = assetFiles || publicFiles;
       let preprocessed = preprocessWikilinks(markdown, availableFiles || [], noteReferences);
-      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles, sourceDirectory }) : preprocessed;
+      preprocessed = availableFiles ? resolveMarkdownImagePaths({ markdown: preprocessed, availableFiles, sourceDirectory, resolveImageAlias }) : preprocessed;
       preprocessed = ensureImageBlockSeparation(preprocessed);
       return deps.processMarkdown({
         markdown: preprocessed,
