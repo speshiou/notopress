@@ -40,6 +40,18 @@ describe('AWS CLI storage boundary', () => {
     expect(h.runCli.mock.calls.every(([request]) => !request.args.includes('sync') && !request.args.includes('--delete'))).toBe(true);
     await prepared.close();
   });
+  it('uploads declared adapter assets without a native registry, generated outputs or full-sync history', async () => {
+    const h = setup();
+    const prepared = await h.prepare({ ...h.input, scope: { kind: 'assets', paths: [] } });
+    expect(prepared.plan.operations.some((operation) => operation.action === 'upload-registry')).toBe(false);
+    expect(h.history.describe).not.toHaveBeenCalled();
+    await prepared.apply({ dryRun: true });
+    expect(h.runCli).toHaveBeenCalledOnce();
+    await prepared.apply({ dryRun: false });
+    expect(h.runCli).toHaveBeenCalledTimes(3);
+    expect(h.writeFile).not.toHaveBeenCalled();
+    expect(h.history.record).not.toHaveBeenCalled();
+  });
   it('previews read-only, then validates the same plan before generated writes and full CLI sync/registry upload', async () => {
     const h = setup();
     const prepared = await h.prepare(h.input);

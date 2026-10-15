@@ -81,7 +81,7 @@ async function runStateInitialization({ command, site, registry }: {
   if (!adapter.initializeState) {
     throw new Error(`Publisher "${adapter.id}" does not support state initialization.`);
   }
-  const build = await buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose });
+  const build = await buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, mode: adapter.buildMode || 'native' });
   await adapter.initializeState({
     site,
     registry,
@@ -100,11 +100,16 @@ async function runPublication({ command, site, registry, stageTimer, instruction
   stageTimer: StageTimer;
   instructions: PreparedVaultInstructions;
 }): Promise<void> {
+  const platformRegistry = platformRegistryFor(site);
+  if (command.kind !== 'publish' && command.deleteRemoteFiles && platformRegistry.list().some((adapter) => adapter.buildMode === 'content')) {
+    throw new Error('Native sync --delete cannot safely reconcile adapter-owned asset distributions sharing this site prefix. Run without --delete; adapter asset cleanup is not implemented.');
+  }
+  const adapter = command.kind === 'publish' ? platformRegistry.get({ id: command.publisherId }) : undefined;
+  const mode = adapter?.buildMode || 'native';
   const build = await stageTimer.measure({
     stage: 'build.total',
-    run: () => buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, stageTimer, prepareOnly: true }),
+    run: () => buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, stageTimer, prepareOnly: true, mode }),
   });
-  const platformRegistry = platformRegistryFor(site);
   const preparedPublications: PreparedPublication<unknown>[] = [];
   const publisherIds = command.kind === 'publish' ? [command.publisherId] : [];
   for (const publisherId of publisherIds) {
@@ -117,6 +122,7 @@ async function runPublication({ command, site, registry, stageTimer, instruction
         allIndices: build.allIndices,
         contentSnapshot: build.contentSnapshot,
         rootIndex: build.vaultRootIndex,
+        generatedArtifacts: build.generatedArtifacts,
         targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
         force: command.kind === 'publish' && command.force,
         dryRun: command.dryRun,
@@ -126,6 +132,9 @@ async function runPublication({ command, site, registry, stageTimer, instruction
     if (prepared) preparedPublications.push(prepared);
   }
 
+  if (mode === 'content' && preparedPublications.some((publication) => !publication.distribution)) {
+    throw new Error('Content-only adapters must declare their distribution assets before applying.');
+  }
   const nativeSitePlan = createNativeSitePlan({
     contentSnapshot: build.contentSnapshot,
     rootIndex: build.vaultRootIndex,
@@ -133,11 +142,13 @@ async function runPublication({ command, site, registry, stageTimer, instruction
     deleteRemoteFiles: command.deleteRemoteFiles,
   });
   const storage = await prepareNativeSite({
-    site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: build.sourceArtifacts,
+    site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: [...build.sourceArtifacts, ...preparedPublications.flatMap((publication) => publication.sourceArtifacts || [])],
     deleteRemoteFiles: command.deleteRemoteFiles,
     verbose: command.verbose, stageTimer,
-    remindFullSync: command.kind === 'publish',
-    scope: command.kind === 'publish' ? { kind: 'incremental', targetSlugs: command.targetSlugs } : { kind: 'full' },
+    remindFullSync: command.kind === 'publish' && mode === 'native',
+    scope: mode === 'content'
+      ? { kind: 'assets', paths: preparedPublications.flatMap((publication) => publication.distribution?.assets || []) }
+      : command.kind === 'publish' ? { kind: 'incremental' } : { kind: 'full' },
     publicFiles: build.vaultRootIndex.publicFiles,
   });
   try {
@@ -175,7 +186,7 @@ async function runPublication({ command, site, registry, stageTimer, instruction
       return;
     }
     console.log(command.kind === 'publish'
-      ? '\n✅ Native sync and publisher apply completed successfully!'
+      ? '\n✅ Distribution upload and publisher apply completed successfully!'
       : '\n✅ Sync and registry upload successfully completed!');
     if (command.kind === 'deploy') await deployApplication({ site, registry });
   } finally {

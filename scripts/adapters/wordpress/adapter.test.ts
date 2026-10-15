@@ -13,6 +13,7 @@ describe('WordPress publisher adapter configuration', () => {
       wordpress: { username: 'editor', applicationPassword: 'secret' },
     };
 
+    expect(createWordPressPlatformAdapters({ site })[0].buildMode).toBe('content');
     expect(createWordPressPlatformAdapters({ site }).map((adapter) => adapter.id)).toEqual([
       LEGACY_WORDPRESS_PLATFORM_ID,
     ]);

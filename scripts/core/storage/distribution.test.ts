@@ -2,35 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { createBuildArtifact, type BuildArtifact } from '../content/build-artifact';
 import { selectDistributionArtifacts } from './distribution';
 
-function article(sourceSlug: string, notes: string[], assets: string[]): BuildArtifact {
-  return { ...createBuildArtifact({ path: `_rendered/content/${sourceSlug}.html`, content: sourceSlug }), distribution: { sourceSlug, noteSlugs: [sourceSlug, ...notes], assets } };
+function article(sourceSlug: string, assets: string[]): BuildArtifact {
+  return { ...createBuildArtifact({ path: `_rendered/content/${sourceSlug}.html`, content: sourceSlug }), distribution: { sourceSlug, noteSlugs: [sourceSlug], assets } };
 }
-const artifacts = [article('article', [], ['content/_thumbnails/hero-8.webp']), article('dependent', ['article'], ['content/diagram.svg']), article('unrelated', [], ['content/other.svg']),
-  ...['root.json', 'content/index.json', 'public/sitemap.xml', 'content/_thumbnails/hero-8.webp', 'content/_thumbnails/unused-8.webp', 'AGENTS.md'].map((path) => createBuildArtifact({ path, content: '{}' })),
+const artifacts = [article('article', ['content/_thumbnails/hero-8.webp']), article('unrelated-new', ['content/other.svg']),
+  ...['root.json', 'content/index.json', 'public/sitemap.xml', 'content/_thumbnails/hero-8.webp', 'AGENTS.md'].map((path) => createBuildArtifact({ path, content: '{}' })),
 ];
 
 describe('source-independent distribution selection', () => {
-  it('selects targets, reverse note dependencies, shared outputs and used thumbnails', () => {
-    const selected = selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind: 'incremental', targetSlugs: ['article'] }, publicFiles: ['unrelated.txt'] });
-    expect(selected.generated.map((artifact) => artifact.path)).toEqual(['_rendered/content/article.html', '_rendered/content/dependent.html', 'root.json', 'content/index.json', 'public/sitemap.xml', 'content/_thumbnails/hero-8.webp']);
-    expect(selected.assets).toEqual(['content/_thumbnails/hero-8.webp', 'content/diagram.svg']);
-  });
-  it('preserves full HTML and thumbnail coverage while excluding source Markdown and agent rules', () => {
-    const selected = selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind: 'full' }, publicFiles: ['download.pdf', 'source.md'] });
-    expect(selected.generated).toContain(artifacts[2]);
-    expect(selected.generated.map((artifact) => artifact.path)).toContain('content/_thumbnails/unused-8.webp');
+  it.each(['full', 'incremental'] as const)('keeps all advertised native HTML and public assets together for %s transfers', (kind) => {
+    const selected = selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind }, publicFiles: ['download.pdf', 'source.md'] });
+    expect(selected.generated.map((artifact) => artifact.path)).toContain('_rendered/content/unrelated-new.html');
+    expect(selected.generated.map((artifact) => artifact.path)).toContain('content/index.json');
     expect(selected.generated.map((artifact) => artifact.path)).not.toContain('AGENTS.md');
     expect(selected.assets).toContain('public/download.pdf');
     expect(selected.assets).not.toContain('public/source.md');
   });
-  it('rejects unknown targets and incomplete dependency metadata', () => {
-    expect(() => selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind: 'incremental', targetSlugs: ['missing'] }, publicFiles: [] })).toThrow('Missing rendered publication');
-    expect(() => selectDistributionArtifacts({ generatedArtifacts: [createBuildArtifact({ path: '_rendered/content/article.html', content: 'body' })], scope: { kind: 'full' }, publicFiles: [] })).toThrow('dependency metadata');
+  it('uses adapter-declared assets without native HTML, indexes, sitemaps or unrelated files', () => {
+    const selected = selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind: 'assets', paths: ['content/_thumbnails/hero-8.webp', 'content/diagram.svg'] }, publicFiles: ['unrelated.pdf'] });
+    expect(selected.generated.map((artifact) => artifact.path)).toEqual(['content/_thumbnails/hero-8.webp']);
+    expect(selected.assets).toEqual(['content/_thumbnails/hero-8.webp', 'content/diagram.svg']);
   });
-  it('excludes a missing asset used only by an unrelated article', () => {
-    const unrelated = article('other', [], ['content/missing.svg']);
-    const selected = selectDistributionArtifacts({ generatedArtifacts: [...artifacts, unrelated], scope: { kind: 'incremental', targetSlugs: ['article'] }, publicFiles: [] });
-    expect(selected.assets).not.toContain('content/missing.svg');
-    expect(selectDistributionArtifacts({ generatedArtifacts: [...artifacts, unrelated], scope: { kind: 'full' }, publicFiles: [] }).assets).toContain('content/missing.svg');
+  it.each(['AGENTS.md', '../private.png', '.notopress/state.json'])('rejects invalid adapter asset %s', (asset) => {
+    expect(() => selectDistributionArtifacts({ generatedArtifacts: artifacts, scope: { kind: 'assets', paths: [asset] }, publicFiles: [] })).toThrow('Invalid distribution asset');
+  });
+  it('rejects incomplete native dependency metadata', () => {
+    expect(() => selectDistributionArtifacts({ generatedArtifacts: [createBuildArtifact({ path: '_rendered/content/article.html', content: 'body' })], scope: { kind: 'full' }, publicFiles: [] })).toThrow('dependency metadata');
   });
 });

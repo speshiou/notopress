@@ -12,11 +12,14 @@ Git sources → local Markdown vault
     ↓
 canonical content snapshot
     ↓
-indices · routes · rendered HTML · sitemaps · responsive images
+default native build or adapter-owned rendering
     ↓
-reviewable publication plan
-    ├── selected distribution → AWS CLI → S3-compatible storage → HTML-only Next.js reader
-    └── publishers  → configured publication targets
+reviewable composite publication plan
+    ├── distribution files → AWS CLI → S3-compatible storage
+    └── publisher payloads → configured target APIs
+
+Native default: HTML, indexes, sitemaps and assets → Next.js reader
+WordPress override: post HTML → WordPress API; required assets → storage
 ```
 
 The native site and platform adapters share content discovery and publication planning, but they do not share target behavior. URL rewrites belong to the NotoPress site. A WordPress adapter renders Gutenberg-compatible HTML, chooses WordPress slugs, and owns its remote state independently.
@@ -158,18 +161,31 @@ rendered HTML, JSON indexes, sitemaps, thumbnails and visitor-facing attachments
 source Markdown, vault agent instructions and local state are not distributed.
 The reader requires rendered HTML and never falls back to Markdown.
 
-`publish <publisher> [slug...]` prepares the full build, then uploads selected
-articles, notes that depend on them, their required assets, and shared indexes
-and sitemaps using AWS CLI `s3 cp --recursive`. This avoids whole-bucket listing.
-The bounded file set is uploaded every time, including unchanged required assets;
-there is no upload-baseline database. Omit slugs for site-wide publication.
+`publish <publisher> [slug...]` uses the selected adapter's build and distribution
+policy. WordPress renders the selected posts as HTML for its REST API and uploads
+only their required assets, including references in Gutenberg block attributes.
+It does not build or upload native HTML, indexes, sitemaps or a native registry.
+Omit slugs for site-wide publication. Unchanged WordPress posts retain their
+cached asset dependencies, so assets can still be uploaded without changing posts.
+Older cache entries render once to populate those dependencies.
 
-`sync` (and `deploy`) reconciles the full distribution using AWS CLI `s3 sync`.
-It is not a source backup. Source backup belongs to your Git upstream or another
-source copy. Run a reviewed full sync for initial distribution setup, after
-migration or global changes, and to repair missing files outside a targeted
-publication. Only full sync accepts `--delete`; publishing never deletes remote
-objects. Existing remote source files remain until an explicitly reviewed cleanup.
+An adapter without overrides uses the native default: build and upload the
+complete native output set. Shared indexes and sitemaps stay consistent with the
+HTML they advertise. Adapter post selection can still be narrower than the native
+distribution. Both publication policies use AWS CLI `s3 cp --recursive` without
+whole-bucket listing. Required files are copied even if unchanged; there is no
+upload-baseline database.
+
+`sync` (and `deploy`) reconciles the full native distribution using AWS CLI
+`s3 sync`. This is an explicit native-site operation, not a WordPress asset sync
+or a source backup. WordPress-only sites do not need it for publication. To serve
+both targets, publish through WordPress and separately review a native sync.
+Only native sync accepts `--delete`; it is blocked when a configured adapter owns
+a separate asset distribution in the same site prefix, because native comparison
+cannot safely delete adapter-only assets. Adapter asset cleanup is not implemented.
+Publishing never deletes remote objects; existing remote source files remain
+until an explicitly reviewed cleanup. Source backup belongs to Git or another
+source copy.
 
 Initialize source version control explicitly:
 
@@ -205,8 +221,10 @@ Timing records contain only fixed stage names, elapsed seconds, and outcomes.
 `storage.inventory` measures source verification and hashing of selected distribution assets. `storage.snapshot`
 measures temporary snapshot preparation; `storage.compare`
 measures AWS CLI preview, `storage.recheck` measures the pre-apply preview, and
-`storage.sync` measures live application. Targeting one adapter article still
-prepares the full native site; source parsing and rendering are not yet incremental.
+`storage.sync` measures live application. Targeting one adapter article
+still scans source metadata and checks thumbnails across the vault. WordPress
+renders selected API payloads and skips native rendering and sitemap generation.
+Native-default publication builds the complete native site.
 
 ### AWS CLI storage sync and migration
 
@@ -217,8 +235,9 @@ to initialize. Copy `.notopress-sync.json` separately to retain adapter caches.
 
 Preparation freezes selected distribution bytes in a temporary directory. Dry
 runs write neither source/generated files nor remote storage. The composite
-fingerprint covers the full native build, selected upload bytes, destination,
-delete policy, sanitized registry and normalized AWS CLI preview. Source inputs
+fingerprint covers the canonical content snapshot, target-specific plans, selected
+upload bytes, destination, deletion policy, pending instruction updates and normalized
+AWS CLI preview. Native distribution also includes its sanitized registry. Source inputs
 and staged bytes are verified and the CLI preview is repeated before applying.
 Incremental previews describe explicit overwrites, not verified remote equality.
 
@@ -227,8 +246,9 @@ Restoring files on another machine may cause additional uploads. Review a fresh
 dry run after migration; this does not verify remote content hashes.
 
 Successful full distribution syncs record their time in `.notopress/full-sync.json`
-after both transfers and registry upload succeed. Publishing suggests a reviewed
-full sync when that record is unknown or seven days old. Incremental publishing,
+after both transfers and registry upload succeed. Native-default publishing suggests a reviewed
+full sync when that record is unknown or seven days old. WordPress asset publication
+does not consult this native advisory history. Incremental publishing,
 dry runs and failures do not refresh it. Copy `.notopress` separately to preserve
 this local advisory history; R2 and Git do not contain it. Reminders never trigger
 a sync or bypass fingerprint checks.
@@ -288,7 +308,7 @@ npm run publish -- \
   --expect <reviewed-fingerprint>
 ```
 
-If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. A requested site-wide push requires a site-wide dry run. Avoid unbounded WordPress planning merely for verification. Target slugs select adapter posts and the incremental native dependency set; shared indexes and sitemaps remain site-wide.
+If content, rendered output, routes, assets, deletion policy, remote target identity, or publication intent changes, the fingerprint changes and the live run stops before remote mutation. Adapter planning may perform narrowly targeted remote reads. A requested site-wide push requires a site-wide dry run. Avoid unbounded WordPress planning merely for verification. Target slugs select adapter posts and their declared assets. WordPress HTML goes through its API; native site metadata is not uploaded by that adapter.
 
 Adapters may also provide import and state-initialization capabilities:
 
@@ -372,6 +392,13 @@ to read rendered HTML, JSON and assets; it does not parse source Markdown. There
 is no remote upload manifest or local upload-baseline database.
 
 Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic `ContentPlatformAdapter` contract. Architecture tests enforce these boundaries.
+
+`ContentPlatformAdapter` has an optional `buildMode` override. The default is
+`native`; WordPress selects `content`, reusing canonical discovery and thumbnail
+preparation while owning API rendering. A content-only adapter must return its
+distribution asset paths and any additional source artifacts used during rendering.
+Storage freezes and hashes those files using the shared infrastructure. Gutenberg
+parsing stays inside the WordPress adapter; core has no component-specific rules.
 
 A platform adapter prepares a read-only typed plan and returns an apply operation. NotoPress prepares every selected plan, builds the composite fingerprint, validates any reviewed fingerprint, and only then starts native storage or platform mutations. Adapter-owned state, rendering, remote lookups, imports, and platform payloads stay inside the adapter package.
 

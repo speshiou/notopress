@@ -18,7 +18,7 @@ export type RawBlockConversion = {
   preservedBlockNames: string[];
 };
 
-const ParsedWordPressBlockSchema: z.ZodType<ParsedWordPressBlock> = z.lazy(() => z.object({
+export const ParsedWordPressBlockSchema: z.ZodType<ParsedWordPressBlock> = z.lazy(() => z.object({
   blockName: z.string().nullable(),
   attrs: z.record(z.string(), z.unknown()).nullable(),
   innerBlocks: z.array(ParsedWordPressBlockSchema),

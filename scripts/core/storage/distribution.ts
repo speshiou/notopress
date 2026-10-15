@@ -4,22 +4,24 @@ import { isGeneratedSitemapPath } from '../content/generated-paths';
 import { isPublishableVaultPath } from './paths';
 import { compareStrings } from '../order';
 
-export type DistributionScope = { kind: 'full' } | { kind: 'incremental'; targetSlugs?: readonly string[] };
+export type DistributionScope = { kind: 'full' } | { kind: 'incremental' } | { kind: 'assets'; paths: readonly string[] };
 
 export function selectDistributionArtifacts({ generatedArtifacts, scope, publicFiles }: {
   generatedArtifacts: readonly BuildArtifact[];
   scope: DistributionScope;
   publicFiles: readonly string[];
 }): { generated: readonly BuildArtifact[]; assets: readonly string[] } {
-  const rendered = generatedArtifacts.filter((artifact) => artifact.path.startsWith(`${RENDERED_DIR}/content/`));
-  const requested = scope.kind === 'incremental' && scope.targetSlugs?.length ? new Set(scope.targetSlugs) : undefined;
-  if (requested) {
-    for (const slug of requested) {
-      if (!rendered.some((artifact) => artifact.distribution?.sourceSlug === slug)) throw new Error(`Missing rendered publication: ${slug}.`);
+  if (scope.kind === 'assets') {
+    const assets = [...new Set(scope.paths)].sort((left, right) => compareStrings({ left, right }));
+    for (const asset of assets) {
+      if (!isPublishableVaultPath(asset) || /\.md$/i.test(asset)) throw new Error('Invalid distribution asset.');
     }
+    const paths = new Set(assets);
+    return { generated: generatedArtifacts.filter((artifact) => paths.has(artifact.path)), assets };
   }
-  const selected = rendered.filter((artifact) => !requested || artifact.distribution?.noteSlugs.some((slug) => requested.has(slug)));
-  const assets = new Set(scope.kind === 'full' ? publicFiles.filter((file) => !/\.md$/i.test(file)).map((file) => `public/${file}`) : []);
+  // Native indexes advertise the whole site, so native publication must include its HTML and public files.
+  const selected = generatedArtifacts.filter((artifact) => artifact.path.startsWith(`${RENDERED_DIR}/content/`));
+  const assets = new Set(publicFiles.filter((file) => !/\.md$/i.test(file)).map((file) => `public/${file}`));
   for (const artifact of selected) {
     if (!artifact.distribution) throw new Error(`Missing rendered dependency metadata: ${artifact.path}.`);
     for (const asset of artifact.distribution.assets) assets.add(asset);
@@ -30,6 +32,6 @@ export function selectDistributionArtifacts({ generatedArtifacts, scope, publicF
     || artifact.path === ROOT_JSON
     || (artifact.path.startsWith('content/') && artifact.path.split('/').pop() === INDEX_JSON)
     || (artifact.path.startsWith('public/') && isGeneratedSitemapPath(artifact.path))
-    || (scope.kind === 'full' && artifact.path.split('/').includes(THUMBNAILS_DIR)));
+    || artifact.path.split('/').includes(THUMBNAILS_DIR));
   return { generated, assets: [...assets].sort((left, right) => compareStrings({ left, right })) };
 }

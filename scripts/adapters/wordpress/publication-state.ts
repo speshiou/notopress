@@ -9,6 +9,7 @@ export interface WordPressPublicationStateEntry {
   contentHash: string;
   inputHash?: string;
   payloadHash?: string;
+  distributionAssets?: readonly string[];
   remoteId?: number;
   remoteSlug?: string;
   contentType?: 'post' | 'page';
@@ -19,6 +20,7 @@ const WordPressPublicationStateEntrySchema = z.object({
   contentHash: z.string(),
   inputHash: z.string().optional(),
   payloadHash: z.string().optional(),
+  distributionAssets: z.array(z.string()).optional(),
   remoteId: z.number().int().positive().optional(),
   remoteSlug: z.string().optional(),
   contentType: z.enum(['post', 'page']).optional(),
@@ -31,6 +33,7 @@ export type WordPressPublicationStateEntryInput = {
   contentHash: string;
   inputHash?: string;
   payloadHash?: string;
+  distributionAssets?: readonly string[];
   remoteId?: number;
   remoteSlug?: string;
   contentType?: 'post' | 'page';
@@ -99,6 +102,7 @@ export function setWordPressPublicationStateEntry(
   const publicationEntry: WordPressPublicationStateEntry = {
     contentHash: entry.contentHash,
     ...(entry.inputHash ? { inputHash: entry.inputHash } : {}),
+    ...(entry.distributionAssets ? { distributionAssets: [...entry.distributionAssets] } : {}),
     ...(entry.payloadHash ? { payloadHash: entry.payloadHash } : {}),
     ...(entry.remoteId ? { remoteId: entry.remoteId } : {}),
     ...(entry.remoteSlug ? { remoteSlug: entry.remoteSlug } : {}),
@@ -119,6 +123,7 @@ export async function updateWordPressPublicationState({
   contentHash,
   inputHash,
   payloadHash,
+  distributionAssets,
   remoteId,
   remoteSlug,
   contentType,
@@ -129,6 +134,7 @@ export async function updateWordPressPublicationState({
   contentHash: string;
   inputHash?: string;
   payloadHash?: string;
+  distributionAssets?: readonly string[];
   remoteId?: number;
   remoteSlug?: string;
   contentType?: 'post' | 'page';
@@ -139,6 +145,7 @@ export async function updateWordPressPublicationState({
     contentHash,
     inputHash,
     payloadHash,
+    distributionAssets,
     remoteId,
     remoteSlug,
     contentType,

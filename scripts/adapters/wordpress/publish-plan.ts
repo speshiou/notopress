@@ -22,6 +22,7 @@ export type WordPressPublishOperation = {
   sourceHash: string;
   inputHash: string;
   payloadHash: string;
+  distributionAssets?: readonly string[];
   intent?: WordPressPublishIntent;
 };
 
@@ -56,6 +57,7 @@ export function toSerializableWordPressPublishOperation(
     sourceHash: operation.sourceHash,
     inputHash: operation.inputHash,
     payloadHash: operation.payloadHash,
+    ...(operation.distributionAssets ? { distributionAssets: operation.distributionAssets } : {}),
   };
 }
 

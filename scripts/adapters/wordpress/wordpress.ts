@@ -65,6 +65,9 @@ import {
   assertPublicationTargetFingerprint,
   type PreparedPublication,
 } from '../../core/publishing/platform-adapter';
+import { collectWordPressAssetUrls } from './distribution-assets';
+import { createDistributionAssetResolver } from '../../core/content/distribution-assets';
+import { createTrackedSourceReader, type BuildArtifact } from '../../core/content/build-artifact';
 import { mapWithConcurrency } from '../../core/concurrency';
 
 
@@ -76,6 +79,7 @@ interface PublishToWordPressInput {
   allIndices: Map<string, VaultDirectoryIndex>;
   contentSnapshot?: ContentSnapshot;
   rootIndex?: VaultRootIndex;
+  generatedArtifacts?: readonly BuildArtifact[];
   targetSlugs?: string[];
   force?: boolean;
   initializeState?: boolean;
@@ -155,16 +159,19 @@ async function collectLocalNoteReferences({
   privateNoteReferences,
   contentSnapshot,
   markdown,
+  readPrivateNote,
 }: {
   publicNoteReferences: readonly NoteReferenceInput[];
   privateNoteReferences: readonly NoteReferenceInput[];
   contentSnapshot: ContentSnapshot;
   markdown: string;
+  readPrivateNote?: (filePath: string) => Promise<string>;
 }) {
   return collectNoteReferencesForLocalMarkdown({
     publicNoteReferences,
     privateNoteReferences,
     markdown,
+    readPrivateNote,
     readPublicNote: async ({ fullSlug }) => {
       const document = findSnapshotDocument({ snapshot: contentSnapshot, sourceSlug: fullSlug });
       if (!document) {
@@ -219,6 +226,7 @@ export async function prepareWordPressPublication({
   allIndices,
   contentSnapshot,
   rootIndex,
+  generatedArtifacts = [],
   targetSlugs,
   force,
   initializeState,
@@ -316,9 +324,18 @@ export async function prepareWordPressPublication({
   console.log(`Found ${postsToPublish.length} post(s) to process.`);
 
   const publicNoteReferences = buildWordPressNoteReferenceInputs({ contentSnapshot: snapshot });
+  const sourceArtifacts: BuildArtifact[] = [];
+  const readNoteSource = createTrackedSourceReader({ vaultPath: site.vaultPath, read: readFile, relativePath: path.relative,
+    collectArtifact: (artifact) => { sourceArtifacts.push(artifact); },
+  });
+  const resolveDistributionAssets = createDistributionAssetResolver({ siteId: site.siteId, imageHost,
+    assetFiles, publicFiles: rootIndex?.publicFiles || [], generatedPaths: generatedArtifacts.map((artifact) => artifact.path),
+    collectUrls: collectWordPressAssetUrls,
+  });
   const privateNoteReferences = await collectPrivateNoteIncludes({
     vaultPath: site.vaultPath,
     includePaths: site.noteIncludePaths,
+    readSource: readNoteSource,
   });
   const updatedPosts: WordPressPublicationItemResult[] = [];
   const createdPosts: WordPressPublicationItemResult[] = [];
@@ -338,6 +355,7 @@ export async function prepareWordPressPublication({
           privateNoteReferences,
           contentSnapshot: snapshot,
           markdown: post.document.markdown,
+          readPrivateNote: readNoteSource,
         });
         const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
         const publicationEntry = wordpressPublicationState[post.slug];
@@ -373,6 +391,7 @@ export async function prepareWordPressPublication({
           && !isExplicitTarget
           && publicationEntry?.inputHash === inputHash
           && publicationEntry.payloadHash
+          && publicationEntry.distributionAssets
         ) {
           if (verbose) {
             console.log(`  ⏭️  Skipping "${post.title}" (slug: ${post.slug}) - publication inputs unchanged.`);
@@ -380,6 +399,7 @@ export async function prepareWordPressPublication({
           return {
             ...baseOperation,
             payloadHash: publicationEntry.payloadHash,
+            distributionAssets: publicationEntry.distributionAssets,
             skip: true,
           };
         }
@@ -412,13 +432,14 @@ export async function prepareWordPressPublication({
           status: 'publish' as const,
           taxonomies: wordpressResource.contentType === 'post' ? post.document.taxonomies : {},
         };
+        const distributionAssets = resolveDistributionAssets({ html: intent.content, sourceDirectory: post.document.directory });
         const payloadHash = computeWordPressPayloadHash({
           contentType: wordpressResource.contentType,
           intent,
         });
         const payloadIsUnchanged = publicationEntry?.payloadHash === payloadHash;
         if (!force && !isExplicitTarget && publicationEntry && payloadIsUnchanged) {
-          return { ...baseOperation, payloadHash, skip: true };
+          return { ...baseOperation, payloadHash, distributionAssets, skip: true };
         }
 
         const changeReason = publicationEntry?.contentHash === sourceHash
@@ -427,7 +448,7 @@ export async function prepareWordPressPublication({
         if (!initializeState) {
           console.log(`\nPlanning "${post.title}" (slug: ${post.slug}) — ${changeReason}...`);
         }
-        return { ...baseOperation, payloadHash, intent, skip: false };
+        return { ...baseOperation, payloadHash, distributionAssets, intent, skip: false };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error(`  ❌ Failed to plan post "${post.title}":`, errMsg);
@@ -454,6 +475,7 @@ export async function prepareWordPressPublication({
         contentHash: operation.sourceHash,
         inputHash: operation.inputHash,
         payloadHash: operation.payloadHash,
+        distributionAssets: operation.distributionAssets,
         remoteId: publicationEntry?.remoteId,
         remoteSlug: publicationEntry?.remoteSlug,
         contentType: publicationEntry?.contentType,
@@ -556,11 +578,13 @@ export async function prepareWordPressPublication({
           if (publicationEntry && (
             publicationEntry.contentHash !== operation.sourceHash
             || publicationEntry.inputHash !== operation.inputHash
+            || JSON.stringify(publicationEntry.distributionAssets) !== JSON.stringify(operation.distributionAssets)
           )) {
             setWordPressPublicationStateEntry(syncState, operation.sourceSlug, {
               contentHash: operation.sourceHash,
               inputHash: operation.inputHash,
               payloadHash: operation.payloadHash,
+              distributionAssets: operation.distributionAssets,
               remoteId: publicationEntry.remoteId,
               remoteSlug: publicationEntry.remoteSlug,
               contentType: publicationEntry.contentType,
@@ -657,6 +681,7 @@ export async function prepareWordPressPublication({
           contentHash: operation.sourceHash,
           inputHash: operation.inputHash,
           payloadHash: operation.payloadHash,
+          distributionAssets: operation.distributionAssets,
           remoteId: appliedRemoteId ?? undefined,
           remoteSlug: operation.wordpressSlug,
           contentType: operation.contentType,
@@ -699,6 +724,8 @@ export async function prepareWordPressPublication({
     id: 'wordpress',
     label: 'WordPress publish',
     plan: publishPlan,
+    sourceArtifacts,
+    distribution: { assets: [...new Set(plannedOperations.flatMap((operation) => operation.distributionAssets || []))].sort() },
     apply,
   };
 }

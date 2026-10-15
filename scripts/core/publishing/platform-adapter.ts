@@ -1,12 +1,17 @@
 import { assertOperationPlanFingerprint, type OperationPlan } from './operation-plan';
 import type { Registry, Site } from '../../../src/domain/registry';
 import type { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
+import type { BuildArtifact } from '../content/build-artifact';
 import type { ContentSnapshot } from '../content/content-snapshot';
+
+export type PublicationBuildMode = 'native' | 'content';
 
 export type PreparedPublication<TOperation> = {
   id: string;
   label: string;
   plan: OperationPlan<TOperation>;
+  distribution?: { assets: readonly string[] };
+  sourceArtifacts?: readonly BuildArtifact[];
   apply: ({ dryRun }: { dryRun: boolean }) => Promise<void>;
 };
 
@@ -16,6 +21,7 @@ export type PreparePublicationContext = {
   allIndices: Map<string, VaultDirectoryIndex>;
   contentSnapshot: ContentSnapshot;
   rootIndex: VaultRootIndex;
+  generatedArtifacts?: readonly BuildArtifact[];
   targetSlugs?: string[];
   force?: boolean;
   dryRun: boolean;
@@ -32,6 +38,7 @@ export type ImportContentContext = {
 export type ContentPlatformAdapter = {
   id: string;
   type: string;
+  buildMode?: PublicationBuildMode;
   preparePublication: (context: PreparePublicationContext) => Promise<PreparedPublication<unknown> | null>;
   initializeState?: (context: PreparePublicationContext) => Promise<void>;
   importResource?: (context: ImportContentContext) => Promise<void>;

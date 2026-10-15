@@ -23,11 +23,12 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
 } = {}) {
   return async function prepareNativeSite(input: NativeStorageBuildInput & { deleteRemoteFiles: boolean; verbose: boolean; remindFullSync?: boolean }) {
     const { site, registry, deleteRemoteFiles, verbose, stageTimer } = input;
-    const incremental = input.scope?.kind === 'incremental';
+    const assetsOnly = input.scope?.kind === 'assets';
+    const incremental = assetsOnly || input.scope?.kind === 'incremental';
     if (incremental && deleteRemoteFiles) throw new Error('Incremental publishing cannot delete remote objects. Use sync --delete with a reviewed plan.');
     const connection = resolveConnection({ site, registry });
     const history = createHistory({ vaultPath: site.vaultPath });
-    logger.log(await history.describe({ target: connection.target, remind: input.remindFullSync === true }));
+    if (!assetsOnly) logger.log(await history.describe({ target: connection.target, remind: input.remindFullSync === true }));
     const prepared = await prepareStorageArtifacts({ input, files: createFiles({ vaultPath: site.vaultPath }) });
     const staged = await stageTimer.measure({ stage: 'storage.snapshot', run: () => snapshot({ vaultPath: site.vaultPath, artifacts: prepared.artifacts }) });
     const cliEnvironment: NodeJS.ProcessEnv = {
@@ -43,11 +44,11 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
     }
     try {
       logger.log(incremental
-        ? '\nIncremental distribution: preparing explicit AWS CLI uploads without remote listing. Required files are uploaded even if already present.'
+        ? `\n${assetsOnly ? 'Adapter assets' : 'Native distribution'}: preparing explicit AWS CLI uploads without remote listing. Required files are uploaded even if already present.`
         : '\nFull distribution sync: comparing all distribution files with AWS CLI (size and modification time).');
       const changes = await stageTimer.measure({ stage: 'storage.compare', run: preview });
-      const plan = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: changes, incremental });
-      logger.log(`AWS CLI storage plan ${plan.fingerprint}: ${changes.length} proposed change(s), plus the sanitized registry upload.`);
+      const plan = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: changes, incremental, assetsOnly });
+      logger.log(`AWS CLI storage plan ${plan.fingerprint}: ${changes.length} proposed change(s), ${assetsOnly ? 'no native registry upload' : 'plus the sanitized registry upload'}.`);
       for (const line of changes) logger.log(`  storage-preview: ${line}`);
       return {
         plan,
@@ -56,13 +57,13 @@ export function createNativeSitePreparation({ resolveConnection = getStorageConn
           await prepared.verifySources();
           for (const artifact of prepared.artifacts) if (artifact.verify) await artifact.verify();
           await staged.verify();
-          const fresh = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: await stageTimer.measure({ stage: 'storage.recheck', run: preview }), incremental });
+          const fresh = createAwsStoragePlan({ target: connection.target, artifacts: prepared.artifacts, deleteRemoteFiles, preview: await stageTimer.measure({ stage: 'storage.recheck', run: preview }), incremental, assetsOnly });
           assertOperationPlanFingerprint({ label: 'AWS CLI storage', plan: fresh, expectedFingerprint: plan.fingerprint });
           await prepared.materialize();
           await stageTimer.measure({ stage: 'storage.sync', run: async () => {
             const output = await runCli({ args: args(false), environment: cliEnvironment });
             if (verbose) for (const line of normalizeAwsPreview({ output, snapshotPath: staged.snapshotPath })) logger.log(`  storage-result: ${line}`);
-            await runCli({ args: ['s3', 'cp', staged.registryPath, `s3://${connection.target.bucket}/${DEFAULT_REGISTRY_FILENAME}`, '--endpoint-url', connection.target.endpoint, '--only-show-errors'], environment: cliEnvironment });
+            if (!assetsOnly) await runCli({ args: ['s3', 'cp', staged.registryPath, `s3://${connection.target.bucket}/${DEFAULT_REGISTRY_FILENAME}`, '--endpoint-url', connection.target.endpoint, '--only-show-errors'], environment: cliEnvironment });
           } });
           logger.log(incremental ? 'Incremental distribution upload completed with AWS CLI.' : 'Full distribution sync completed with AWS CLI.');
           if (!incremental) try {

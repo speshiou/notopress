@@ -63,7 +63,7 @@ export async function prepareStorageArtifacts({ input, files }: {
   return {
     artifacts: [
       ...local.map((artifact) => ({ ...artifact, key: getStorageKey({ siteId: site.siteId, path: artifact.path }) })),
-      { ...registryArtifact, key: DEFAULT_REGISTRY_FILENAME },
+      ...(input.scope?.kind === 'assets' ? [] : [{ ...registryArtifact, key: DEFAULT_REGISTRY_FILENAME }]),
     ],
     materialize: () => materializer.materialize(distribution.generated),
     verifySources,

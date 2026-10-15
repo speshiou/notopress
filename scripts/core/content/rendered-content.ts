@@ -12,7 +12,7 @@ import {
   type ContentSnapshot,
 } from './content-snapshot';
 import { computeContentHash } from '../state/sync-state';
-import { createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
+import { createTrackedSourceReader, createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
 import { passthroughStageTimer, type StageTimer } from '../stage-timing';
 import { createDistributionAssetResolver } from './distribution-assets';
 
@@ -109,14 +109,7 @@ export async function generateRenderedContent({
   const resolveAssets = createDistributionAssetResolver({ siteId, imageHost, assetFiles,
     publicFiles: rootIndex.publicFiles, generatedPaths: distributionAssetPaths,
   });
-  async function readNoteSource(filePath: string): Promise<string> {
-    const content = await readFile(filePath, 'utf-8');
-    collectSourceArtifact?.(createBuildArtifact({
-      path: path.relative(vaultPath, filePath).replace(/\\/g, '/'), content,
-      read: () => readFile(filePath),
-    }));
-    return content;
-  }
+  const readNoteSource = createTrackedSourceReader({ vaultPath, read: readFile, relativePath: path.relative, collectArtifact: collectSourceArtifact });
   const privateNoteReferences = await stageTimer.measure({
     stage: 'build.include-scan',
     run: () => collectPrivateNoteIncludes({ vaultPath, includePaths: noteIncludePaths, readSource: readNoteSource }),

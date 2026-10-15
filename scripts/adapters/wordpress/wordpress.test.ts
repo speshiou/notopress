@@ -896,6 +896,7 @@ describe('WordPress Deployment Library', () => {
         expect.objectContaining({ method: 'POST' })
       );
       expect(JSON.parse(savedSyncState).wordpress['post-one']).toEqual({
+        distributionAssets: [],
         contentHash: hash,
         inputHash: expect.any(String),
         payloadHash: expect.any(String),

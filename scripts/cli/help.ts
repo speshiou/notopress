@@ -7,7 +7,7 @@ To publish through an adapter, use "notopress publish <publisher> --site <id>".
 
 Options:
   --dry-run          Preview generated and remote changes
-  --delete           Remove remote files missing from expected outputs
+  --delete           Remove missing native files (blocked with adapter-owned assets)
   --expect <hash>    Require the reviewed composite plan fingerprint
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
@@ -18,17 +18,18 @@ Synchronize the native site, then deploy the Next.js runtime to Vercel.
 
 Options:
   --dry-run          Preview synchronization without deploying
-  --delete           Remove remote files missing from expected outputs
+  --delete           Remove missing native files (blocked with adapter-owned assets)
   --expect <hash>    Require the reviewed composite plan fingerprint
   --verbose, -v      Show per-file diagnostics
   --site, -s <id>    Select a site instead of using [site]
   --registry, -r     Use another registry file`,
   publish: `Usage: notopress publish <publisher> [slug...] [options]
 
-Upload an incremental native distribution and publish through one configured adapter.
+Publish through one configured adapter using its build and distribution policy.
 Slugs are full vault slugs. Omit them for a site-wide push of changed documents.
-Slugs select adapter posts and their native HTML dependencies and assets.
-Indexes and sitemaps are also uploaded. Use sync for the full distribution.
+WordPress sends HTML through its API and uploads only required assets.
+Adapters without overrides distribute complete native HTML and metadata together.
+Use sync explicitly for full native distribution reconciliation.
 
 Options:
   --site, -s <id>    Select a site

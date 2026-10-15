@@ -74,7 +74,7 @@ describe('composite storage publication ordering', () => {
     expect(h.storage.close).toHaveBeenCalledOnce();
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Adapter selection: 1 requested source slug(s):\n  guides/article'));
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Source Markdown stays in Git. Storage uploads do not create adapter posts'));
-    expect(prepareNativeSite).toHaveBeenCalledWith(expect.objectContaining({ scope: { kind: 'incremental', targetSlugs: ['guides/article'] } }));
+    expect(prepareNativeSite).toHaveBeenCalledWith(expect.objectContaining({ scope: { kind: 'incremental' } }));
   });
 });
 
@@ -120,4 +120,21 @@ describe('vault interactions', () => {
     expect(apply).not.toHaveBeenCalled();
     expect(h.instructions.apply).not.toHaveBeenCalled();
   });
+});
+
+it('requires content-only adapters to declare distribution before application', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  const h = setup();
+  vi.mocked(createConfiguredPlatformAdapters).mockReturnValue([{ ...h.adapter, buildMode: 'content' }]);
+  await expect(runCommand({ command: h.command, registry: { sites: [h.site] } })).rejects.toThrow('must declare their distribution assets');
+  expect(prepareNativeSite).not.toHaveBeenCalled();
+  expect(h.instructions.apply).not.toHaveBeenCalled();
+});
+
+it('prevents native deletion from removing adapter-owned assets in the shared prefix', async () => {
+  const h = setup();
+  vi.mocked(createConfiguredPlatformAdapters).mockReturnValue([{ ...h.adapter, buildMode: 'content' }]);
+  await expect(runCommand({ command: { kind: 'sync', siteId: h.site.siteId, dryRun: false, verbose: false, deleteRemoteFiles: true }, registry: { sites: [h.site] } })).rejects.toThrow('cannot safely reconcile adapter-owned asset distributions');
+  expect(buildSite).not.toHaveBeenCalled();
+  expect(h.instructions.apply).not.toHaveBeenCalled();
 });

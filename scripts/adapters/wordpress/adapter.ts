@@ -15,6 +15,7 @@ function createAdapter({
   return {
     id,
     type: WORDPRESS_PLATFORM_TYPE,
+    buildMode: 'content',
     preparePublication: async (context) => {
       const prepared = await prepareWordPressPublication({
         ...context,

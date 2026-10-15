@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertBuildSourceHashes, createBuildArtifact, readVerifiedArtifact } from './build-artifact';
+import { assertBuildSourceHashes, createTrackedSourceReader, createBuildArtifact, type BuildArtifact, readVerifiedArtifact } from './build-artifact';
 
 describe('prepared build artifacts', () => {
   it('uses UTF-8 byte lengths and the same hash for text and binary inputs', async () => {
@@ -21,4 +21,16 @@ it('rejects changed or missing build sources before applying a prepared plan', (
   expect(() => assertBuildSourceHashes({ artifacts: [changed], sources: [source] })).toThrow('Build source changed during preparation');
   expect(() => assertBuildSourceHashes({ artifacts: [], sources: [source] })).toThrow('Build source changed during preparation');
   expect(() => assertBuildSourceHashes({ artifacts: [source], sources: [source] })).not.toThrow();
+});
+
+it('tracks included source bytes and detects a changed lazy source on verification', async () => {
+  let content = Buffer.from('Included body');
+  const artifacts: BuildArtifact[] = [];
+  const read = createTrackedSourceReader({ vaultPath: 'vault', read: async () => content,
+    relativePath: () => '_includes/example-note.md', collectArtifact: (artifact) => { artifacts.push(artifact); },
+  });
+  expect(await read('vault/_includes/example-note.md')).toBe('Included body');
+  expect(artifacts[0].path).toBe('_includes/example-note.md');
+  content = Buffer.from('Changed body');
+  await expect(readVerifiedArtifact(artifacts[0])).rejects.toThrow('Prepared artifact changed');
 });

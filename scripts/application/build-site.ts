@@ -6,6 +6,7 @@ import { generateIndices } from '../core/content/indices';
 import { generateSitemaps } from '../core/content/sitemaps';
 import type { StageTimer } from '../core/stage-timing';
 import { publicationStageTimer } from '../infrastructure/stage-timing';
+import type { PublicationBuildMode } from '../core/publishing/platform-adapter';
 import type { BuildArtifact } from '../core/content/build-artifact';
 
 export async function buildSite({
@@ -15,6 +16,7 @@ export async function buildSite({
   verbose,
   stageTimer = publicationStageTimer,
   prepareOnly = false,
+  mode = 'native',
 }: {
   site: Site;
   registry: Registry;
@@ -22,6 +24,7 @@ export async function buildSite({
   verbose: boolean;
   stageTimer?: StageTimer;
   prepareOnly?: boolean;
+  mode?: PublicationBuildMode;
 }) {
   const generatedArtifacts: BuildArtifact[] = [];
   const sourceArtifacts: BuildArtifact[] = [];
@@ -44,7 +47,7 @@ export async function buildSite({
   const contentSnapshot = await stageTimer.measure({
     stage: 'build.snapshot', run: () => buildContentSnapshot({ vaultPath: site.vaultPath, allIndices }),
   });
-  const renderedContent = await stageTimer.measure({
+  const renderedContent = mode === 'content' ? { artifacts: [] } : await stageTimer.measure({
     stage: 'build.render',
     run: () => generateRenderedContent({
       vaultPath: site.vaultPath,
@@ -62,7 +65,7 @@ export async function buildSite({
       distributionAssetPaths: generatedArtifacts.map((artifact) => artifact.path),
     }),
   });
-  await stageTimer.measure({
+  if (mode === 'native') await stageTimer.measure({
     stage: 'build.sitemaps',
     run: () => generateSitemaps({
       vaultPath: site.vaultPath,

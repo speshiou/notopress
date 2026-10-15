@@ -26,3 +26,15 @@ describe('AWS CLI storage fingerprints', () => {
     expect(() => createAwsStoragePlan({ ...input, incremental: true, deleteRemoteFiles: true })).toThrow('cannot delete');
   });
 });
+
+it('fingerprints adapter assets without a native registry and refuses deletion', () => {
+  const target = { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' };
+  const file = { ...createBuildArtifact({ path: 'content/diagram.svg', content: 'SVG' }), key: 'example-site/content/diagram.svg' };
+  const input = { target, artifacts: [file], preview: [], deleteRemoteFiles: false, incremental: true, assetsOnly: true };
+  const plan = createAwsStoragePlan(input);
+  expect(plan.operations).toHaveLength(1);
+  expect(plan.operations[0]).toMatchObject({ action: 'upload-distribution', assetsOnly: true });
+  expect(createAwsStoragePlan({ ...input, artifacts: [{ ...file, contentHash: 'changed' }] }).fingerprint).not.toBe(plan.fingerprint);
+  expect(() => createAwsStoragePlan({ ...input, incremental: false })).toThrow('without deletion or a native registry');
+  expect(() => createAwsStoragePlan({ ...input, deleteRemoteFiles: true })).toThrow('without deletion or a native registry');
+});

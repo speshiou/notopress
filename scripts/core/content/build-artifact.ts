@@ -51,3 +51,19 @@ export function assertBuildSourceHashes({ artifacts, sources }: {
     }
   }
 }
+
+/** Track the exact source bytes used by a renderer for the shared apply-time validation. */
+export function createTrackedSourceReader({ vaultPath, read, relativePath, collectArtifact }: {
+  vaultPath: string;
+  read: (filePath: string) => Promise<Uint8Array>;
+  relativePath: (from: string, to: string) => string;
+  collectArtifact?: CollectBuildArtifact;
+}) {
+  return async (filePath: string): Promise<string> => {
+    const bytes = await read(filePath);
+    collectArtifact?.(createBuildArtifact({
+      path: relativePath(vaultPath, filePath).replace(/\\/g, '/'), content: bytes, read: () => read(filePath),
+    }));
+    return Buffer.from(bytes).toString('utf8');
+  };
+}

@@ -36,9 +36,9 @@ describe('bounded distribution inventory', () => {
     const site = { siteId: 'example-site', vaultPath: 'vault', bucketName: 'example-bucket' };
     const prepared = await prepareStorageArtifacts({ input: { site, registry: { sites: [site] }, sourceArtifacts: [source],
       generatedArtifacts: [generated, createBuildArtifact({ path: 'root.json', content: '{}' }), createBuildArtifact({ path: 'AGENTS.md', content: 'Instructions' })],
-      scope: { kind: 'incremental', targetSlugs: ['article'] }, stageTimer: passthroughStageTimer,
+      scope: { kind: 'assets', paths: [used.path] }, stageTimer: passthroughStageTimer,
     }, files });
-    expect(prepared.artifacts.map((artifact) => artifact.path)).toEqual(['_rendered/content/article.html', 'content/diagram.svg', 'root.json', 'registry.json']);
+    expect(prepared.artifacts.map((artifact) => artifact.path)).toEqual(['content/diagram.svg']);
     expect(files.hashFile.mock.calls).toEqual([[source.path], [used.path]]);
     expect(files.writeFile).not.toHaveBeenCalled();
     entries.set(source.path, createBuildArtifact({ path: source.path, content: 'EDITED' }));

@@ -45,3 +45,10 @@ describe('destination scope explanation', () => {
     expect(formatPublicationScope({ storagePlan, dryRun: true })).not.toContain('Full distribution sync');
   });
 });
+
+it('describes adapter assets without implying native site distribution', () => {
+  const operations: AwsStorageOperation[] = [{ action: 'upload-distribution', assetsOnly: true,
+    target: { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' }, files: [], preview: [] }];
+  const storagePlan = createOperationPlan({ kind: 'notopress-storage-aws-cli', operations, serializeOperation: (operation) => operation });
+  expect(formatPublicationScope({ storagePlan, dryRun: true })).toContain('only adapter-declared assets; no native HTML, indexes or sitemaps');
+});

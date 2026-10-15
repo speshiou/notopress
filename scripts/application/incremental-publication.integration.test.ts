@@ -17,8 +17,8 @@ vi.mock('../infrastructure/native/storage', async (original) => {
   }) };
 });
 vi.mock('../adapters/catalog', () => ({
-  createConfiguredPlatformAdapters: () => [{ id: 'example-main', type: 'example', preparePublication: async () => ({ id: 'example-main', label: 'Example',
-    plan: createOperationPlan({ kind: 'example-publisher', operations: [], serializeOperation: (operation) => operation }), apply: harness.apply,
+  createConfiguredPlatformAdapters: () => [{ id: 'example-main', type: 'example', buildMode: 'content', preparePublication: async () => ({ id: 'example-main', label: 'Example',
+    plan: createOperationPlan({ kind: 'example-publisher', operations: [], serializeOperation: (operation) => operation }), distribution: { assets: ['content/_thumbnails/hero-8.webp'] }, apply: harness.apply,
   }) }],
 }));
 
@@ -89,8 +89,7 @@ describe('incremental publication and full distribution reconciliation', () => {
       expect((await filesUnder(vault)).has('AGENTS.md')).toBe(false);
       await writeFile(path.join(vault, 'content/article.md'), before.get('content/article.md') || '');
       await runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: reviewed }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
-      expect([...remote.keys()]).toContain('s3://example-bucket/example-site/_rendered/content/article.html');
-      expect([...remote.keys()]).toContain('s3://example-bucket/example-site/_rendered/content/dependent.html');
+      expect([...remote.keys()].some((key) => key.includes('_rendered/') || key.endsWith('.json') || key.includes('sitemap'))).toBe(false);
       expect([...remote.keys()].some((key) => key.includes('hero-8.webp'))).toBe(true);
       expect([...remote.keys()].some((key) => key.includes('unrelated.html') || key.includes('other.svg') || key.endsWith('.md') || key.endsWith('hero.png'))).toBe(false);
       const after = await filesUnder(vault);
