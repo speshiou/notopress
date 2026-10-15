@@ -13,7 +13,7 @@ import {
   type PreparedPublication,
   type PublicationTarget,
 } from '../core/publishing/platform-adapter';
-import { assertOperationPlanFingerprint } from '../core/publishing/operation-plan';
+import { assertOperationPlanFingerprint, createCompositeOperationPlan, formatOperationPlan } from '../core/publishing/operation-plan';
 import { formatPublicationScope } from '../core/publishing/publication-scope';
 import { exists } from '../core/files';
 import { prepareNativeSite } from '../infrastructure/native/storage';
@@ -22,7 +22,7 @@ import { buildSite } from './build-site';
 import { publicationStageTimer } from '../infrastructure/stage-timing';
 import type { StageTimer } from '../core/stage-timing';
 import { prepareSourceRepository } from '../infrastructure/native/source-repository';
-import { formatOperationPlan } from '../core/publishing/operation-plan';
+import { prepareVaultInstructions, type PreparedVaultInstructions } from '../infrastructure/native/vault-instructions';
 
 async function selectSite({
   registry,
@@ -93,11 +93,12 @@ async function runStateInitialization({ command, site, registry }: {
   });
 }
 
-async function runPublication({ command, site, registry, stageTimer }: {
+async function runPublication({ command, site, registry, stageTimer, instructions }: {
   command: SyncCommand | PublishCommand;
   site: Site;
   registry: Registry;
   stageTimer: StageTimer;
+  instructions: PreparedVaultInstructions;
 }): Promise<void> {
   const build = await stageTimer.measure({
     stage: 'build.total',
@@ -140,7 +141,9 @@ async function runPublication({ command, site, registry, stageTimer }: {
     publicFiles: build.vaultRootIndex.publicFiles,
   });
   try {
-    const publicationPlan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: preparedPublications });
+    const publicationPlan = createPublicationPlan({ nativeSitePlan, nativeStoragePlan: storage.plan, publications: preparedPublications,
+      localPlans: [{ id: 'notopress-vault-instructions', plan: instructions.plan }],
+    });
     console.log(`\n${formatPublicationScope({
       publisherId: command.kind === 'publish' ? command.publisherId : undefined,
       targetSlugs: command.kind === 'publish' ? command.targetSlugs : undefined,
@@ -160,7 +163,10 @@ async function runPublication({ command, site, registry, stageTimer }: {
     const targets: PublicationTarget[] = preparedPublications.map((publication) => ({ publication }));
     await executePublication({
       targets,
-      applyNativeSite: () => storage.apply({ dryRun: command.dryRun }),
+      applyNativeSite: async () => {
+        await instructions.apply({ dryRun: command.dryRun });
+        await storage.apply({ dryRun: command.dryRun });
+      },
       dryRun: command.dryRun,
     });
 
@@ -184,27 +190,38 @@ export async function runCommand({ command, registry, stageTimer = publicationSt
 }): Promise<void> {
   if (command.dryRun) console.log('\n🏜️  DRY RUN MODE ENABLED - No changes will be made.');
   const site = await selectSite({ registry, command });
+  if (command.kind === 'configure') {
+    // Runtime configuration can select a site whose vault is on another machine.
+    if (await exists(site.vaultPath)) await (await prepareVaultInstructions({ vaultPath: site.vaultPath })).apply({ dryRun: command.dryRun });
+    if (!command.dryRun) await configureLocalEnvironment({ site, registry });
+    return;
+  }
+  const instructions = await prepareVaultInstructions({ vaultPath: site.vaultPath });
   if (command.kind === 'initialize-sources') {
     const prepared = await prepareSourceRepository({ vaultPath: site.vaultPath });
-    console.log(formatOperationPlan({ label: 'Source Git initialization', plan: prepared.plan, serializeOperation: (operation) => operation }));
-    assertOperationPlanFingerprint({ label: 'Source Git initialization', plan: prepared.plan, expectedFingerprint: command.expectedPlanFingerprint });
+    const plan = createCompositeOperationPlan({ kind: 'notopress-source-setup', components: [
+      { id: 'notopress-source-git', plan: prepared.plan },
+      { id: 'notopress-vault-instructions', plan: instructions.plan },
+    ] });
+    console.log(formatOperationPlan({ label: 'Source Git operations', plan: prepared.plan, serializeOperation: (operation) => operation }));
+    console.log(formatOperationPlan({ label: 'Source Git initialization', plan, serializeOperation: (operation) => operation }));
+    assertOperationPlanFingerprint({ label: 'Source Git initialization', plan, expectedFingerprint: command.expectedPlanFingerprint });
+    await instructions.apply({ dryRun: command.dryRun });
     await prepared.apply({ dryRun: command.dryRun });
     console.log(command.dryRun ? 'Source Git dry run completed. No files changed.' : 'Source Git ready. No source files were committed or pushed. Review git status before committing.');
     return;
   }
-  if (command.kind === 'configure') {
-    await configureLocalEnvironment({ site, registry });
-    return;
-  }
   if (command.kind === 'import') {
+    await instructions.apply({ dryRun: command.dryRun });
     await runImport({ command, site, registry });
     return;
   }
   if (command.kind === 'initialize-platform-state') {
+    await instructions.apply({ dryRun: command.dryRun });
     await runStateInitialization({ command, site, registry });
     return;
   }
   await stageTimer.measure({
-    stage: 'publication.total', run: () => runPublication({ command, site, registry, stageTimer }),
+    stage: 'publication.total', run: () => runPublication({ command, site, registry, stageTimer, instructions }),
   });
 }

@@ -86,6 +86,7 @@ describe('incremental publication and full distribution reconciliation', () => {
       harness.apply.mockClear();
       await expect(runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: reviewed }, registry: { sites: [site] }, stageTimer: passthroughStageTimer })).rejects.toThrow('plan changed');
       expect(remote.size).toBe(0); expect(harness.apply).not.toHaveBeenCalled();
+      expect((await filesUnder(vault)).has('AGENTS.md')).toBe(false);
       await writeFile(path.join(vault, 'content/article.md'), before.get('content/article.md') || '');
       await runCommand({ command: { ...command, dryRun: false, expectedPlanFingerprint: reviewed }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
       expect([...remote.keys()]).toContain('s3://example-bucket/example-site/_rendered/content/article.html');
@@ -93,6 +94,9 @@ describe('incremental publication and full distribution reconciliation', () => {
       expect([...remote.keys()].some((key) => key.includes('hero-8.webp'))).toBe(true);
       expect([...remote.keys()].some((key) => key.includes('unrelated.html') || key.includes('other.svg') || key.endsWith('.md') || key.endsWith('hero.png'))).toBe(false);
       const after = await filesUnder(vault);
+      expect(after.get('AGENTS.md')?.toString()).toContain('## NotoPress workflow');
+      expect([...remote.keys()].some((key) => key.endsWith('AGENTS.md'))).toBe(false);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Read the updated block before continuing'));
       for (const [file, content] of before) expect(after.get(file)).toEqual(content);
       expect(after.has('.notopress/full-sync.json')).toBe(false);
       expect(harness.apply).toHaveBeenCalledWith({ dryRun: false });

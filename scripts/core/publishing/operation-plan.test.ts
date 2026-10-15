@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOperationPlan, formatOperationPlan } from './operation-plan';
+import { createCompositeOperationPlan, createOperationPlan, formatOperationPlan } from './operation-plan';
 
 type ExampleOperation = {
   action: 'write';
@@ -60,4 +60,12 @@ describe('operation plans', () => {
     expect(output).toContain('"kind": "rendered-content"');
     expect(output).not.toContain('<p>Rendered content</p>');
   });
+});
+
+it('includes local maintenance changes in composite fingerprints without exposing payloads', () => {
+  const component = (content: string) => createOperationPlan({ kind: 'local-update', operations: [{ content }], serializeOperation: (operation) => operation });
+  const combine = (content: string) => createCompositeOperationPlan({ kind: 'setup', components: [{ id: 'instructions', plan: component(content) }] });
+  expect(combine('old').fingerprint).not.toBe(combine('new').fingerprint);
+  expect(combine('new').fingerprint).toBe(combine('new').fingerprint);
+  expect(JSON.stringify(combine('private payload'))).not.toContain('private payload');
 });

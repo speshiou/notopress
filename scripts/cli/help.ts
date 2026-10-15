@@ -89,6 +89,9 @@ Commands:
   configure [site]                    Configure local development
   sources init                       Initialize source Git and ignore generated files
 
+Vault commands refresh the NotoPress block in local AGENTS.md and notify on changes.
+Dry runs preview instruction updates without writing; instructions stay out of storage.
+
 Run "notopress help <command>" for command details.`;
 
 export function formatCliHelp({ topic }: { topic?: string }): string {

@@ -67,3 +67,16 @@ export function assertOperationPlanFingerprint<TOperation>({
     );
   }
 }
+
+export type OperationPlanComponent = { id: string; plan: OperationPlan<unknown> };
+
+export function createCompositeOperationPlan({ kind, components }: {
+  kind: string;
+  components: readonly OperationPlanComponent[];
+}) {
+  return createOperationPlan({
+    kind,
+    operations: components.map(({ id, plan }) => ({ id, kind: plan.kind, fingerprint: plan.fingerprint })),
+    serializeOperation: (operation) => operation,
+  });
+}

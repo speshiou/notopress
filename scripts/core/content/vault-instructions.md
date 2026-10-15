@@ -1,0 +1,12 @@
+## NotoPress workflow
+
+- Git keeps source Markdown, original assets and authoring files. R2 serves rendered HTML, indexes, sitemaps and distribution assets. A Git push does not publish the site; the native reader has no Markdown fallback.
+- `publish <publisher-id> [full-vault-slug...] --site <site-id>` builds the full site, uploads selected HTML, dependent HTML, required assets and shared indexes/sitemaps, then applies the adapter plan. Omit slugs for site-wide publication. Storage uploads do not create unrelated WordPress posts.
+- `sync --site <site-id>` reconciles the full distribution with AWS CLI. It does not back up sources or update adapter posts. Only full sync supports remote deletion with `--delete`.
+- Run commands from the NotoPress checkout using `npm run <command> -- ...`. Preview publication with `--dry-run`, review its composite plan, then keep operands and flags unchanged and replace `--dry-run` with `--expect <fingerprint>`. Dry runs write neither vault files nor remote content. Do not add `--force` without an explicit request.
+- `sources:init` initializes source Git and generated-file ignore rules without committing or pushing. Already tracked generated files require separate untracking. Keep credentials and local state outside Git; do not edit generated files manually.
+- `import <publisher-id> <resource> --site <site-id>` imports locally without modifying remote posts. `publisher:init <publisher-id> --site <site-id>` trusts current local payloads as the adapter baseline without remote verification or publication; use only when deliberately requested.
+- Preserve source frontmatter and registered Gutenberg blocks. Escape wikilink alias separators inside Markdown tables: `[[note-slug\|Display label]]`. Keep remote checks scoped and verify affected live pages after publication.
+- On another machine, clone sources, restore registry credentials separately, set the local vault path and rebuild. Adapter caches and full-sync history can be copied separately; there is no storage baseline to initialize.
+
+NotoPress refreshes only this managed block on vault commands, reports changes, and keeps it out of distribution storage. Read updated guidance before continuing. See the [NotoPress README](https://github.com/speshiou/notopress#readme) for configuration and command details.

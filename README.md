@@ -338,7 +338,18 @@ migration and is not performed automatically.
 
 ## Generated artifacts
 
-NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets. Vault `AGENTS.md` instructions are maintained by the vault owner; builds do not generate or update them.
+NotoPress writes cache and index artifacts into the vault, including `root.json`, directory-level `index.json` files, `_rendered/`, `_thumbnails/`, and sitemap files. Do not edit them manually. They are regenerated from Markdown, configuration, and source assets.
+
+On `publish`, `sync`, `deploy`, `import`, `publisher:init` and `sources:init`,
+NotoPress refreshes its marked block in the vault's `AGENTS.md` from the
+[shared template](scripts/core/content/vault-instructions.md). `configure` also
+refreshes it when the vault exists locally. Instructions outside the managed
+block stay unchanged; help and version commands never access a vault. Updates
+are written only when needed and print a notice to read the updated guidance.
+Dry runs preview the new block without writing. Publication and source-setup
+fingerprints cover pending instruction updates, including the template and
+current file hashes. If those inputs change before applying, review a fresh plan. These instructions belong in source Git
+and are never uploaded to distribution storage.
 
 When image dimensions are known, generated responsive variants preserve aspect ratio and do not upscale beyond the source. The renderer uses the widths that were actually generated rather than assuming every configured size exists.
 

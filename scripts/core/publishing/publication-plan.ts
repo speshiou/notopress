@@ -2,6 +2,8 @@ import type { VaultRootIndex } from '../../../src/lib/vault';
 import type { ContentSnapshot } from '../content/content-snapshot';
 import {
   createOperationPlan,
+  createCompositeOperationPlan,
+  type OperationPlanComponent,
   formatOperationPlan,
   type OperationPlan,
 } from './operation-plan';
@@ -23,13 +25,7 @@ type NativeSiteManifest = {
 
 export type NativeSitePlan = OperationPlan<NativeSiteManifest>;
 
-type PlanComponent = {
-  id: string;
-  kind: string;
-  fingerprint: string;
-};
-
-export type PublicationPlan = OperationPlan<PlanComponent>;
+export type PublicationPlan = ReturnType<typeof createCompositeOperationPlan>;
 
 export function createNativeSitePlan({
   contentSnapshot,
@@ -65,24 +61,21 @@ export function createPublicationPlan({
   nativeSitePlan,
   publications,
   nativeStoragePlan,
+  localPlans = [],
 }: {
   nativeSitePlan: NativeSitePlan;
   publications: readonly PreparedPublication<unknown>[];
   nativeStoragePlan?: OperationPlan<unknown>;
+  localPlans?: readonly OperationPlanComponent[];
 }): PublicationPlan {
-  const components: PlanComponent[] = [
-    { id: 'notopress', kind: nativeSitePlan.kind, fingerprint: nativeSitePlan.fingerprint },
-    ...(nativeStoragePlan ? [{ id: 'notopress-storage', kind: nativeStoragePlan.kind, fingerprint: nativeStoragePlan.fingerprint }] : []),
-    ...publications.map((publication) => ({
-      id: publication.id,
-      kind: publication.plan.kind,
-      fingerprint: publication.plan.fingerprint,
-    })),
-  ];
-  return createOperationPlan({
+  return createCompositeOperationPlan({
     kind: 'notopress-publication',
-    operations: components,
-    serializeOperation: (component) => component,
+    components: [
+      { id: 'notopress', plan: nativeSitePlan },
+      ...(nativeStoragePlan ? [{ id: 'notopress-storage', plan: nativeStoragePlan }] : []),
+      ...localPlans,
+      ...publications.map((publication) => ({ id: publication.id, plan: publication.plan })),
+    ],
   });
 }
 
