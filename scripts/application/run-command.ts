@@ -16,6 +16,8 @@ import {
 import { assertOperationPlanFingerprint, createCompositeOperationPlan, formatOperationPlan } from '../core/publishing/operation-plan';
 import { formatPublicationScope } from '../core/publishing/publication-scope';
 import { exists } from '../core/files';
+import { normalizeThumbnailSizes } from '../../src/lib/responsive-images';
+import { createPublicationImagePreparation } from '../core/content/publication-images';
 import { prepareNativeSite } from '../infrastructure/native/storage';
 import { configureLocalEnvironment, deployApplication } from '../infrastructure/vercel/deployment';
 import { buildSite } from './build-site';
@@ -110,6 +112,12 @@ async function runPublication({ command, site, registry, stageTimer, instruction
     stage: 'build.total',
     run: () => buildSite({ site, registry, dryRun: command.dryRun, verbose: command.verbose, stageTimer, prepareOnly: true, mode }),
   });
+  const prepareImages = mode === 'content' ? createPublicationImagePreparation({
+    vaultPath: site.vaultPath,
+    thumbnailSizes: normalizeThumbnailSizes(site.thumbnailSizes || registry.thumbnailSizes),
+    publicFiles: build.vaultRootIndex.publicFiles,
+    assetFiles: build.vaultRootIndex.assetFiles || [],
+  }) : undefined;
   const preparedPublications: PreparedPublication<unknown>[] = [];
   const publisherIds = command.kind === 'publish' ? [command.publisherId] : [];
   for (const publisherId of publisherIds) {
@@ -123,6 +131,7 @@ async function runPublication({ command, site, registry, stageTimer, instruction
         contentSnapshot: build.contentSnapshot,
         rootIndex: build.vaultRootIndex,
         generatedArtifacts: build.generatedArtifacts,
+        prepareImages,
         targetSlugs: command.kind === 'publish' && command.targetSlugs ? [...command.targetSlugs] : undefined,
         force: command.kind === 'publish' && command.force,
         dryRun: command.dryRun,
@@ -142,7 +151,7 @@ async function runPublication({ command, site, registry, stageTimer, instruction
     deleteRemoteFiles: command.deleteRemoteFiles,
   });
   const storage = await prepareNativeSite({
-    site, registry, generatedArtifacts: build.generatedArtifacts, contentSnapshot: build.contentSnapshot, sourceArtifacts: [...build.sourceArtifacts, ...preparedPublications.flatMap((publication) => publication.sourceArtifacts || [])],
+    site, registry, generatedArtifacts: [...build.generatedArtifacts, ...preparedPublications.flatMap((publication) => publication.generatedArtifacts || [])], contentSnapshot: build.contentSnapshot, sourceArtifacts: [...build.sourceArtifacts, ...preparedPublications.flatMap((publication) => publication.sourceArtifacts || [])],
     deleteRemoteFiles: command.deleteRemoteFiles,
     verbose: command.verbose, stageTimer,
     remindFullSync: command.kind === 'publish' && mode === 'native',

@@ -37,6 +37,7 @@ export async function buildSite({
       vaultPath: site.vaultPath,
       thumbnailSizes,
       rewrites: site.rewrites,
+      prepareThumbnails: mode !== 'content' || !prepareOnly,
       dryRun: readOnly,
       verbose,
       stageTimer,

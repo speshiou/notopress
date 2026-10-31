@@ -195,12 +195,14 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
       stageTimer = passthroughStageTimer,
       collectArtifact,
       collectSourceArtifact,
+      prepareThumbnails = true,
     }: {
       vaultPath: string;
       thumbnailSizes: readonly number[];
       rewrites?: readonly RewriteRule[];
       dryRun?: boolean;
       verbose?: boolean;
+      prepareThumbnails?: boolean;
       stageTimer?: StageTimer;
       collectArtifact?: CollectBuildArtifact;
       collectSourceArtifact?: CollectBuildArtifact;
@@ -271,7 +273,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
         await deps.mkdir(publicBaseDir, { recursive: true });
       }
 
-      const contentResponsiveImageWidths = await stageTimer.measure({
+      const contentResponsiveImageWidths = !prepareThumbnails ? {} : await stageTimer.measure({
         stage: 'build.thumbnails.content',
         run: () => deps.generateImageThumbnails({
           sourceDir: contentDir,
@@ -282,7 +284,7 @@ export function createIndexGenerator(deps: IndexGeneratorDeps) {
           ...(collectSourceArtifact ? { collectSourceArtifact: (artifact: BuildArtifact) => collectSourceArtifact({ ...artifact, path: `content/${artifact.path}` }) } : {}),
         }),
       });
-      const publicResponsiveImageWidths = await stageTimer.measure({
+      const publicResponsiveImageWidths = !prepareThumbnails ? {} : await stageTimer.measure({
         stage: 'build.thumbnails.public',
         run: () => deps.generateImageThumbnails({
           sourceDir: publicBaseDir,

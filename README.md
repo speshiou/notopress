@@ -228,8 +228,11 @@ Timing records contain only fixed stage names, elapsed seconds, and outcomes.
 measures temporary snapshot preparation; `storage.compare`
 measures AWS CLI preview, `storage.recheck` measures the pre-apply preview, and
 `storage.sync` measures live application. Targeting one adapter article
-still scans source metadata and checks thumbnails across the vault. WordPress
-renders selected API payloads and skips native rendering and sitemap generation.
+still scans source metadata for cross-post links. WordPress prepares thumbnails
+only for images resolved from selected posts and their embedded notes, including
+recorded image aliases. Image preparation is shared across posts within a run
+and included in `publisher.prepare`. WordPress renders selected API payloads
+and skips native rendering and sitemap generation.
 Native-default publication builds the complete native site.
 
 ### AWS CLI storage sync and migration
@@ -404,9 +407,10 @@ is no remote upload manifest. Local successful-upload hashes avoid repeated tran
 Core code cannot import adapters, application orchestration, infrastructure, or CLI modules. The application layer discovers integrations through the adapter catalog and depends on the generic `ContentPlatformAdapter` contract. Architecture tests enforce these boundaries.
 
 `ContentPlatformAdapter` has an optional `buildMode` override. The default is
-`native`; WordPress selects `content`, reusing canonical discovery and thumbnail
-preparation while owning API rendering. A content-only adapter must return its
-distribution asset paths and any additional source artifacts used during rendering.
+`native`; WordPress selects `content`, reusing canonical discovery and requesting
+core image preparation for its resolved dependencies while owning API rendering.
+A content-only adapter must return its distribution asset paths, prepared generated
+artifacts, and any additional source artifacts used during rendering.
 Storage freezes and hashes those files using the shared infrastructure. Gutenberg
 parsing stays inside the WordPress adapter; core has no component-specific rules.
 

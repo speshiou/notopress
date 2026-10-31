@@ -1,3 +1,4 @@
+import { preprocessWikilinks } from '../../../src/lib/markdown';
 import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
 import {
   isExternalOrInlineAsset,
@@ -11,20 +12,22 @@ import type { WordPressPublishContentType } from './publish-payload';
 
 const WORDPRESS_RENDERER_REVISION = 3;
 
-function collectLocalImageInputs({
+export function collectLocalImageInputs({
   markdown,
   assetFiles,
   responsiveImageWidths,
   sourceDirectory,
   resolveImageAlias,
+  noteReferences = [],
 }: {
   markdown: string;
+  noteReferences?: readonly NoteReference[];
   assetFiles: readonly string[];
   responsiveImageWidths?: Readonly<Record<string, readonly number[]>>;
   sourceDirectory?: string;
   resolveImageAlias?: ResolveImageAlias;
 }) {
-  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown, availableFiles: assetFiles, sourceDirectory, resolveImageAlias });
+  const resolvedMarkdown = resolveMarkdownImagePaths({ markdown: preprocessWikilinks(markdown, assetFiles, noteReferences), availableFiles: assetFiles, sourceDirectory, resolveImageAlias });
   const inputs: { path: string; widths: readonly number[] | null }[] = [];
   const imagePattern = /!\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)/g;
   let match: RegExpExecArray | null;
@@ -98,6 +101,7 @@ export function computeWordPressPublicationInputHash({
       sourceDirectory: sourceDirectory || '',
       images: collectLocalImageInputs({
         markdown: `${markdown}\n${embeddedMarkdown}`,
+        noteReferences,
         assetFiles,
         responsiveImageWidths,
         sourceDirectory,

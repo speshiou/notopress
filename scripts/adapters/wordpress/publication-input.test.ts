@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeWordPressPublicationInputHash } from './publication-input';
+import { collectLocalImageInputs, computeWordPressPublicationInputHash } from './publication-input';
 
 const baseInput = {
   sourceHash: 'source-hash',
@@ -22,6 +22,17 @@ const baseInput = {
 };
 
 describe('computeWordPressPublicationInputHash', () => {
+  it('discovers resolved image dependencies inside nested note and image wikilinks', () => {
+    expect(collectLocalImageInputs({
+      markdown: '![[note]]\n![Alias](https://legacy.example.com/old.png)\n![Local](logo.png)',
+      sourceDirectory: 'guides', assetFiles: ['shared.png', 'logo.png', 'guides/logo.png', 'new.png'],
+      resolveImageAlias: (src) => src === 'https://legacy.example.com/old.png' ? 'new.png' : undefined,
+      noteReferences: [
+        { fullSlug: 'note', title: 'Note', href: '/note', content: '![[nested]]' },
+        { fullSlug: 'nested', title: 'Nested', href: '/nested', content: '![[shared.png]]' },
+      ],
+    }).map((image) => image.path)).toEqual(['guides/logo.png', 'new.png', 'shared.png']);
+  });
   it('is stable for equivalent publication inputs', () => {
     expect(computeWordPressPublicationInputHash(baseInput)).toBe(
       computeWordPressPublicationInputHash(baseInput)

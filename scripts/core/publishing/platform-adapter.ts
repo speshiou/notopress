@@ -2,6 +2,7 @@ import { assertOperationPlanFingerprint, type OperationPlan } from './operation-
 import type { Registry, Site } from '../../../src/domain/registry';
 import type { VaultDirectoryIndex, VaultRootIndex } from '../../../src/lib/vault';
 import type { BuildArtifact } from '../content/build-artifact';
+import type { PreparePublicationImages } from '../content/publication-images';
 import type { ContentSnapshot } from '../content/content-snapshot';
 
 export type PublicationBuildMode = 'native' | 'content';
@@ -12,6 +13,7 @@ export type PreparedPublication<TOperation> = {
   plan: OperationPlan<TOperation>;
   distribution?: { assets: readonly string[] };
   sourceArtifacts?: readonly BuildArtifact[];
+  generatedArtifacts?: readonly BuildArtifact[];
   apply: ({ dryRun }: { dryRun: boolean }) => Promise<void>;
 };
 
@@ -22,6 +24,7 @@ export type PreparePublicationContext = {
   contentSnapshot: ContentSnapshot;
   rootIndex: VaultRootIndex;
   generatedArtifacts?: readonly BuildArtifact[];
+  prepareImages?: PreparePublicationImages;
   targetSlugs?: string[];
   force?: boolean;
   dryRun: boolean;

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
+import sharp from 'sharp';
 import * as markdownRenderer from '../../../src/lib/markdown';
 import { computeContentHash } from '../../core/state/sync-state';
 import { getWordPressAssetScope, getWordPressAssetKey } from './import-assets';
@@ -64,7 +65,9 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       await writeFile(path.join(vaultPath, 'AGENTS.md'), '# Owner instructions\n');
       await writeFile(path.join(vaultPath, 'content/article.md'), source('Article', '![Diagram](/legacy/%E6%B8%AC%E8%A9%A6.svg)\n\n![[example-note]]\n\n<!-- wp:example/visual {"imageUrl":"https://assets.example.com/example-site/content/hero.svg"} /-->'));
       await writeFile(path.join(vaultPath, 'content/unrelated-new.md'), source('Unrelated', '![Missing](missing.svg)'));
-      await writeFile(path.join(vaultPath, '_includes/example-note.md'), '# Example note\n\nIncluded body.');
+      await writeFile(path.join(vaultPath, '_includes/example-note.md'), '# Example note\n\nIncluded body.\n\n![[shared.png]]');
+      await writeFile(path.join(vaultPath, 'content/unrelated.png'), 'Not a valid image; targeted publishing must never decode this.');
+      await writeFile(path.join(vaultPath, 'content/shared.png'), await sharp({ create: { width: 16, height: 16, channels: 3, background: '#808080' } }).png().toBuffer());
       await writeFile(path.join(vaultPath, 'content/diagram.svg'), '<svg>Diagram</svg>');
       await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Hero</svg>');
       const originalUrl = 'https://assets.example.com/example-site/content/legacy/%25E6%25B8%25AC%25E8%25A9%25A6.svg';
@@ -73,7 +76,7 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
         [getWordPressAssetKey({ scope, source: originalUrl })]: { root: 'content', path: 'diagram.svg', originalUrl, contentHash: computeContentHash('<svg>Diagram</svg>') },
       } }));
       const before = await filesUnder(vaultPath);
-      const site = { siteId: 'example-site', vaultPath, bucketName: 'example-bucket', noteIncludePaths: ['_includes'], imageHost: 'https://assets.example.com',
+      const site = { siteId: 'example-site', vaultPath, bucketName: 'example-bucket', thumbnailSizes: [8, 16], noteIncludePaths: ['_includes'], imageHost: 'https://assets.example.com',
         publishers: [{ id: 'wordpress-main', type: 'wordpress', config: { endpoint: 'https://wordpress.example.com/wp-json', username: 'editor', applicationPassword: 'example-password' } }],
       };
       const command = { kind: 'publish', publisherId: 'wordpress-main', targetSlugs: ['article'], siteId: site.siteId, dryRun: true, verbose: false, force: false, deleteRemoteFiles: false } as const;
@@ -91,9 +94,12 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       expect(await readFile(path.join(vaultPath, 'AGENTS.md'), 'utf8')).toBe('# Owner instructions\n');
       await writeFile(path.join(vaultPath, 'content/hero.svg'), '<svg>Hero</svg>');
       await run(false, fingerprint);
-      expect([...uploaded.keys()].sort()).toEqual(['content/diagram.svg', 'content/hero.svg']);
+      expect([...uploaded.keys()].sort()).toEqual(['content/_thumbnails/shared-16.webp', 'content/diagram.svg', 'content/hero.svg']);
       expect(apiPayloads).toHaveLength(1);
       expect(apiPayloads[0]).toContain('Included body.');
+      expect(apiPayloads[0]).toContain('/content/_thumbnails/shared-16.webp');
+      expect(await sharp(uploaded.get('content/_thumbnails/shared-16.webp')).metadata()).toMatchObject({ width: 16 });
+      expect(log.mock.calls.some(([message]) => String(message).includes('_thumbnails/unrelated-'))).toBe(false);
       expect(apiPayloads[0]).toContain('/content/diagram.svg');
       expect(apiPayloads[0]).not.toContain('/legacy/');
       expect(apiPayloads[0]).toContain('wp:example/visual');
@@ -119,7 +125,7 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       await runCommand({ command: { ...command, targetSlugs: undefined, dryRun: false }, registry: { sites: [site] }, stageTimer: passthroughStageTimer });
       expect(render).not.toHaveBeenCalled();
       expect(apiPayloads).toHaveLength(1);
-      expect([...uploaded.keys()].sort()).toEqual(['content/diagram.svg', 'content/hero.svg']);
+      expect([...uploaded.keys()].sort()).toEqual(['content/_thumbnails/shared-16.webp', 'content/diagram.svg', 'content/hero.svg']);
       uploaded.clear();
       harness.runCli.mockClear();
       const warmBefore = await filesUnder(vaultPath);

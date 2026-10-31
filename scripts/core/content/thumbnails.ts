@@ -70,18 +70,22 @@ export function createThumbnailGenerator(deps: ThumbnailGeneratorDeps) {
       label,
       collectArtifact,
       collectSourceArtifact,
+      imageFiles: selectedImages,
     }: {
       sourceDir: string;
       dryRun: boolean;
       thumbnailSizes: readonly number[];
       label: string;
+      imageFiles?: readonly string[];
       collectArtifact?: CollectBuildArtifact;
       collectSourceArtifact?: CollectBuildArtifact;
     }): Promise<Record<string, number[]>> {
       if (!(await deps.exists(sourceDir))) return {};
 
       const sizes = deps.normalizeThumbnailSizes(thumbnailSizes);
-      const imageFiles = await collectSourceImages({ dir: sourceDir });
+      const imageFiles = selectedImages === undefined
+        ? await collectSourceImages({ dir: sourceDir })
+        : [...new Set(selectedImages)].filter((file) => deps.isSupportedResponsiveImage(file) && !deps.isGeneratedThumbnailPath(file)).sort();
       const generatedWidths: Record<string, number[]> = {};
 
       if (imageFiles.length === 0) {

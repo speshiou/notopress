@@ -7,6 +7,7 @@ import { buildSite } from './build-site';
 import { passthroughStageTimer } from '../core/stage-timing';
 import { createNativeSitePreparation } from '../infrastructure/native/storage';
 import type { AwsCliRequest } from '../infrastructure/native/aws-cli';
+import { createPublicationImagePreparation } from '../core/content/publication-images';
 
 const target = { endpoint: 'https://storage.example.com', bucket: 'example-bucket', siteId: 'example-site' };
 import type { Site } from '../../src/domain/registry';
@@ -38,6 +39,17 @@ describe('portable prepared native builds', () => {
       expect(firstBuild.generatedArtifacts.some((artifact) => artifact.path === 'AGENTS.md')).toBe(false);
       expect(firstBuild.generatedArtifacts.filter((artifact) => artifact.path.includes('_thumbnails/'))).toHaveLength(2);
       expect(firstBuild.sourceArtifacts.some((artifact) => artifact.path === '_includes/example-note.md')).toBe(true);
+      const scopedBuild = await buildSite({ site: firstSite, registry: { sites: [firstSite] }, dryRun: true, prepareOnly: true, mode: 'content', verbose: false });
+      expect(scopedBuild.contentSnapshot).toEqual(firstBuild.contentSnapshot);
+      expect(scopedBuild.generatedArtifacts.some((artifact) => artifact.path.includes('_thumbnails/'))).toBe(false);
+      expect(scopedBuild.sourceArtifacts).toEqual([]);
+      const images = await createPublicationImagePreparation({
+        vaultPath: firstVault, thumbnailSizes: [8, 16],
+        publicFiles: scopedBuild.vaultRootIndex.publicFiles, assetFiles: scopedBuild.vaultRootIndex.assetFiles || [],
+      })({ paths: ['hero.png'] });
+      expect(images.responsiveImageWidths).toEqual(firstBuild.vaultRootIndex.responsiveImageWidths);
+      expect(images.generatedArtifacts.map(({ path, contentHash }) => ({ path, contentHash })))
+        .toEqual(firstBuild.generatedArtifacts.filter((artifact) => artifact.path.includes('_thumbnails/')).map(({ path, contentHash }) => ({ path, contentHash })));
       for (const vault of [firstVault, secondVault]) {
         expect(await readdir(vault)).toEqual(['_includes', 'content']);
         expect(await readdir(path.join(vault, 'content'))).toEqual(['article.md', 'hero.png']);

@@ -7,6 +7,7 @@ import type { AwsCliRequest } from '../infrastructure/native/aws-cli';
 import { passthroughStageTimer } from '../core/stage-timing';
 import { runCommand } from './run-command';
 import { createOperationPlan } from '../core/publishing/operation-plan';
+import type { PreparePublicationContext } from '../core/publishing/platform-adapter';
 
 const harness = vi.hoisted(() => ({ runCli: vi.fn<(request: AwsCliRequest) => Promise<string>>(), apply: vi.fn<(input: { dryRun: boolean }) => Promise<void>>() }));
 vi.mock('../infrastructure/native/storage', async (original) => {
@@ -17,9 +18,12 @@ vi.mock('../infrastructure/native/storage', async (original) => {
   }) };
 });
 vi.mock('../adapters/catalog', () => ({
-  createConfiguredPlatformAdapters: () => [{ id: 'example-main', type: 'example', buildMode: 'content', preparePublication: async () => ({ id: 'example-main', label: 'Example',
+  createConfiguredPlatformAdapters: () => [{ id: 'example-main', type: 'example', buildMode: 'content', preparePublication: async ({ prepareImages }: PreparePublicationContext) => {
+    if (!prepareImages) throw new Error('Missing scoped image preparation');
+    const images = await prepareImages({ paths: ['hero.png'] });
+    return { id: 'example-main', label: 'Example', ...images,
     plan: createOperationPlan({ kind: 'example-publisher', operations: [], serializeOperation: (operation) => operation }), distribution: { assets: ['content/_thumbnails/hero-8.webp'] }, apply: harness.apply,
-  }) }],
+  }; } }],
 }));
 
 async function filesUnder(directory: string): Promise<Map<string, Buffer>> {

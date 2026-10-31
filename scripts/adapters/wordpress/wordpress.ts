@@ -35,7 +35,7 @@ import {
   computeWordPressPayloadHash,
   createWordPressPublishPayload,
 } from './publish-payload';
-import { computeWordPressPublicationInputHash } from './publication-input';
+import { collectLocalImageInputs, computeWordPressPublicationInputHash } from './publication-input';
 import { scanContentAssetFiles, scanPublicFiles } from '../../core/files';
 import { createWordPressAssetImporter, DEFAULT_WORDPRESS_ASSET_FOLDER, isWordPressImportImage, getWordPressAssetScope, getWordPressAssetKey, WordPressAssetStateSchema, WORDPRESS_ASSET_STATE_SECTION } from './import-assets';
 import { getWordPressEndpoint } from './configuration';
@@ -69,6 +69,7 @@ import { createWordPressImageAliasResolver } from './image-aliases';
 import { collectWordPressAssetUrls } from './distribution-assets';
 import { createDistributionAssetResolver } from '../../core/content/distribution-assets';
 import { createTrackedSourceReader, type BuildArtifact } from '../../core/content/build-artifact';
+import type { PreparePublicationImages } from '../../core/content/publication-images';
 import { mapWithConcurrency } from '../../core/concurrency';
 
 
@@ -81,6 +82,7 @@ interface PublishToWordPressInput {
   contentSnapshot?: ContentSnapshot;
   rootIndex?: VaultRootIndex;
   generatedArtifacts?: readonly BuildArtifact[];
+  prepareImages?: PreparePublicationImages;
   targetSlugs?: string[];
   force?: boolean;
   initializeState?: boolean;
@@ -228,6 +230,7 @@ export async function prepareWordPressPublication({
   contentSnapshot,
   rootIndex,
   generatedArtifacts = [],
+  prepareImages,
   targetSlugs,
   force,
   initializeState,
@@ -332,12 +335,10 @@ export async function prepareWordPressPublication({
 
   const publicNoteReferences = buildWordPressNoteReferenceInputs({ contentSnapshot: snapshot });
   const sourceArtifacts: BuildArtifact[] = [];
+  const preparedImageArtifacts = new Map<string, BuildArtifact>();
+  const preparedImageSources = new Map<string, BuildArtifact>();
   const readNoteSource = createTrackedSourceReader({ vaultPath: site.vaultPath, read: readFile, relativePath: path.relative,
     collectArtifact: (artifact) => { sourceArtifacts.push(artifact); },
-  });
-  const resolveDistributionAssets = createDistributionAssetResolver({ siteId: site.siteId, imageHost,
-    assetFiles, publicFiles: rootIndex?.publicFiles || [], generatedPaths: generatedArtifacts.map((artifact) => artifact.path),
-    collectUrls: collectWordPressAssetUrls,
   });
   const privateNoteReferences = await collectPrivateNoteIncludes({
     vaultPath: site.vaultPath,
@@ -364,6 +365,13 @@ export async function prepareWordPressPublication({
           markdown: post.document.markdown,
           readPrivateNote: readNoteSource,
         });
+        const images = prepareImages ? await prepareImages({ paths: collectLocalImageInputs({
+          markdown: post.document.markdown, assetFiles, sourceDirectory: post.document.directory,
+          resolveImageAlias, noteReferences,
+        }).map((image) => image.path) }) : undefined;
+        for (const artifact of images?.generatedArtifacts || []) preparedImageArtifacts.set(artifact.path, artifact);
+        for (const artifact of images?.sourceArtifacts || []) preparedImageSources.set(artifact.path, artifact);
+        const postImageWidths = images?.responsiveImageWidths || responsiveImageWidths;
         const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
         const publicationEntry = wordpressPublicationState[post.slug];
         const inputHash = computeWordPressPublicationInputHash({
@@ -380,7 +388,7 @@ export async function prepareWordPressPublication({
           imageHost,
           thumbnailSizes: sizes,
           assetFiles,
-          responsiveImageWidths,
+          responsiveImageWidths: postImageWidths,
         });
         const baseOperation = {
           sourceSlug: post.slug,
@@ -418,7 +426,7 @@ export async function prepareWordPressPublication({
           resolveImageAlias,
           thumbnailSizes: sizes,
           assetFiles,
-          responsiveImageWidths,
+          responsiveImageWidths: postImageWidths,
           noteReferences,
           assetUrlConfig: {
             imageHost,
@@ -441,6 +449,11 @@ export async function prepareWordPressPublication({
           status: 'publish' as const,
           taxonomies: wordpressResource.contentType === 'post' ? post.document.taxonomies : {},
         };
+        const resolveDistributionAssets = createDistributionAssetResolver({ siteId: site.siteId, imageHost,
+          assetFiles, publicFiles: rootIndex?.publicFiles || [],
+          generatedPaths: [...generatedArtifacts, ...(images?.generatedArtifacts || [])].map((artifact) => artifact.path),
+          collectUrls: collectWordPressAssetUrls,
+        });
         const distributionAssets = resolveDistributionAssets({ html: intent.content, sourceDirectory: post.document.directory });
         const payloadHash = computeWordPressPayloadHash({
           contentType: wordpressResource.contentType,
@@ -733,7 +746,8 @@ export async function prepareWordPressPublication({
     id: 'wordpress',
     label: 'WordPress publish',
     plan: publishPlan,
-    sourceArtifacts,
+    sourceArtifacts: [...sourceArtifacts, ...preparedImageSources.values()],
+    generatedArtifacts: [...preparedImageArtifacts.values()].sort((left, right) => left.path.localeCompare(right.path)),
     distribution: { assets: [...new Set(plannedOperations.flatMap((operation) => operation.distributionAssets || []))].sort() },
     apply,
   };

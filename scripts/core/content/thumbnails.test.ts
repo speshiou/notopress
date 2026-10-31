@@ -62,6 +62,20 @@ describe('createThumbnailGenerator', () => {
     await expect(generator.collectSourceImages({ dir: 'root' })).resolves.toEqual(['hero.png', 'gallery/nested.jpg']);
   });
 
+  it('prepares only explicitly selected images without traversing unrelated folders', async () => {
+    const { generator, renderImage, getFileStat } = makeGenerator();
+    const artifacts: BuildArtifact[] = [];
+    const widths = await generator.generateImageThumbnails({
+      sourceDir: 'root', dryRun: true, thumbnailSizes: [320], label: 'content',
+      imageFiles: ['hero.png', 'hero.png', 'notes.txt', '_thumbnails/hero-320.webp'],
+      collectArtifact: (artifact) => artifacts.push(artifact),
+    });
+    expect(widths).toEqual({ 'hero.png': [320] });
+    expect(artifacts.map((artifact) => artifact.path)).toEqual(['_thumbnails/hero-320.webp']);
+    expect(renderImage).toHaveBeenCalledOnce();
+    expect(getFileStat.mock.calls.map(([file]) => file)).toEqual(['root/hero.png', 'root/_thumbnails/hero-320.webp']);
+  });
+
   it('prepares real missing thumbnail bytes during previews without writing files', async () => {
     const { generator, renderImage, mkdir, processImage } = makeGenerator();
     const artifacts: BuildArtifact[] = [];
