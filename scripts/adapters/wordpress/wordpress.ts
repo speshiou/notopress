@@ -375,6 +375,7 @@ export async function prepareWordPressPublication({
         const wpSlug = hyphenateSlug({ slug: post.wordpressSlug });
         const publicationEntry = wordpressPublicationState[post.slug];
         const inputHash = computeWordPressPublicationInputHash({
+          linkRules: site.linkRules,
           sourceHash,
           sourceDirectory: post.document.directory,
           resolveImageAlias,
@@ -421,6 +422,7 @@ export async function prepareWordPressPublication({
         }
 
         const htmlContent = await renderMarkdownContent({
+          linkRules: site.linkRules,
           markdown: post.document.markdown,
           sourceDirectory: post.document.directory,
           resolveImageAlias,

@@ -138,6 +138,56 @@ For sibling folders, a segment wildcard works too: `series-*/:path*` to
 `content/series-edition-b/` with one rule. The wildcard stays within one folder
 segment; it does not match unrelated folder prefixes.
 
+### Link rules
+
+Add `linkRules` to a site's registry settings to attach `rel` values to matching
+links during rendering, for both native HTML and WordPress publication:
+
+```json
+{
+  "linkRules": [
+    {
+      "name": "Affiliate links",
+      "hostnames": ["affiliate.example.com", "shop.example.com"],
+      "includeSubdomains": true,
+      "target": "_blank",
+      "rel": ["sponsored"]
+    },
+    {
+      "hostnames": ["store.example.com"],
+      "query": { "ref": "my-code" },
+      "rel": ["sponsored", "nofollow"]
+    }
+  ]
+}
+```
+
+A rule matches any listed hostname and all specified query parameters. Hostnames
+are case-insensitive DNS names, without a scheme, port, path, or wildcard.
+Subdomains match only when `includeSubdomains` is `true` (the default is `false`).
+Query keys and decoded values match exactly and are case-sensitive; if a key
+repeats, any of its values can satisfy that condition. Only absolute HTTP(S) and
+protocol-relative links are considered. Relative links and fragment links are
+left unchanged.
+
+`name` is an optional label. Supported `rel` values are `sponsored`, `ugc`,
+`nofollow`, `noopener`, `noreferrer`, and `external`. All matching rules contribute
+their values, merged with existing `rel` tokens and deduplicated. Markdown links,
+raw HTML anchors, and links in transcluded notes use the same rules. URLs and
+source Markdown remain unchanged.
+
+`target` is optional and accepts `_blank` (new tab/window) or `_self` (current
+tab). A configured target replaces an existing anchor target; otherwise the
+existing target is preserved. When several matching rules specify targets, the
+last specified target wins. A final configured `_blank` target also adds
+`noopener` automatically. A rule can specify `rel`, `target`, or both.
+
+Rule changes update native cached HTML on the next build and invalidate the
+WordPress rendering-input cache. Removing rules removes their generated values
+on the next render; attributes explicitly written in source HTML remain.
+Configuration changes reach deployed pages only after sync or publication.
+Preview WordPress changes with `--dry-run` before applying the reviewed plan.
+
 ## Sync and deployment
 
 Always preview a meaningful change first:

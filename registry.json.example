@@ -19,6 +19,15 @@
         { "source": "guides/:path*", "destination": "/:path*" },
         { "source": "reviews/:path*", "destination": "/:path*" }
       ],
+      "linkRules": [
+        {
+          "name": "Affiliate links",
+          "hostnames": ["affiliate.example.com", "shop.example.com"],
+          "includeSubdomains": true,
+          "target": "_blank",
+          "rel": ["sponsored"]
+        }
+      ],
       "publishers": [
         {
           "id": "wordpress-main",

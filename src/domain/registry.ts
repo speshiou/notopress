@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { SourceAssetFolderSchema } from './asset-path';
 import { RewriteRulesSchema } from './rewrites';
+import { LinkRulesSchema } from './link-rules';
 
 export const ThumbnailSizesSchema = z.array(z.number().int().positive()).min(1).optional();
 
@@ -30,6 +31,7 @@ export const SiteSchema = z.object({
   publishers: z.array(PlatformDefinitionSchema).optional(),
   imageHost: z.string().url().optional(),
   rewrites: RewriteRulesSchema.optional(),
+  linkRules: LinkRulesSchema.optional(),
 });
 
 export const RegistrySchema = z.object({

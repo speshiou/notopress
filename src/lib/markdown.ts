@@ -2,6 +2,8 @@ import { remark } from "remark";
 import html from "remark-html";
 import gfm from "remark-gfm";
 import type { Plugin } from "unified";
+import type { LinkRule } from '../domain/link-rules';
+import { applyLinkRules } from './link-rules';
 import { getAssetUrl, getResponsiveImageAttributes, normalizeThumbnailSizes, type AssetUrlConfig } from "./responsive-images";
 import { isExternalOrInlineAsset, resolveMarkdownImagePaths, type ResolveImageAlias } from "./local-images";
 import { createNoteReferenceResolver, parseWikilinkContent, type NoteReference } from "./note-links";
@@ -301,8 +303,10 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
       getTableFigureProperties,
       noteReferences,
       assetUrlConfig,
+      linkRules,
     }: {
       markdown: string;
+      linkRules?: readonly LinkRule[];
       thumbnailSizes: readonly number[];
       assetFiles?: readonly string[];
       sourceDirectory?: string;
@@ -326,7 +330,7 @@ export function createMarkdownRenderer(deps: MarkdownRendererDeps) {
           getFigureProperties,
           assetUrlConfig,
         }),
-      }).then((htmlContent) => wrapTablesInFigures(htmlContent, getTableFigureProperties));
+      }).then((htmlContent) => applyLinkRules({ html: wrapTablesInFigures(htmlContent, getTableFigureProperties), linkRules }));
     },
   };
 }

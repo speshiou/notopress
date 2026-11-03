@@ -59,6 +59,7 @@ export async function buildSite({
       rootIndex: vaultRootIndex,
       thumbnailSizes,
       noteIncludePaths: site.noteIncludePaths,
+      linkRules: site.linkRules,
       dryRun: readOnly,
       collectArtifact,
       collectSourceArtifact: prepareOnly ? (artifact) => { sourceArtifacts.push(artifact); } : undefined,

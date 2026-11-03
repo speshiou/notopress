@@ -11,10 +11,10 @@ import {
   findSnapshotDocument,
   type ContentSnapshot,
 } from './content-snapshot';
-import { computeContentHash } from '../state/sync-state';
 import { createTrackedSourceReader, createBuildArtifact, type CollectBuildArtifact } from './build-artifact';
 import { passthroughStageTimer, type StageTimer } from '../stage-timing';
 import { createDistributionAssetResolver } from './distribution-assets';
+import type { LinkRule } from '../../../src/domain/link-rules';
 
 type Logger = Pick<typeof console, 'log'>;
 
@@ -80,6 +80,7 @@ export async function generateRenderedContent({
   contentSnapshot,
   rootIndex,
   thumbnailSizes,
+  linkRules,
   noteIncludePaths,
   dryRun,
   logger = console,
@@ -95,6 +96,7 @@ export async function generateRenderedContent({
   contentSnapshot?: ContentSnapshot;
   rootIndex: VaultRootIndex;
   thumbnailSizes: readonly number[];
+  linkRules?: readonly LinkRule[];
   noteIncludePaths?: readonly string[];
   dryRun: boolean;
   logger?: Logger;
@@ -134,6 +136,7 @@ export async function generateRenderedContent({
       },
     });
     const html = await renderMarkdownContent({
+      linkRules,
       markdown: document.markdown,
       sourceDirectory: document.directory,
       thumbnailSizes,
@@ -147,12 +150,10 @@ export async function generateRenderedContent({
         mode: imageHost ? 'absolute' : 'app-relative',
       },
     });
-    artifacts.push({
-      path: getRenderedContentPath({ fullSlug: document.sourceSlug }),
-      contentHash: computeContentHash(html),
-    });
+    const artifact = createBuildArtifact({ path: getRenderedContentPath({ fullSlug: document.sourceSlug }), content: html });
+    artifacts.push({ path: artifact.path, contentHash: artifact.contentHash });
     collectArtifact?.({
-      ...createBuildArtifact({ path: getRenderedContentPath({ fullSlug: document.sourceSlug }), content: html }),
+      ...artifact,
       distribution: {
         sourceSlug: document.sourceSlug,
         noteSlugs: [...new Set([document.sourceSlug, ...noteReferences.map((note) => note.fullSlug)])].sort(),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collectLocalImageInputs, computeWordPressPublicationInputHash } from './publication-input';
+import type { LinkRule } from '../../../src/domain/link-rules';
 
 const baseInput = {
   sourceHash: 'source-hash',
@@ -37,6 +38,20 @@ describe('computeWordPressPublicationInputHash', () => {
     expect(computeWordPressPublicationInputHash(baseInput)).toBe(
       computeWordPressPublicationInputHash(baseInput)
     );
+  });
+
+  it('invalidates on link rule changes, but keeps unconfigured caches and rule labels stable', () => {
+    const linkRules: LinkRule[] = [{ hostnames: ['shop.example.com'], rel: ['sponsored'] }];
+    const original = computeWordPressPublicationInputHash(baseInput);
+    const configured = computeWordPressPublicationInputHash({ ...baseInput, linkRules });
+    expect(configured).not.toBe(original);
+    expect(computeWordPressPublicationInputHash({ ...baseInput, linkRules: [] })).toBe(original);
+    expect(computeWordPressPublicationInputHash({ ...baseInput, linkRules: [{ ...linkRules[0], name: 'Affiliate links' }] })).toBe(configured);
+    expect(computeWordPressPublicationInputHash({ ...baseInput, linkRules: [{ ...linkRules[0], includeSubdomains: true }] })).not.toBe(configured);
+    expect(computeWordPressPublicationInputHash({ ...baseInput, linkRules: [{ ...linkRules[0], query: { ref: 'example' } }] })).not.toBe(configured);
+    const newTab = computeWordPressPublicationInputHash({ ...baseInput, linkRules: [{ ...linkRules[0], target: '_blank' }] });
+    expect(newTab).not.toBe(configured);
+    expect(computeWordPressPublicationInputHash({ ...baseInput, linkRules: [{ ...linkRules[0], target: '_self' }] })).not.toBe(newTab);
   });
 
   it('changes for transclusions, resolved image variants, and target settings', () => {

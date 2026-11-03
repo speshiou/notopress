@@ -47,6 +47,12 @@ describe('createWordPressPublishPlan', () => {
 
     expect(first.fingerprint).not.toBe(second.fingerprint);
   });
+
+  it('changes the fingerprint when rendered publication content changes', () => {
+    const first = createWordPressPublishPlan({ operations: [createOperation()] });
+    const changed = createWordPressPublishPlan({ operations: [createOperation({ payloadHash: 'changed-payload' })] });
+    expect(changed.fingerprint).not.toBe(first.fingerprint);
+  });
 });
 
 describe('formatWordPressPublishPlan', () => {

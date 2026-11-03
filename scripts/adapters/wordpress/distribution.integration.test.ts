@@ -11,6 +11,7 @@ import { getWordPressPublicationStateFromObject } from './publication-state';
 import { runCommand } from '../../application/run-command';
 import { passthroughStageTimer } from '../../core/stage-timing';
 import type { AwsCliRequest } from '../../infrastructure/native/aws-cli';
+import type { Site } from '../../../src/domain/registry';
 
 const harness = vi.hoisted(() => ({ runCli: vi.fn<(input: AwsCliRequest) => Promise<string>>() }));
 vi.mock('../../infrastructure/native/storage', async (original) => {
@@ -63,7 +64,7 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       await mkdir(path.join(vaultPath, '_includes'));
       const source = (title: string, body: string) => `---\ntitle: ${title}\ndate: 2026-01-01\nupdated: 2026-01-01\n---\n# ${title}\n\n${body}\n`;
       await writeFile(path.join(vaultPath, 'AGENTS.md'), '# Owner instructions\n');
-      await writeFile(path.join(vaultPath, 'content/article.md'), source('Article', '![Diagram](/legacy/%E6%B8%AC%E8%A9%A6.svg)\n\n![[example-note]]\n\n<!-- wp:example/visual {"imageUrl":"https://assets.example.com/example-site/content/hero.svg"} /-->'));
+      await writeFile(path.join(vaultPath, 'content/article.md'), source('Article', '[Shop](https://shop.example.com/item)\n\n![Diagram](/legacy/%E6%B8%AC%E8%A9%A6.svg)\n\n![[example-note]]\n\n<!-- wp:example/visual {"imageUrl":"https://assets.example.com/example-site/content/hero.svg"} /-->'));
       await writeFile(path.join(vaultPath, 'content/unrelated-new.md'), source('Unrelated', '![Missing](missing.svg)'));
       await writeFile(path.join(vaultPath, '_includes/example-note.md'), '# Example note\n\nIncluded body.\n\n![[shared.png]]');
       await writeFile(path.join(vaultPath, 'content/unrelated.png'), 'Not a valid image; targeted publishing must never decode this.');
@@ -76,7 +77,7 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
         [getWordPressAssetKey({ scope, source: originalUrl })]: { root: 'content', path: 'diagram.svg', originalUrl, contentHash: computeContentHash('<svg>Diagram</svg>') },
       } }));
       const before = await filesUnder(vaultPath);
-      const site = { siteId: 'example-site', vaultPath, bucketName: 'example-bucket', thumbnailSizes: [8, 16], noteIncludePaths: ['_includes'], imageHost: 'https://assets.example.com',
+      const site: Site = { siteId: 'example-site', vaultPath, bucketName: 'example-bucket', thumbnailSizes: [8, 16], noteIncludePaths: ['_includes'], imageHost: 'https://assets.example.com',
         publishers: [{ id: 'wordpress-main', type: 'wordpress', config: { endpoint: 'https://wordpress.example.com/wp-json', username: 'editor', applicationPassword: 'example-password' } }],
       };
       const command = { kind: 'publish', publisherId: 'wordpress-main', targetSlugs: ['article'], siteId: site.siteId, dryRun: true, verbose: false, force: false, deleteRemoteFiles: false } as const;
@@ -151,6 +152,63 @@ describe('WordPress overrides with shared plan/apply infrastructure', () => {
       await writeFile(path.join(vaultPath, 'content/article.md'), `${await readFile(path.join(vaultPath, 'content/article.md'), 'utf8')}\nText update.\n`);
       await run(false);
       expect(apiPayloads).toHaveLength(2);
+      expect(harness.runCli).not.toHaveBeenCalled();
+
+      // Rule edits invalidate the warm render cache and the reviewed composite plan.
+      const bulk = (dryRun: boolean, expectedPlanFingerprint?: string) => runCommand({
+        command: { ...command, targetSlugs: undefined, dryRun, expectedPlanFingerprint },
+        registry: { sites: [site] }, stageTimer: passthroughStageTimer,
+      });
+      site.linkRules = [{ hostnames: ['shop.example.com'], rel: ['sponsored'] }];
+      const beforeRules = await filesUnder(vaultPath);
+      const requestsBeforeRules = fetchMock.mock.calls.length;
+      render.mockClear();
+      await bulk(true);
+      expect(render).toHaveBeenCalledOnce();
+      expect(await filesUnder(vaultPath)).toEqual(beforeRules);
+      expect(apiPayloads).toHaveLength(2);
+      const rulesFingerprint = log.mock.calls.map(([message]) => String(message)).findLast((line) => line.includes('NotoPress publication plan '))?.match(/NotoPress publication plan ([a-f0-9]{64}):/)?.[1];
+      expect(rulesFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      site.linkRules = [{ hostnames: ['shop.example.com'], rel: ['nofollow'] }];
+      await expect(bulk(false, rulesFingerprint)).rejects.toThrow('plan changed');
+      expect(fetchMock).toHaveBeenCalledTimes(requestsBeforeRules);
+      expect(await filesUnder(vaultPath)).toEqual(beforeRules);
+      site.linkRules = [{ hostnames: ['shop.example.com'], rel: ['sponsored'] }];
+      await bulk(false, rulesFingerprint);
+      expect(apiPayloads).toHaveLength(3);
+      expect(apiPayloads[2]).toContain('rel="sponsored"');
+      expect(await readFile(path.join(vaultPath, 'content/article.md'))).toEqual(beforeRules.get('content/article.md'));
+      expect(harness.runCli).not.toHaveBeenCalled();
+      render.mockClear();
+      const requestsAfterRules = fetchMock.mock.calls.length;
+      site.linkRules[0].name = 'Renamed affiliate rule';
+      await bulk(false);
+      expect(render).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(requestsAfterRules);
+      // Changing only target must invalidate the cached rendering and reviewed plan.
+      site.linkRules[0].target = '_blank';
+      await bulk(true);
+      expect(render).toHaveBeenCalledOnce();
+      const targetFingerprint = log.mock.calls.map(([message]) => String(message)).findLast((line) => line.includes('NotoPress publication plan '))?.match(/NotoPress publication plan ([a-f0-9]{64}):/)?.[1];
+      expect(targetFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      site.linkRules[0].target = '_self';
+      await expect(bulk(false, targetFingerprint)).rejects.toThrow('plan changed');
+      expect(fetchMock).toHaveBeenCalledTimes(requestsAfterRules);
+      site.linkRules[0].target = '_blank';
+      await bulk(false, targetFingerprint);
+      expect(apiPayloads).toHaveLength(4);
+      expect(apiPayloads[3]).toContain('target="_blank"');
+      expect(apiPayloads[3]).toContain('rel="sponsored noopener"');
+      render.mockClear();
+      const requestsAfterTarget = fetchMock.mock.calls.length;
+      await bulk(false);
+      expect(render).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(requestsAfterTarget);
+      site.linkRules = [];
+      await bulk(false);
+      expect(render).toHaveBeenCalledOnce();
+      expect(apiPayloads).toHaveLength(5);
+      expect(apiPayloads[4]).toBe(apiPayloads[1]);
       expect(harness.runCli).not.toHaveBeenCalled();
       render.mockRestore();
     } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); log.mockRestore(); await rm(vaultPath, { recursive: true, force: true }); }

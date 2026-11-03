@@ -1,5 +1,6 @@
 import { preprocessWikilinks } from '../../../src/lib/markdown';
 import type { ContentTaxonomies } from '../../../src/domain/content-metadata';
+import type { LinkRule } from '../../../src/domain/link-rules';
 import {
   isExternalOrInlineAsset,
   resolveMarkdownImagePaths,
@@ -46,6 +47,7 @@ export function collectLocalImageInputs({
 }
 
 export function computeWordPressPublicationInputHash({
+  linkRules,
   sourceHash,
   markdown,
   title,
@@ -62,6 +64,7 @@ export function computeWordPressPublicationInputHash({
   resolveImageAlias,
 }: {
   sourceHash: string;
+  linkRules?: readonly LinkRule[];
   markdown: string;
   title: string;
   wordpressSlug: string;
@@ -95,6 +98,7 @@ export function computeWordPressPublicationInputHash({
       content: reference.content || null,
     })),
     rendering: {
+      ...(linkRules?.length ? { linkRules: linkRules.map(({ hostnames, includeSubdomains, query, rel, target }) => ({ hostnames, includeSubdomains, query, rel, target })) } : {}),
       siteId,
       imageHost,
       thumbnailSizes,

@@ -22,6 +22,7 @@ describe('rendered content generator', () => {
           '# Post One',
           '',
           'Before.',
+          '[Shop](https://shop.example.com/item)',
           '',
           '![Hero](hero.png)',
           '',
@@ -94,6 +95,21 @@ describe('rendered content generator', () => {
       expect(unchangedLogger.log).toHaveBeenCalledWith('[PLAN] 0 of 1 rendered HTML file(s) would change');
       expect(unchangedLogger.log).not.toHaveBeenCalledWith(expect.stringContaining('Would update'));
       expect(Buffer.from(await artifacts[0].read()).toString('utf8')).toBe(rendered);
+
+      const ruleArtifacts: BuildArtifact[] = [];
+      const rulesLogger = { log: vi.fn() };
+      const withRules = await generateRenderedContent({
+        vaultPath, siteId: 'test-blog', allIndices, rootIndex, thumbnailSizes: [320],
+        noteIncludePaths: ['templates'], dryRun: true, logger: rulesLogger,
+        linkRules: [{ hostnames: ['shop.example.com'], rel: ['sponsored'], target: '_blank' }],
+        collectArtifact: (artifact) => ruleArtifacts.push(artifact),
+      });
+      expect(withRules.artifacts[0].contentHash).not.toBe(renderedResult.artifacts[0].contentHash);
+      const rulesHtml = Buffer.from(await ruleArtifacts[0].read()).toString('utf8');
+      expect(rulesHtml).toContain('rel="sponsored noopener"');
+      expect(rulesHtml).toContain('target="_blank"');
+      expect(rulesLogger.log).toHaveBeenCalledWith('[PLAN] Would update rendered HTML: _rendered/content/post-one.html');
+      expect(await readFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'utf8')).toBe(rendered);
 
       await writeFile(path.join(vaultPath, getRenderedContentPath({ fullSlug: 'post-one' })), 'stale HTML');
       const changedLogger = { log: vi.fn() };

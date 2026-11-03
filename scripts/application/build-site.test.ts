@@ -20,14 +20,14 @@ describe('portable prepared native builds', () => {
       const firstVault = path.join(fixtureRoot, 'first-vault');
       const secondVault = path.join(fixtureRoot, 'second-vault');
       await mkdir(path.join(firstVault, 'content'), { recursive: true });
-      const source = '---\ntitle: Example\ndate: 2026-01-01\nupdated: 2026-01-02\n---\n# Example\n\n![Example](hero.png)\n\nBody.\n\n![[example-note]]\n';
+      const source = '---\ntitle: Example\ndate: 2026-01-01\nupdated: 2026-01-02\n---\n# Example\n\n![Example](hero.png)\n\n[Shop](https://shop.example.com/item)\n\nBody.\n\n![[example-note]]\n';
       await writeFile(path.join(firstVault, 'content/article.md'), source);
       const image = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#808080' } }).png().toBuffer();
       await writeFile(path.join(firstVault, 'content/hero.png'), image);
       await mkdir(path.join(firstVault, '_includes'));
       await writeFile(path.join(firstVault, '_includes/example-note.md'), '# Example Note\n\nIncluded body.');
       await cp(firstVault, secondVault, { recursive: true });
-      const firstSite: Site = { siteId: target.siteId, vaultPath: firstVault, bucketName: target.bucket, domain: 'example.com', thumbnailSizes: [8, 16], noteIncludePaths: ['_includes'] };
+      const firstSite: Site = { siteId: target.siteId, vaultPath: firstVault, bucketName: target.bucket, domain: 'example.com', thumbnailSizes: [8, 16], noteIncludePaths: ['_includes'], linkRules: [{ hostnames: ['shop.example.com'], rel: ['sponsored'] }] };
       const secondSite: Site = { ...firstSite, vaultPath: secondVault };
       const firstBuild = await buildSite({ site: firstSite, registry: { sites: [firstSite] }, dryRun: true, prepareOnly: true, verbose: false, stageTimer: passthroughStageTimer });
       const secondBuild = await buildSite({ site: secondSite, registry: { sites: [secondSite] }, dryRun: false, prepareOnly: true, verbose: false, stageTimer: passthroughStageTimer });
@@ -37,6 +37,9 @@ describe('portable prepared native builds', () => {
         'root.json', 'content/index.json', '_rendered/content/article.html', 'public/sitemap.xml',
       ]));
       expect(firstBuild.generatedArtifacts.some((artifact) => artifact.path === 'AGENTS.md')).toBe(false);
+      const renderedArticle = firstBuild.generatedArtifacts.find((artifact) => artifact.path === '_rendered/content/article.html');
+      expect(renderedArticle).toBeDefined();
+      expect(Buffer.from(await renderedArticle!.read()).toString('utf8')).toContain('rel="sponsored"');
       expect(firstBuild.generatedArtifacts.filter((artifact) => artifact.path.includes('_thumbnails/'))).toHaveLength(2);
       expect(firstBuild.sourceArtifacts.some((artifact) => artifact.path === '_includes/example-note.md')).toBe(true);
       const scopedBuild = await buildSite({ site: firstSite, registry: { sites: [firstSite] }, dryRun: true, prepareOnly: true, mode: 'content', verbose: false });
